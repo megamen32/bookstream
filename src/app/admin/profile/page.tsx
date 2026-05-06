@@ -1,0 +1,220 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Save, Loader2, User } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+
+interface Author {
+  id: string
+  name: string
+  slug: string
+  bio: string | null
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[а-яё]/g, (match) => {
+      const map: Record<string, string> = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+        'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+        'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+      }
+      return map[match] || match
+    })
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+}
+
+export default function AdminProfilePage() {
+  const [author, setAuthor] = useState<Author | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  // Edit fields
+  const [name, setName] = useState('')
+  const [slug, setSlug] = useState('')
+  const [bio, setBio] = useState('')
+  const [nameChanged, setNameChanged] = useState(false)
+
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetch('/api/authors')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          // API returns array of authors; use the first one
+          const authorData = Array.isArray(data) ? data[0] : data
+          if (authorData) {
+            setAuthor(authorData)
+            setName(authorData.name)
+            setSlug(authorData.slug)
+            setBio(authorData.bio || '')
+          }
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleNameChange = (value: string) => {
+    setName(value)
+    setNameChanged(true)
+    if (!slug || slug === slugify(author?.name || '') || slug === slugify(name)) {
+      setSlug(slugify(value))
+    }
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name || !slug) return
+
+    setSaving(true)
+    try {
+      const method = author ? 'PUT' : 'POST'
+      const res = await fetch('/api/authors', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, slug, bio }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setAuthor(data)
+        setNameChanged(false)
+        toast({ title: 'Профиль сохранён' })
+      } else {
+        const data = await res.json()
+        toast({
+          title: 'Ошибка',
+          description: data.error || 'Не удалось сохранить',
+          variant: 'destructive',
+        })
+      }
+    } catch {
+      toast({ title: 'Ошибка сохранения', variant: 'destructive' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-6 lg:p-8 max-w-2xl mx-auto">
+        <div className="mb-8">
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 md:p-6 lg:p-8 max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-foreground">Профиль автора</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Управляйте информацией о себе
+        </p>
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-6">
+        {/* Avatar area */}
+        <Card>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md">
+              <User className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">{name || 'Без имени'}</h3>
+              <p className="text-sm text-muted-foreground">@{slug || 'author'}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Profile form */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Основная информация</CardTitle>
+            <CardDescription>Данные отображаются в публичном профиле</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="profile-name">Имя *</Label>
+              <Input
+                id="profile-name"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Ваше имя..."
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profile-slug">Slug *</Label>
+              <Input
+                id="profile-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="your-slug"
+                className="h-11 font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Уникальный идентификатор для URL: /@{slug || 'slug'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profile-bio">О себе</Label>
+              <Textarea
+                id="profile-bio"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Расскажите о себе..."
+                rows={4}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Save button */}
+        <Button
+          type="submit"
+          disabled={saving || !name || !slug}
+          className="w-full h-11 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium shadow-md"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Сохранение...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4 mr-2" />
+              Сохранить профиль
+            </>
+          )}
+        </Button>
+      </form>
+    </div>
+  )
+}

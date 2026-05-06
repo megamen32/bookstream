@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Author {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  books     Book[]
+}
+
+model Book {
+  id                  String   @id @default(cuid())
+  slug                String
+  title               String
+  description         String?
+  coverUrl            String?
+  authorId            String
+  readingModeDefault  String   @default("feed")
+  isPublic            Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  author              Author   @relation(fields: [authorId], references: [id])
+  chapters            Chapter[]
+  comments            Comment[]
+  readingProgress     ReadingProgress[]
+
+  @@unique([authorId, slug])
+}
+
+model Chapter {
+  id         String   @id @default(cuid())
+  bookId     String
+  title      String
+  position   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  book       Book     @relation(fields: [bookId], references: [id])
+  variants   ChapterVariant[]
+  comments   Comment[]
+
+  @@unique([bookId, position])
+}
+
+model ChapterVariant {
+  id              String   @id @default(cuid())
+  chapterId       String
+  variantType     String   @default("original")
+  contentHtml     String
+  editedByAuthor  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  chapter         Chapter  @relation(fields: [chapterId], references: [id])
+  paragraphs      Paragraph[]
+  reactions       Reaction[]
+
+  @@unique([chapterId, variantType])
+}
+
+model Paragraph {
+  id                String         @id @default(cuid())
+  chapterVariantId  String
+  stableKey         String
+  position          Int
+  text              String
+  chapterVariant    ChapterVariant @relation(fields: [chapterVariantId], references: [id])
+  reactions         Reaction[]
+  commentQuotes     CommentQuote[]
+
+  @@unique([chapterVariantId, position])
+}
+
+model Comment {
+  id            String         @id @default(cuid())
+  bookId        String
+  chapterId     String
+  readerId      String
+  username      String
+  body          String
+  status        String         @default("active")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  book          Book           @relation(fields: [bookId], references: [id])
+  chapter       Chapter        @relation(fields: [chapterId], references: [id])
+  quotes        CommentQuote[]
+}
+
+model CommentQuote {
+  id            String     @id @default(cuid())
+  commentId     String
+  variantType   String     @default("original")
+  paragraphId   String
+  selectedText  String
+  startOffset   Int        @default(0)
+  endOffset     Int        @default(0)
+  createdAt     DateTime   @default(now())
+  comment       Comment    @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  paragraph     Paragraph  @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
+}
+
+model Reaction {
+  id                String         @id @default(cuid())
+  paragraphId       String
+  chapterVariantId  String
+  readerId          String
+  emoji             String
+  createdAt         DateTime       @default(now())
+  paragraph         Paragraph      @relation(fields: [paragraphId], references: [id])
+  chapterVariant    ChapterVariant @relation(fields: [chapterVariantId], references: [id])
+
+  @@unique([paragraphId, readerId, emoji])
+}
+
+model Reader {
+  id              String @id @default(cuid())
+  currentUsername String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ReadingProgress {
+  id            String   @id @default(cuid())
+  readerId      String
+  bookId        String
+  chapterId     String
+  variantType   String   @default("original")
+  scrollPercent Float    @default(0)
+  fontSize      Int      @default(18)
+  lineHeight    Float    @default(1.6)
+  theme         String   @default("light")
+  readingMode   String   @default("feed")
+  updatedAt     DateTime @updatedAt
+  book          Book     @relation(fields: [bookId], references: [id])
+
+  @@unique([readerId, bookId])
+}
