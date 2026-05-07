@@ -48,7 +48,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="rounded-t-2xl"
+        className="reader-sheet reader-sheet--bottom rounded-t-2xl"
         style={{
           maxHeight: '80vh',
           backgroundColor: 'var(--r-bg)',

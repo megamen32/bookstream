@@ -1,32 +1,27 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  ArrowLeft,
-  Settings,
-  BookOpen,
-  AlignJustify,
-  Search,
-  Bookmark,
-  BookmarkCheck,
-  UserRound,
-  MessageSquare,
-} from 'lucide-react'
 import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore, type VariantType, type ReadingMode } from '@/lib/store'
 import { applyTheme } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
 import BookReader from '@/components/reader/BookReader'
-import VariantSlider from '@/components/reader/VariantSlider'
 import SettingsPanel from '@/components/reader/SettingsPanel'
 import TableOfContents from '@/components/reader/TableOfContents'
 import SearchPanel from '@/components/reader/SearchPanel'
-import CommentsSection from '@/components/reader/CommentsSection'
+import UserActivityPanel from '@/components/reader/UserActivityPanel'
+import ReaderChrome, { type ReaderChromeOverlay } from '@/components/reader/ReaderChrome'
+import ReaderCommentsOverlay from '@/components/reader/ReaderCommentsOverlay'
+import ReaderVariantsPanel from '@/components/reader/ReaderVariantsPanel'
 import type { ReaderComment } from '@/components/reader/comment-types'
-import type { FeedSectionData, ReaderChapterListItem } from '@/components/reader/feed-types'
+import type {
+  FeedPreviewComment,
+  FeedSectionData,
+  ReaderChapterListItem,
+} from '@/components/reader/feed-types'
 import { setBookReaderPage } from '@/lib/book-reader-progress'
 
 interface BookData {
@@ -92,6 +87,14 @@ function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment,
   return sortCommentsByTop(next).slice(0, limit)
 }
 
+function prependUniquePreviewComment(
+  comments: FeedPreviewComment[],
+  comment: FeedPreviewComment,
+  limit: number,
+): FeedPreviewComment[] {
+  return [comment, ...comments.filter((entry) => entry.id !== comment.id)].slice(0, limit)
+}
+
 export default function ReaderPage() {
   const params = useParams()
   const router = useRouter()
@@ -100,7 +103,6 @@ export default function ReaderPage() {
 
   const {
     bookId,
-    chapterId,
     variantType,
     readingMode,
     theme,
@@ -108,14 +110,12 @@ export default function ReaderPage() {
     readerId,
     username,
     replyingTo,
-    showCommunityAnnotations,
     setBookId,
     setChapterId,
     setVariantType,
     setReadingMode,
     setFontSize,
     setLineHeight,
-    setTheme,
     setReplyingTo,
     loadFromStorage,
   } = useReaderStore()
@@ -132,15 +132,15 @@ export default function ReaderPage() {
   const [feedHasMorePrev, setFeedHasMorePrev] = useState(false)
   const [feedHasMoreNext, setFeedHasMoreNext] = useState(false)
   const [generatingVariant, setGeneratingVariant] = useState<string | null>(null)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
-  const [showDesktopComments, setShowDesktopComments] = useState(false)
+  const [chromeVisible, setChromeVisible] = useState(false)
+  const [activeOverlay, setActiveOverlay] = useState<ReaderChromeOverlay>('none')
   const [scrollProgress, setScrollProgress] = useState(0)
   const [bookmarksByChapter, setBookmarksByChapter] = useState<Record<string, string>>({})
   const [quoteTargetParagraphId, setQuoteTargetParagraphId] = useState<string | null>(null)
   const [quoteTargetParagraphEndId, setQuoteTargetParagraphEndId] = useState<string | null>(null)
   const [restoreRequest, setRestoreRequest] = useState<RestoreRequest | null>(null)
   const [scrollToChapterId, setScrollToChapterId] = useState<string | null>(null)
+  const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
@@ -188,7 +188,8 @@ export default function ReaderPage() {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
         event.preventDefault()
-        setShowSearch(true)
+        setChromeVisible(true)
+        setActiveOverlay('search')
       }
     }
 
@@ -607,9 +608,7 @@ export default function ReaderPage() {
     setFontSize,
     setLineHeight,
     setReadingMode,
-    setTheme,
     setVariantType,
-    theme,
   ])
 
   useEffect(() => {
@@ -923,7 +922,7 @@ export default function ReaderPage() {
               ...section,
               preview: {
                 ...section.preview,
-                comments: prependUniqueComment(
+                comments: prependUniquePreviewComment(
                   section.preview.comments,
                   {
                     id: data.comment!.id,
@@ -975,6 +974,35 @@ export default function ReaderPage() {
     }
   }, [activeChapterId, bookmarksByChapter])
 
+  const closeChrome = useCallback(() => {
+    setChromeVisible(false)
+    setActiveOverlay('none')
+  }, [])
+
+  const openChrome = useCallback(() => {
+    setChromeVisible(true)
+    setActiveOverlay('none')
+  }, [])
+
+  const openOverlay = useCallback((overlay: Exclude<ReaderChromeOverlay, 'none'>) => {
+    setChromeVisible(true)
+    setActiveOverlay(overlay)
+  }, [])
+
+  const closeOverlay = useCallback(() => {
+    setActiveOverlay('none')
+  }, [])
+
+  const toggleChrome = useCallback(() => {
+    setChromeVisible((current) => {
+      const nextVisible = !current
+      if (!nextVisible) {
+        setActiveOverlay('none')
+      }
+      return nextVisible
+    })
+  }, [])
+
   const toggleReadingMode = useCallback(async () => {
     if (!activeChapterId) return
 
@@ -1007,6 +1035,59 @@ export default function ReaderPage() {
   const hasPrevChapter = currentChapterIndex > 0
   const progressPercent = Math.round(scrollProgress * 100)
   const themeVars = applyTheme(theme, accentTheme)
+  const commentsChapter = commentsChapterId
+    ? chapters.find((chapter) => chapter.id === commentsChapterId) || null
+    : null
+
+  const handleBackToBook = useCallback(() => {
+    router.push(`/${authorSlug}/${bookSlug}`)
+  }, [authorSlug, bookSlug, router])
+
+  const handleOpenComments = useCallback((targetChapterId?: string | null) => {
+    const nextChapterId = targetChapterId || activeChapterId
+    if (!nextChapterId) {
+      return
+    }
+
+    setCommentsChapterId(nextChapterId)
+    openOverlay('comments')
+  }, [activeChapterId, openOverlay])
+
+  const handleQuickActionVariants = useCallback(() => {
+    openOverlay('variants')
+  }, [openOverlay])
+
+  const handleQuickActionSearch = useCallback(() => {
+    openOverlay('search')
+  }, [openOverlay])
+
+  const handleQuickActionSettings = useCallback(() => {
+    openOverlay('settings')
+  }, [openOverlay])
+
+  const handleQuickActionReadingMode = useCallback(async () => {
+    await toggleReadingMode()
+    closeChrome()
+  }, [closeChrome, toggleReadingMode])
+
+  const handleVariantSelection = useCallback(async (newType: VariantType) => {
+    await handleVariantChange(newType)
+    closeChrome()
+  }, [closeChrome, handleVariantChange])
+
+  const handleChromeChapterChange = useCallback(async (newChapterId: string) => {
+    await handleChapterChange(newChapterId)
+    closeChrome()
+  }, [closeChrome, handleChapterChange])
+
+  const handleCommentsOpenChange = useCallback((open: boolean) => {
+    if (open) {
+      openOverlay('comments')
+      return
+    }
+
+    closeOverlay()
+  }, [closeOverlay, openOverlay])
 
   if (loading) {
     return (
@@ -1046,107 +1127,52 @@ export default function ReaderPage() {
       style={themeVars as React.CSSProperties}
     >
       <SearchPanel
-        open={showSearch}
-        onClose={() => setShowSearch(false)}
+        open={activeOverlay === 'search'}
+        onClose={closeOverlay}
         contentRef={searchContentRef}
       />
 
-      <header className="reader-header">
-        <Link
-          href={`/${authorSlug}/${bookSlug}`}
-          className="reader-header__icon-button"
-        >
-          <ArrowLeft size={20} />
-        </Link>
+      <ReaderChrome
+        visible={chromeVisible}
+        activeOverlay={activeOverlay}
+        bookTitle={bookData.title}
+        chapterTitle={currentTitle}
+        progressPercent={progressPercent}
+        readingMode={readingMode}
+        hasBookmark={Boolean(currentBookmark)}
+        onBack={handleBackToBook}
+        onClose={closeChrome}
+        onOpenTOC={() => openOverlay('toc')}
+        onOpenActivity={() => openOverlay('activity')}
+        onOpenComments={() => handleOpenComments(activeChapterId)}
+        onToggleQuickActions={() => {
+          setChromeVisible(true)
+          setActiveOverlay((current) => current === 'quick-actions' ? 'none' : 'quick-actions')
+        }}
+        onOpenSearch={handleQuickActionSearch}
+        onOpenSettings={handleQuickActionSettings}
+        onOpenVariants={handleQuickActionVariants}
+        onToggleReadingMode={() => { void handleQuickActionReadingMode() }}
+        onGoToBookmark={() => {
+          scrollToBookmark()
+          closeChrome()
+        }}
+      />
 
-        <div className="reader-header__meta">
-          <div className="reader-header__title" title={bookData.title}>
-            {bookData.title}
-          </div>
-          <div className="reader-header__subline">
-            <div className="reader-header__chapter">
-              {currentTitle}
-            </div>
-            <div className="reader-header__progress">
-              <div className="reader-header__progress-track">
-                <div
-                  className="reader-header__progress-bar"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-              <span className="reader-header__progress-label">
-                {progressPercent}%
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setShowSearch(true)}
-          className="reader-header__icon-button"
-          title="Поиск (Ctrl+F)"
-        >
-          <Search size={20} />
-        </button>
-
-        <button
-          onClick={currentBookmark ? scrollToBookmark : undefined}
-          className={`reader-header__icon-button${currentBookmark ? ' is-accented' : ''}`}
-          style={{ cursor: currentBookmark ? 'pointer' : 'default' }}
-          title={currentBookmark ? 'Перейти к закладке' : 'Нет закладки'}
-        >
-          {currentBookmark ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
-        </button>
-
-        <button
-          onClick={() => void toggleReadingMode()}
-          className="reader-header__icon-button"
-          title={readingMode === 'feed' ? 'Режим книги' : 'Режим ленты'}
-        >
-          {readingMode === 'feed' ? <BookOpen size={20} /> : <AlignJustify size={20} />}
-        </button>
-
-        <TableOfContents
-          chapters={chapters}
-          currentChapterId={activeChapterId || ''}
-          onChapterChange={(nextChapterId) => { void handleChapterChange(nextChapterId) }}
-        />
-
-        <button
-          onClick={() => setShowDesktopComments(!showDesktopComments)}
-          className={`desktop-comments-toggle reader-header__icon-button${showDesktopComments ? ' is-accented' : ''}`}
-          title="Панель комментариев"
-        >
-          <MessageSquare size={20} />
-        </button>
-
-        <Link
-          href="/me/annotations"
-          className="reader-header__icon-button"
-          title="Мои аннотации"
-        >
-          <UserRound size={20} />
-        </Link>
-
-        <button
-          onClick={() => setShowSettings(true)}
-          className="reader-header__icon-button"
-          title="Настройки"
-        >
-          <Settings size={20} />
-        </button>
-      </header>
-
-      {(Object.keys(variantPresets).length > 0 || availableVariants.length > 1) && (
-        <div className="reader-variant-bar">
-          <VariantSlider
-            onVariantChange={handleVariantChange}
-            generatedVariants={availableVariants}
-            variantPresets={variantPresets}
-            generatingVariant={generatingVariant}
-          />
-        </div>
-      )}
+      <TableOfContents
+        chapters={chapters}
+        currentChapterId={activeChapterId || ''}
+        open={activeOverlay === 'toc'}
+        onOpenChange={(open) => {
+          if (open) {
+            openOverlay('toc')
+          } else {
+            closeOverlay()
+          }
+        }}
+        onChapterChange={(nextChapterId) => { void handleChromeChapterChange(nextChapterId) }}
+        showTrigger={false}
+      />
 
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex' }}>
         <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -1161,8 +1187,6 @@ export default function ReaderPage() {
               onLoadPrev={() => { void loadMorePrev() }}
               onLoadNext={() => { void loadMoreNext() }}
               onActiveChapterChange={handleActiveChapterChange}
-              commentsSectionRef={commentsSectionRef}
-              onSendComment={handleSendComment}
               setContentNode={setSearchContentNode}
               bookmarkedKeys={bookmarksByChapter}
               onToggleBookmark={handleToggleBookmark}
@@ -1173,6 +1197,8 @@ export default function ReaderPage() {
               restoreRequest={restoreRequest}
               scrollToChapterId={scrollToChapterId}
               onScrollToChapterHandled={() => setScrollToChapterId(null)}
+              onOpenChapterComments={handleOpenComments}
+              onSurfaceTap={openChrome}
             />
           ) : bookModeSection ? (
             <BookReader
@@ -1186,64 +1212,72 @@ export default function ReaderPage() {
               prefetchNextChapter={prefetchNextChapter}
               prefetchPrevChapter={prefetchPrevChapter}
               chapterTitle={bookModeSection.chapter.title}
-              onSendComment={handleSendComment}
               onProgress={(progress) => {
                 setScrollProgress(progress)
                 if (activeChapterId) {
                   saveReadingProgress(activeChapterId, progress)
                 }
               }}
-              bookmarkedKey={currentBookmark}
-              onToggleBookmark={(stableKey) => activeChapterId && handleToggleBookmark(activeChapterId, stableKey)}
-              searchOpen={showSearch}
               setContentNode={setSearchContentNode}
-              authorSlug={authorSlug}
-              bookSlug={bookSlug}
               highlightParagraphId={quoteTargetParagraphId}
               highlightParagraphEndId={quoteTargetParagraphEndId}
+              onCenterTap={toggleChrome}
             />
           ) : null}
         </main>
-
-        {showDesktopComments && activeChapterId && (
-          <aside
-            className="slide-up-enter desktop-sidebar-comments"
-            style={{
-              width: '320px',
-              flexShrink: 0,
-              borderLeft: '1px solid var(--r-border)',
-              backgroundColor: 'var(--r-bg)',
-              overflowY: 'auto',
-              padding: '1rem',
-              display: 'none',
-            }}
-          >
-            <CommentsSection
-              chapterId={activeChapterId}
-              onSendComment={handleSendComment}
-              authorSlug={authorSlug}
-              bookSlug={bookSlug}
-            />
-          </aside>
-        )}
       </div>
 
-      <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
+      <ReaderCommentsOverlay
+        open={activeOverlay === 'comments'}
+        chapterId={commentsChapterId}
+        chapterTitle={commentsChapter?.title || currentTitle}
+        onOpenChange={handleCommentsOpenChange}
+        onSendComment={handleSendComment}
+        commentsSectionRef={commentsSectionRef}
+        authorSlug={authorSlug}
+        bookSlug={bookSlug}
+      />
 
-      <style>{`
-        .desktop-comments-toggle {
-          display: none !important;
-        }
-        @media (min-width: 1024px) {
-          .desktop-comments-toggle {
-            display: flex !important;
-            position: relative;
+      <UserActivityPanel
+        open={activeOverlay === 'activity' && Boolean(bookData.id)}
+        onOpenChange={(open) => {
+          if (open) {
+            openOverlay('activity')
+          } else {
+            closeOverlay()
           }
-          .desktop-sidebar-comments {
-            display: block !important;
+        }}
+        bookId={bookData.id}
+        bookTitle={bookData.title}
+        authorSlug={authorSlug}
+        bookSlug={bookSlug}
+      />
+
+      <SettingsPanel
+        open={activeOverlay === 'settings'}
+        onOpenChange={(open) => {
+          if (open) {
+            openOverlay('settings')
+          } else {
+            closeOverlay()
           }
-        }
-      `}</style>
+        }}
+      />
+
+      <ReaderVariantsPanel
+        open={activeOverlay === 'variants'}
+        onOpenChange={(open) => {
+          if (open) {
+            openOverlay('variants')
+          } else {
+            closeOverlay()
+          }
+        }}
+        onVariantChange={(nextType) => { void handleVariantSelection(nextType) }}
+        generatedVariants={availableVariants}
+        variantPresets={variantPresets}
+        generatingVariant={generatingVariant}
+      />
     </div>
   )
 }

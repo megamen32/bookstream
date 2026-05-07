@@ -258,7 +258,7 @@ export default function UserActivityPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="rounded-t-2xl"
+        className="reader-sheet reader-sheet--bottom rounded-t-2xl"
         style={{
           maxHeight: '85vh',
           backgroundColor: 'var(--r-bg)',

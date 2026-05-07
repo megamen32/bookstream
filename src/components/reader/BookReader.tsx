@@ -4,11 +4,8 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
-import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
-import type { CommentSubmitHandler } from './comment-types'
 import './BookReader.css'
-import { MessageSquare, X } from 'lucide-react'
 import {
   buildAnnotationParagraphRanges,
   splitTextByAnnotationRanges,
@@ -39,18 +36,13 @@ interface BookReaderProps {
   onNextChapter: () => void
   onPrevChapter: () => void
   chapterTitle: string
-  onSendComment: CommentSubmitHandler
   onProgress?: (percent: number) => void
-  bookmarkedKey?: string | null
-  onToggleBookmark?: (stableKey: string) => void
-  searchOpen: boolean
   setContentNode?: (node: HTMLDivElement | null) => void
-  authorSlug: string
-  bookSlug: string
   highlightParagraphId?: string | null
   highlightParagraphEndId?: string | null
   prefetchNextChapter?: () => Promise<void> | void
   prefetchPrevChapter?: () => Promise<void> | void
+  onCenterTap?: () => void
 }
 
 export default function BookReader({
@@ -61,15 +53,13 @@ export default function BookReader({
   onNextChapter,
   onPrevChapter,
   chapterTitle,
-  onSendComment,
   onProgress,
   setContentNode,
-  authorSlug,
-  bookSlug,
   highlightParagraphId,
   highlightParagraphEndId,
   prefetchNextChapter,
   prefetchPrevChapter,
+  onCenterTap,
 }: BookReaderProps) {
   const {
     fontSize,
@@ -92,8 +82,6 @@ export default function BookReader({
   const [pages, setPages] = useState<Paragraph[][]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [showHud, setShowHud] = useState(false)
-  const [showComments, setShowComments] = useState(false)
-  const [commentsHeight, setCommentsHeight] = useState(360)
   const [selectionHighlights, setSelectionHighlights] = useState<SelectionAnnotationRange[]>([])
   const [chapterTransition, setChapterTransition] = useState<'idle' | 'next' | 'prev'>('idle')
 
@@ -107,8 +95,6 @@ export default function BookReader({
   const prefetchPrevStartedRef = useRef(false)
 
   const totalPages = Math.max(1, pages.length)
-  const showCommentButton = readingMode !== 'book'
-
   const paragraphIndexMap = useMemo(
     () => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])),
     [paragraphs],
@@ -354,6 +340,11 @@ export default function BookReader({
 
     setPages(result.length > 0 ? result : [[]])
 
+    if (!chapterId) {
+      setCurrentPage(1)
+      return
+    }
+
     const savedPage = localStorage.getItem(getBookReaderPageStorageKey(chapterId))
 
     setCurrentPage(() => resolveBookReaderPage(savedPage, result.length))
@@ -458,8 +449,6 @@ export default function BookReader({
   }, [hasPrevChapter, onPrevChapter, startPrefetchPrev])
 
   const goNext = useCallback(() => {
-    if (showComments) return
-
     setCurrentPage((prev) => {
       if (prev >= totalPages) {
         switchToNextChapter()
@@ -472,11 +461,9 @@ export default function BookReader({
 
       return next
     })
-  }, [showComments, totalPages, saveProgress, showTemporaryHud, switchToNextChapter])
+  }, [totalPages, saveProgress, showTemporaryHud, switchToNextChapter])
 
   const goPrev = useCallback(() => {
-    if (showComments) return
-
     setCurrentPage((prev) => {
       if (prev <= 1) {
         switchToPrevChapter()
@@ -489,12 +476,10 @@ export default function BookReader({
 
       return next
     })
-  }, [showComments, saveProgress, showTemporaryHud, switchToPrevChapter])
+  }, [saveProgress, showTemporaryHud, switchToPrevChapter])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (showComments) return
-
       if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === ' ') {
         event.preventDefault()
         goNext()
@@ -506,18 +491,12 @@ export default function BookReader({
       }
     }
 
-    const handleShowComments = () => {
-      setShowComments(true)
-    }
-
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('bookstream:show-comments', handleShowComments)
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('bookstream:show-comments', handleShowComments)
     }
-  }, [goNext, goPrev, showComments])
+  }, [goNext, goPrev])
 
   const handleTouchStart = (event: React.TouchEvent) => {
     touchStartX.current = event.touches[0].clientX
@@ -525,8 +504,6 @@ export default function BookReader({
   }
 
   const handleTouchEnd = (event: React.TouchEvent) => {
-    if (showComments) return
-
     const dx = event.changedTouches[0].clientX - touchStartX.current
     const dy = event.changedTouches[0].clientY - touchStartY.current
 
@@ -654,7 +631,7 @@ export default function BookReader({
           <div
             ref={(node) => {
               activePageRef.current = node
-              setContentNode?.(showComments ? null : node)
+              setContentNode?.(node)
             }}
             className="book-reader-pages-track"
             style={{
@@ -704,8 +681,8 @@ export default function BookReader({
 
       <button
         className="book-reader-tap-zone book-reader-tap-zone-center"
-        aria-label="Показать прогресс"
-        onClick={showTemporaryHud}
+        aria-label="Показать элементы управления"
+        onClick={onCenterTap}
       />
 
       <button
@@ -719,66 +696,6 @@ export default function BookReader({
         <i />
         <span>{totalPages}</span>
       </div>
-
-      {showCommentButton && (
-        <button
-          className="book-reader-comment-button"
-          onClick={() => setShowComments(true)}
-          title="Комментарии"
-        >
-          <MessageSquare size={20} strokeWidth={2.2} />
-        </button>
-      )}
-
-      {showComments && (
-        <div
-          className="book-reader-comments-sheet"
-          style={{ height: commentsHeight }}
-        >
-          <div
-            className="book-reader-comments-drag"
-            onMouseDown={(event) => {
-              const startY = event.clientY
-              const startH = commentsHeight
-
-              const onMove = (moveEvent: MouseEvent) => {
-                const delta = startY - moveEvent.clientY
-                setCommentsHeight(
-                  Math.max(240, Math.min(window.innerHeight * 0.78, startH + delta)),
-                )
-              }
-
-              const onUp = () => {
-                document.removeEventListener('mousemove', onMove)
-                document.removeEventListener('mouseup', onUp)
-              }
-
-              document.addEventListener('mousemove', onMove)
-              document.addEventListener('mouseup', onUp)
-            }}
-          >
-            <div className="book-reader-comments-handle" />
-
-            <button
-              className="book-reader-comments-close"
-              onClick={() => setShowComments(false)}
-              aria-label="Закрыть комментарии"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="book-reader-comments-content">
-            <CommentsSection
-              chapterId={chapterId || ''}
-              onSendComment={onSendComment}
-              authorSlug={authorSlug}
-              bookSlug={bookSlug}
-            />
-          </div>
-        </div>
-      )}
-
     </div>
   )
 }

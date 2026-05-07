@@ -2,15 +2,13 @@
 
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type React from 'react'
-import { Bookmark, BookmarkCheck, X } from 'lucide-react'
+import { Bookmark, BookmarkCheck } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
 import './FeedReader.css'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
-import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import ChapterAfterword from './ChapterAfterword'
-import type { CommentSubmitHandler } from './comment-types'
 import type { FeedSectionData } from './feed-types'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
@@ -31,8 +29,6 @@ interface FeedReaderProps {
   onLoadPrev: () => void
   onLoadNext: () => void
   onActiveChapterChange: (chapterId: string, scrollPercent: number, fromScroll: boolean) => void
-  commentsSectionRef?: React.RefObject<HTMLDivElement | null>
-  onSendComment: CommentSubmitHandler
   setContentNode?: (node: HTMLDivElement | null) => void
   bookmarkedKeys: Record<string, string | undefined>
   onToggleBookmark?: (chapterId: string, stableKey: string) => void
@@ -44,6 +40,8 @@ interface FeedReaderProps {
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
   onScrollToChapterHandled?: () => void
+  onOpenChapterComments?: (chapterId: string) => void
+  onSurfaceTap?: () => void
 }
 
 interface StoredSelectionAnnotationRange extends SelectionAnnotationRange {
@@ -70,8 +68,6 @@ export default function FeedReader({
   onLoadPrev,
   onLoadNext,
   onActiveChapterChange,
-  commentsSectionRef,
-  onSendComment,
   setContentNode,
   bookmarkedKeys,
   onToggleBookmark,
@@ -83,6 +79,8 @@ export default function FeedReader({
   restoreRequest,
   scrollToChapterId,
   onScrollToChapterHandled,
+  onOpenChapterComments,
+  onSurfaceTap,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, bookId, readerId, showMobileReactionBar } = useReaderStore()
 
@@ -97,13 +95,6 @@ export default function FeedReader({
   const tickingRef = useRef(false)
 
   const [selectionHighlights, setSelectionHighlights] = useState<StoredSelectionAnnotationRange[]>([])
-  const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
-
-  const commentsChapter = useMemo(() => {
-    if (!commentsChapterId) return null
-    return sections.find((section) => section.chapter.id === commentsChapterId) || null
-  }, [commentsChapterId, sections])
-
   const paragraphIndexMaps = useMemo(() => (
     Object.fromEntries(
       sections.map((section) => [
@@ -454,13 +445,29 @@ export default function FeedReader({
     onToggleBookmark?.(chapterId, stableKey)
   }, [onToggleBookmark])
 
-  const openCommentsForChapter = useCallback((chapterId: string) => {
-    setCommentsChapterId(chapterId)
-  }, [])
+  const handleSurfaceClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onSurfaceTap) {
+      return
+    }
 
-  const closeComments = useCallback(() => {
-    setCommentsChapterId(null)
-  }, [])
+    const target = event.target
+    if (!(target instanceof HTMLElement)) {
+      return
+    }
+
+    if (target.closest(
+      'button, a, input, textarea, select, label, [role="dialog"], [data-reader-ignore-chrome], .selection-toolbar',
+    )) {
+      return
+    }
+
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed) {
+      return
+    }
+
+    onSurfaceTap()
+  }, [onSurfaceTap])
 
   const contentMaxWidth = lineWidth === 'narrow'
     ? '36rem'
@@ -469,7 +476,7 @@ export default function FeedReader({
       : '64rem'
 
   return (
-    <div className="feed-reader-shell">
+    <div className="feed-reader-shell" onClick={handleSurfaceClick}>
       <div
         ref={(node) => {
           scrollRef.current = node
@@ -649,7 +656,7 @@ export default function FeedReader({
                   bookSlug={bookSlug}
                   preview={section.preview}
                   showCommentsAfterChapter={showCommentsAfterChapter}
-                  onOpenComments={() => openCommentsForChapter(section.chapter.id)}
+                  onOpenComments={() => onOpenChapterComments?.(section.chapter.id)}
                 />
 
                 <div className="feed-chapter-footer">
@@ -671,51 +678,6 @@ export default function FeedReader({
         <div ref={bottomSentinelRef} style={{ height: '1px' }} />
         <div style={{ height: '2rem' }} />
       </div>
-
-      {commentsChapter ? (
-        <div className="feed-comments-layer" role="dialog" aria-modal="true">
-          <button
-            type="button"
-            className="feed-comments-layer__backdrop"
-            onClick={closeComments}
-            aria-label="Закрыть комментарии"
-          />
-
-          <div className="feed-comments-sheet">
-            <div className="feed-comments-sheet__handle" />
-
-            <div className="feed-comments-sheet__header">
-              <div>
-                <div className="feed-comments-sheet__eyebrow">
-                  Обсуждение главы
-                </div>
-                <div className="feed-comments-sheet__title">
-                  {commentsChapter.chapter.title}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="feed-comments-sheet__close"
-                onClick={closeComments}
-                aria-label="Закрыть"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="feed-comments-sheet__body">
-              <CommentsSection
-                chapterId={commentsChapter.chapter.id}
-                onSendComment={onSendComment}
-                sectionRef={commentsSectionRef}
-                authorSlug={authorSlug}
-                bookSlug={bookSlug}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
