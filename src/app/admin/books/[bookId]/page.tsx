@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,20 +12,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import {
   ArrowLeft,
-  Save,
-  Sparkles,
-  Loader2,
-  MessageSquare,
   BookOpen,
   Check,
   Eye,
   EyeOff,
+  Loader2,
+  MessageSquare,
   Pencil,
+  Save,
+  Sparkles,
 } from 'lucide-react'
+import { BookTextEditor } from '@/components/editor/BookTextEditor'
+import type { EditorSaveStatus } from '@/components/editor/editor-types'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -56,21 +57,26 @@ interface BookData {
   _count: { comments: number }
 }
 
-const variantLabels: Record<string, string> = {
-  original: 'Оригинал',
-  clean: 'Без воды',
-  essence: 'Суть',
-}
-
-const variantTabs: Array<{ value: string; label: string }> = [
-  { value: 'original', label: 'Оригинал' },
-  { value: 'clean', label: 'Без воды' },
-  { value: 'essence', label: 'Суть' },
+const variantTabs: Array<{ value: string; label: string; placeholder: string }> = [
+  {
+    value: 'original',
+    label: 'Оригинал',
+    placeholder: 'Начните писать оригинальный текст главы…',
+  },
+  {
+    value: 'clean',
+    label: 'Без воды',
+    placeholder: 'Здесь будет облегчённая версия главы без лишнего текста…',
+  },
+  {
+    value: 'essence',
+    label: 'Суть',
+    placeholder: 'Здесь будет краткая смысловая выжимка главы…',
+  },
 ]
 
 export default function BookEditorPage() {
   const params = useParams()
-  const router = useRouter()
   const bookId = params.bookId as string
   const { toast } = useToast()
 
@@ -81,59 +87,80 @@ export default function BookEditorPage() {
   const [editContent, setEditContent] = useState('')
   const [editChapterTitle, setEditChapterTitle] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<EditorSaveStatus>('idle')
   const [generating, setGenerating] = useState(false)
   const [editMode, setEditMode] = useState<'info' | 'content'>('content')
 
-  // Book edit fields
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editIsPublic, setEditIsPublic] = useState(false)
   const [savingBook, setSavingBook] = useState(false)
 
-  const fetchBook = useCallback(async () => {
+  const fetchBook = useCallback(async (): Promise<void> => {
     try {
       const res = await fetch(`/api/books/${bookId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setBook(data)
-        setEditTitle(data.title)
-        setEditDescription(data.description || '')
-        setEditIsPublic(data.isPublic)
-        if (data.chapters.length > 0 && !selectedChapterId) {
-          setSelectedChapterId(data.chapters[0].id)
-        }
+
+      if (!res.ok) {
+        toast({ title: 'Не удалось загрузить книгу', variant: 'destructive' })
+        return
+      }
+
+      const data = await res.json()
+
+      setBook(data)
+      setEditTitle(data.title)
+      setEditDescription(data.description || '')
+      setEditIsPublic(data.isPublic)
+
+      if (data.chapters.length > 0 && !selectedChapterId) {
+        setSelectedChapterId(data.chapters[0].id)
       }
     } catch (error) {
       console.error('Error fetching book:', error)
+      toast({ title: 'Ошибка загрузки', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }, [bookId, selectedChapterId])
+  }, [bookId, selectedChapterId, toast])
 
   useEffect(() => {
-    const run = async () => {
-      await fetchBook()
-    }
-    void run()
+    const frameId = window.requestAnimationFrame(() => {
+      void fetchBook()
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
   }, [fetchBook])
 
-  const selectedChapter = book?.chapters.find((c) => c.id === selectedChapterId)
-
+  const selectedChapter = book?.chapters.find((chapter) => chapter.id === selectedChapterId)
   const currentVariant = selectedChapter?.variants.find(
-    (v) => v.variantType === activeVariant
+    (variant) => variant.variantType === activeVariant
   )
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       setEditContent(currentVariant?.contentHtml ?? '')
       setEditChapterTitle(selectedChapter?.title ?? '')
+      setSaveStatus('idle')
     })
-    return () => window.cancelAnimationFrame(frameId)
-  }, [currentVariant, selectedChapter])
 
-  const handleSaveChapter = async () => {
-    if (!selectedChapterId) return
+    return () => window.cancelAnimationFrame(frameId)
+  }, [currentVariant?.id, currentVariant?.contentHtml, selectedChapter?.title])
+
+  const activeTab = variantTabs.find((tab) => tab.value === activeVariant)
+
+  const handleEditorChange = (html: string): void => {
+    setEditContent(html)
+    setSaveStatus('dirty')
+  }
+
+  const handleSaveChapter = async (): Promise<void> => {
+    if (!selectedChapterId) {
+      return
+    }
+
     setSaving(true)
+    setSaveStatus('saving')
+
     try {
       if (!editChapterTitle.trim()) {
         throw new Error('Название главы не может быть пустым')
@@ -164,9 +191,11 @@ export default function BookEditorPage() {
         throw new Error(payload.error || 'Не удалось сохранить вариант главы')
       }
 
+      setSaveStatus('saved')
       toast({ title: 'Сохранено', description: 'Название и текст главы обновлены' })
-      fetchBook()
+      void fetchBook()
     } catch (error) {
+      setSaveStatus('error')
       toast({
         title: 'Ошибка сохранения',
         description: error instanceof Error ? error.message : undefined,
@@ -177,19 +206,25 @@ export default function BookEditorPage() {
     }
   }
 
-  const handleGenerateAI = async () => {
-    if (!selectedChapterId) return
+  const handleGenerateAI = async (): Promise<void> => {
+    if (!selectedChapterId) {
+      return
+    }
+
     setGenerating(true)
+
     try {
       const res = await fetch(`/api/chapters/${selectedChapterId}/summarize`, {
         method: 'POST',
       })
-      if (res.ok) {
-        toast({ title: 'Готово!', description: 'Варианты сгенерированы' })
-        fetchBook()
-        // Switch to clean variant to show result
-        setActiveVariant('clean')
+
+      if (!res.ok) {
+        throw new Error('AI generation failed')
       }
+
+      toast({ title: 'Готово', description: 'Варианты сгенерированы' })
+      await fetchBook()
+      setActiveVariant('clean')
     } catch {
       toast({ title: 'Ошибка генерации', variant: 'destructive' })
     } finally {
@@ -197,8 +232,9 @@ export default function BookEditorPage() {
     }
   }
 
-  const handleSaveBook = async () => {
+  const handleSaveBook = async (): Promise<void> => {
     setSavingBook(true)
+
     try {
       const res = await fetch(`/api/books/${bookId}`, {
         method: 'PUT',
@@ -210,10 +246,13 @@ export default function BookEditorPage() {
           isPublic: editIsPublic,
         }),
       })
-      if (res.ok) {
-        toast({ title: 'Сохранено', description: 'Информация о книге обновлена' })
-        fetchBook()
+
+      if (!res.ok) {
+        throw new Error('Book save failed')
       }
+
+      toast({ title: 'Сохранено', description: 'Информация о книге обновлена' })
+      void fetchBook()
     } catch {
       toast({ title: 'Ошибка сохранения', variant: 'destructive' })
     } finally {
@@ -224,18 +263,18 @@ export default function BookEditorPage() {
   if (loading) {
     return (
       <div className="p-4 md:p-6 lg:p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Skeleton className="w-8 h-8" />
+        <div className="mb-6 flex items-center gap-3">
+          <Skeleton className="h-8 w-8" />
           <Skeleton className="h-8 w-48" />
         </div>
         <div className="flex gap-6">
-          <div className="w-64 hidden md:block space-y-3">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-10 w-full" />
+          <div className="hidden w-64 space-y-3 md:block">
+            {[1, 2, 3, 4].map((item) => (
+              <Skeleton key={item} className="h-10 w-full" />
             ))}
           </div>
           <div className="flex-1">
-            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-96 w-full rounded-3xl" />
           </div>
         </div>
       </div>
@@ -247,49 +286,49 @@ export default function BookEditorPage() {
       <div className="p-8 text-center">
         <p className="text-muted-foreground">Книга не найдена</p>
         <Link href="/admin">
-          <Button variant="link" className="mt-2">Вернуться в библиотеку</Button>
+          <Button variant="link" className="mt-2">
+            Вернуться в библиотеку
+          </Button>
         </Link>
       </div>
     )
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20 p-4 md:p-6 lg:p-8">
+      <div className="mb-6 flex items-center gap-3">
         <Link href="/admin">
-          <Button variant="ghost" size="icon" className="-ml-2">
-            <ArrowLeft className="w-4 h-4" />
+          <Button variant="ghost" size="icon" className="-ml-2 rounded-full">
+            <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl md:text-2xl font-bold text-foreground truncate">
+
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-bold tracking-tight text-foreground md:text-2xl">
             {book.title}
           </h1>
           <p className="text-sm text-muted-foreground">
             {book.chapters.length} {book.chapters.length === 1 ? 'глава' : 'глав'}
           </p>
         </div>
+
         <Link href={`/admin/books/${bookId}/comments`}>
-          <Button variant="outline" size="sm" className="hidden sm:flex">
-            <MessageSquare className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" className="hidden rounded-full sm:flex">
+            <MessageSquare className="mr-2 h-4 w-4" />
             Комментарии ({book._count.comments})
           </Button>
         </Link>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Chapter sidebar */}
-        <div className="w-full md:w-64 shrink-0">
-          <Card>
+      <div className="grid gap-6 md:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="w-full">
+          <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Главы
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Главы</CardTitle>
             </CardHeader>
             <CardContent className="p-2">
               <ScrollArea className="max-h-[60vh]">
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   {book.chapters.map((chapter) => (
                     <button
                       key={chapter.id}
@@ -298,64 +337,68 @@ export default function BookEditorPage() {
                         setEditMode('content')
                       }}
                       className={cn(
-                        'w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2',
+                        'flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
                         selectedChapterId === chapter.id
-                          ? 'bg-amber-100 text-amber-900 font-medium'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                          ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                       )}
                     >
-                      <span className="w-5 text-xs text-muted-foreground font-mono shrink-0">
+                      <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
                         {chapter.position + 1}.
                       </span>
                       <span className="truncate">{chapter.title}</span>
                       {chapter.variants.length > 1 && (
-                        <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
+                        <Badge
+                          variant="secondary"
+                          className="ml-auto rounded-full px-1.5 py-0 text-[10px]"
+                        >
                           {chapter.variants.length}
                         </Badge>
                       )}
                     </button>
                   ))}
+
                   {book.chapters.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      Нет глав
-                    </p>
+                    <p className="py-4 text-center text-sm text-muted-foreground">Нет глав</p>
                   )}
                 </div>
               </ScrollArea>
             </CardContent>
           </Card>
-        </div>
+        </aside>
 
-        {/* Main content area */}
-        <div className="flex-1 min-w-0 space-y-4">
-          {/* Book info section */}
-          <Card>
+        <main className="min-w-0 space-y-4">
+          <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <BookOpen className="w-4 h-4" />
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BookOpen className="h-4 w-4" />
                   Информация о книге
                 </CardTitle>
                 <div className="flex gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="rounded-full"
                     onClick={() => setEditMode(editMode === 'info' ? 'content' : 'info')}
                   >
-                    <Pencil className="w-3 h-3 mr-1" />
+                    <Pencil className="mr-1 h-3 w-3" />
                     {editMode === 'info' ? 'К главам' : 'Редактировать'}
                   </Button>
+
                   {editMode === 'info' && (
                     <Button
                       size="sm"
-                      onClick={handleSaveBook}
+                      onClick={() => {
+                        void handleSaveBook()
+                      }}
                       disabled={savingBook}
-                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                      className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
                     >
                       {savingBook ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       ) : (
-                        <Save className="w-3 h-3 mr-1" />
+                        <Save className="mr-1 h-3 w-3" />
                       )}
                       Сохранить
                     </Button>
@@ -363,11 +406,12 @@ export default function BookEditorPage() {
                 </div>
               </div>
             </CardHeader>
+
             <CardContent>
               {editMode === 'info' ? (
                 <div className="space-y-4">
                   {book.coverUrl && (
-                    <div className="overflow-hidden rounded-xl border">
+                    <div className="overflow-hidden rounded-3xl border">
                       <img
                         src={book.coverUrl}
                         alt={`Обложка книги «${book.title}»`}
@@ -375,36 +419,38 @@ export default function BookEditorPage() {
                       />
                     </div>
                   )}
+
                   <div className="space-y-2">
                     <Label htmlFor="edit-title">Название</Label>
                     <Input
                       id="edit-title"
                       value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
+                      onChange={(event) => setEditTitle(event.target.value)}
+                      className="rounded-2xl"
                     />
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="edit-desc">Описание</Label>
                     <Textarea
                       id="edit-desc"
                       value={editDescription}
-                      onChange={(e) => setEditDescription(e.target.value)}
+                      onChange={(event) => setEditDescription(event.target.value)}
                       rows={3}
+                      className="rounded-2xl"
                     />
                   </div>
+
                   <div className="flex items-center gap-3">
-                    <Switch
-                      checked={editIsPublic}
-                      onCheckedChange={setEditIsPublic}
-                    />
+                    <Switch checked={editIsPublic} onCheckedChange={setEditIsPublic} />
                     <Label className="text-sm">
                       {editIsPublic ? (
                         <span className="flex items-center gap-1.5">
-                          <Eye className="w-3.5 h-3.5" /> Публичная
+                          <Eye className="h-3.5 w-3.5" /> Публичная
                         </span>
                       ) : (
                         <span className="flex items-center gap-1.5">
-                          <EyeOff className="w-3.5 h-3.5" /> Черновик
+                          <EyeOff className="h-3.5 w-3.5" /> Черновик
                         </span>
                       )}
                     </Label>
@@ -415,13 +461,18 @@ export default function BookEditorPage() {
                   <div className="min-w-0">
                     <h3 className="font-semibold">{book.title}</h3>
                     {book.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{book.description}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{book.description}</p>
                     )}
                     {book.coverUrl && (
-                      <p className="mt-2 text-xs text-emerald-700">Обложка прикреплена</p>
+                      <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        Обложка прикреплена
+                      </p>
                     )}
                   </div>
-                  <Badge variant={book.isPublic ? 'default' : 'secondary'} className="shrink-0">
+                  <Badge
+                    variant={book.isPublic ? 'default' : 'secondary'}
+                    className="shrink-0 rounded-full"
+                  >
                     {book.isPublic ? 'Публичная' : 'Черновик'}
                   </Badge>
                 </div>
@@ -429,85 +480,95 @@ export default function BookEditorPage() {
             </CardContent>
           </Card>
 
-          {/* Chapter editor */}
           {selectedChapter ? (
-            <Card>
+            <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">
-                    {selectedChapter.title}
-                  </CardTitle>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <CardTitle className="truncate text-base">{selectedChapter.title}</CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Telegraph-like редактор · сохраняется как HTML
+                    </p>
+                  </div>
+
                   <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void handleSaveChapter()
+                      }}
+                      disabled={saving || !editContent || !editChapterTitle.trim()}
+                      className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      {saving ? (
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Save className="mr-1 h-3 w-3" />
+                      )}
+                      Сохранить
+                    </Button>
+
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleGenerateAI}
+                      onClick={() => {
+                        void handleGenerateAI()
+                      }}
                       disabled={generating}
-                      className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                      className="w-fit rounded-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                     >
                       {generating ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       ) : (
-                        <Sparkles className="w-3 h-3 mr-1" />
+                        <Sparkles className="mr-1 h-3 w-3" />
                       )}
                       Сгенерировать AI
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveChapter}
-                      disabled={saving || !editContent || !editChapterTitle.trim()}
-                      className="bg-amber-600 hover:bg-amber-700 text-white"
-                    >
-                      {saving ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      ) : (
-                        <Save className="w-3 h-3 mr-1" />
-                      )}
-                      Сохранить
                     </Button>
                   </div>
                 </div>
               </CardHeader>
+
               <CardContent>
-                <div className="mb-4 space-y-2">
+                <div className="mb-5 space-y-2">
                   <Label htmlFor="chapter-title">Название главы</Label>
                   <Input
                     id="chapter-title"
                     value={editChapterTitle}
-                    onChange={(e) => setEditChapterTitle(e.target.value)}
+                    onChange={(event) => setEditChapterTitle(event.target.value)}
                     placeholder="Название главы..."
+                    className="rounded-2xl"
                   />
                 </div>
+
                 <Tabs value={activeVariant} onValueChange={setActiveVariant}>
-                  <TabsList className="mb-4">
+                  <TabsList className="mb-4 rounded-full">
                     {variantTabs.map((tab) => {
                       const hasVariant = selectedChapter.variants.some(
-                        (v) => v.variantType === tab.value
+                        (variant) => variant.variantType === tab.value
                       )
+
                       return (
-                        <TabsTrigger key={tab.value} value={tab.value} className="text-xs sm:text-sm">
+                        <TabsTrigger
+                          key={tab.value}
+                          value={tab.value}
+                          className="rounded-full text-xs sm:text-sm"
+                        >
                           {tab.label}
-                          {hasVariant && (
-                            <Check className="w-3 h-3 ml-1 text-green-600" />
-                          )}
+                          {hasVariant && <Check className="ml-1 h-3 w-3 text-emerald-600" />}
                         </TabsTrigger>
                       )
                     })}
                   </TabsList>
 
                   {variantTabs.map((tab) => (
-                    <TabsContent key={tab.value} value={tab.value}>
-                      <textarea
+                    <TabsContent key={tab.value} value={tab.value} className="mt-0">
+                      <BookTextEditor
                         value={activeVariant === tab.value ? editContent : ''}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full min-h-[400px] p-4 rounded-lg border border-input bg-background text-sm font-mono leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                        placeholder={
-                          tab.value === 'original'
-                            ? 'Оригинальный текст главы...'
-                            : tab.value === 'clean'
-                            ? 'Текст без воды (сгенерируйте AI)'
-                            : 'Суть главы (сгенерируйте AI)'
-                        }
+                        onChange={handleEditorChange}
+                        placeholder={activeTab?.placeholder || tab.placeholder}
+                        onSave={handleSaveChapter}
+                        saving={saving}
+                        saveStatus={saveStatus}
                       />
                     </TabsContent>
                   ))}
@@ -515,19 +576,18 @@ export default function BookEditorPage() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="p-8 text-center">
-              <BookOpen className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+            <Card className="rounded-3xl p-8 text-center">
+              <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
               <p className="text-muted-foreground">Выберите главу для редактирования</p>
             </Card>
           )}
-        </div>
+        </main>
       </div>
 
-      {/* Mobile comment link */}
-      <div className="sm:hidden mt-4">
+      <div className="mt-4 sm:hidden">
         <Link href={`/admin/books/${bookId}/comments`} className="block">
-          <Button variant="outline" className="w-full">
-            <MessageSquare className="w-4 h-4 mr-2" />
+          <Button variant="outline" className="w-full rounded-full">
+            <MessageSquare className="mr-2 h-4 w-4" />
             Комментарии ({book._count.comments})
           </Button>
         </Link>
