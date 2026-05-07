@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect } from 'react'
 import type React from 'react'
 import { Bookmark, BookmarkCheck } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
@@ -366,7 +366,7 @@ export default function FeedReader({
     }
   }, [hasMoreNext, hasMorePrev, loadingNext, loadingPrev, onLoadNext, onLoadPrev, sections])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const snapshot = prependSnapshotRef.current
     const container = scrollRef.current
 
@@ -428,41 +428,37 @@ export default function FeedReader({
     }
   }, [hasPreciseQuoteHighlight, highlightParagraphEndId, highlightParagraphId, sections, updateActiveChapter])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!restoreRequest || highlightParagraphId || !scrollRef.current) return
     if (restoreAppliedTokenRef.current === restoreRequest.token) return
 
     const targetNode = sectionRefs.current[restoreRequest.chapterId]
     if (!targetNode) return
 
-    const frameId = window.requestAnimationFrame(() => {
-      const container = scrollRef.current
-      const currentTarget = sectionRefs.current[restoreRequest.chapterId]
+    const container = scrollRef.current
+    const currentTarget = sectionRefs.current[restoreRequest.chapterId]
 
-      if (!container || !currentTarget) return
+    if (!container || !currentTarget) return
 
-      const sectionIndex = sections.findIndex((section) => section.chapter.id === restoreRequest.chapterId)
+    const sectionIndex = sections.findIndex((section) => section.chapter.id === restoreRequest.chapterId)
 
-      const nextNode = sectionIndex >= 0
-        ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
-        : null
+    const nextNode = sectionIndex >= 0
+      ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
+      : null
 
-      const sectionBottom = nextNode
-        ? nextNode.offsetTop
-        : Math.max(currentTarget.offsetTop + currentTarget.offsetHeight, container.scrollHeight)
+    const sectionBottom = nextNode
+      ? nextNode.offsetTop
+      : Math.max(currentTarget.offsetTop + currentTarget.offsetHeight, container.scrollHeight)
 
-      const travel = Math.max(
-        0,
-        sectionBottom - currentTarget.offsetTop - container.clientHeight * 0.2,
-      )
+    const travel = Math.max(
+      0,
+      sectionBottom - currentTarget.offsetTop - container.clientHeight * 0.2,
+    )
 
-      container.scrollTop = currentTarget.offsetTop + travel * restoreRequest.scrollPercent
-      restoreAppliedTokenRef.current = restoreRequest.token
+    container.scrollTop = currentTarget.offsetTop + travel * restoreRequest.scrollPercent
+    restoreAppliedTokenRef.current = restoreRequest.token
 
-      updateActiveChapter(false)
-    })
-
-    return () => window.cancelAnimationFrame(frameId)
+    updateActiveChapter(false)
   }, [highlightParagraphId, restoreRequest, sections, updateActiveChapter])
 
   useEffect(() => {

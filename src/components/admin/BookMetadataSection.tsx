@@ -17,6 +17,9 @@ export interface BookMetadataSectionProps {
   onTitleChange: (value: string) => void
   slugValue: string
   onSlugChange: (value: string) => void
+  slugLabel?: string
+  slugPreview?: string
+  slugHelperText?: string
   descriptionValue: string
   onDescriptionChange: (value: string) => void
   readingMode: string
@@ -42,6 +45,9 @@ export function BookMetadataSection({
   onTitleChange,
   slugValue,
   onSlugChange,
+  slugLabel = 'Slug *',
+  slugPreview,
+  slugHelperText,
   descriptionValue,
   onDescriptionChange,
   readingMode,
@@ -78,7 +84,15 @@ export function BookMetadataSection({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor={slugId}>Slug *</Label>
+          <Label htmlFor={slugId}>{slugLabel}</Label>
+          {slugPreview ? (
+            <div className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Предпросмотр ссылки
+              </div>
+              <div className="mt-1 break-all font-mono text-sm text-foreground">{slugPreview}</div>
+            </div>
+          ) : null}
           <Input
             id={slugId}
             value={slugValue}
@@ -87,6 +101,7 @@ export function BookMetadataSection({
             disabled={disabled}
             className="h-11 font-mono"
           />
+          {slugHelperText ? <p className="text-xs text-muted-foreground">{slugHelperText}</p> : null}
         </div>
 
         <div className="space-y-2">

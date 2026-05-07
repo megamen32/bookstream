@@ -52,6 +52,12 @@ function slugify(text: string): string {
     .trim()
 }
 
+function buildBookPreviewPath(authorSlug: string, bookSlug: string): string {
+  const safeAuthorSlug = authorSlug.trim() || 'author'
+  const safeBookSlug = bookSlug.trim() || 'book-slug'
+  return `/${safeAuthorSlug}/${safeBookSlug}`
+}
+
 function getFileIcon(name: string) {
   if (name.endsWith('.docx')) return <FileType2 className="h-8 w-8 text-blue-500" />
   if (name.endsWith('.md')) return <FileText className="h-8 w-8 text-purple-500" />
@@ -436,6 +442,10 @@ export default function AdminUploadPage() {
   const authorReady = authorMode === 'new'
     ? Boolean(newAuthorName.trim() && newAuthorSlug.trim())
     : Boolean(authorSlug)
+  const bookPreviewPath = buildBookPreviewPath(
+    authorMode === 'new' ? newAuthorSlug : authorSlug,
+    slug,
+  )
 
   if (step === 'done') {
     return (
@@ -594,6 +604,9 @@ export default function AdminUploadPage() {
           onTitleChange={handleTitleChange}
           slugValue={slug}
           onSlugChange={setSlug}
+          slugLabel="Предпросмотр ссылки *"
+          slugPreview={bookPreviewPath}
+          slugHelperText="Это публичный адрес книги. Он собирается из slug автора и slug книги."
           descriptionValue={description}
           onDescriptionChange={setDescription}
           readingMode={readingMode}

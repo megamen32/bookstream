@@ -20,7 +20,7 @@ import type {
   FeedSectionData,
   ReaderChapterListItem,
 } from '@/components/reader/feed-types'
-import { setBookReaderPage } from '@/lib/book-reader-progress'
+import { resolveBookProgressPercent, setBookReaderPage } from '@/lib/book-reader-progress'
 import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
@@ -264,6 +264,47 @@ export default function ReaderPage() {
     }
   }, [theme, accentTheme])
 
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const previousHtmlStyle = {
+      overflow: html.style.overflow,
+      overscrollBehavior: html.style.overscrollBehavior,
+      width: html.style.width,
+      height: html.style.height,
+    }
+    const previousBodyStyle = {
+      overflow: body.style.overflow,
+      overscrollBehavior: body.style.overscrollBehavior,
+      width: body.style.width,
+      height: body.style.height,
+    }
+
+    // Safari on iPhone can keep scrolling the root document when the browser chrome
+    // expands or collapses. Lock the page shell so the book stays pinned to the viewport.
+    html.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    html.style.width = '100%'
+    html.style.height = '100%'
+
+    body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
+    body.style.width = '100%'
+    body.style.height = '100%'
+
+    return () => {
+      html.style.overflow = previousHtmlStyle.overflow
+      html.style.overscrollBehavior = previousHtmlStyle.overscrollBehavior
+      html.style.width = previousHtmlStyle.width
+      html.style.height = previousHtmlStyle.height
+
+      body.style.overflow = previousBodyStyle.overflow
+      body.style.overscrollBehavior = previousBodyStyle.overscrollBehavior
+      body.style.width = previousBodyStyle.width
+      body.style.height = previousBodyStyle.height
+    }
+  }, [])
+
   const fetchFeedWindow = useCallback(async (
     targetBookId: string,
     anchorId: string,
@@ -439,7 +480,10 @@ export default function ReaderPage() {
       if (!data) return
 
       cacheBookSections(data.sections)
-      setFeedSections((current) => mergeSections(current, data.sections))
+
+      if (!(before > 0 && after === 0)) {
+        setFeedSections((current) => mergeSections(current, data.sections))
+      }
 
       if (before > 0) {
         setFeedHasMorePrev((current) => current || data.hasPrev)
@@ -1158,7 +1202,7 @@ export default function ReaderPage() {
   const currentChapterIndex = chapters.findIndex((entry) => entry.id === activeChapterId)
   const hasNextChapter = currentChapterIndex >= 0 && currentChapterIndex < chapters.length - 1
   const hasPrevChapter = currentChapterIndex > 0
-  const progressPercent = Math.round(scrollProgress * 100)
+  const bookProgressPercent = resolveBookProgressPercent(currentChapterIndex, scrollProgress, chapters.length)
   const themeVars = applyTheme(theme, accentTheme)
   const commentsChapter = commentsChapterId
     ? chapters.find((chapter) => chapter.id === commentsChapterId) || null
@@ -1224,7 +1268,7 @@ export default function ReaderPage() {
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col bg-background">
+      <div className="flex min-h-[100svh] flex-col overflow-hidden bg-background">
         <div className="p-4 border-b">
           <Skeleton className="h-8 w-48 mb-2" />
           <Skeleton className="h-4 w-32" />
@@ -1242,7 +1286,7 @@ export default function ReaderPage() {
 
   if (!bookData) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="flex min-h-[100svh] items-center justify-center overflow-hidden bg-background">
         <div className="text-center">
           <p className="text-lg font-medium mb-2">Не удалось загрузить главу</p>
           <Link href={`/${authorSlug}/${bookSlug}`} className="text-sm text-muted-foreground hover:underline">
@@ -1255,7 +1299,7 @@ export default function ReaderPage() {
 
   return (
     <div
-      className="reader-wrapper reader-shell h-screen flex flex-col"
+      className="reader-wrapper reader-shell flex min-h-[100svh] flex-col overflow-hidden"
       data-reader-theme={theme}
       style={themeVars as React.CSSProperties}
     >
@@ -1270,7 +1314,7 @@ export default function ReaderPage() {
         activeOverlay={activeOverlay}
         bookTitle={bookData.title}
         chapterTitle={currentTitle}
-        progressPercent={progressPercent}
+        bookProgressPercent={bookProgressPercent}
         readingMode={readingMode}
         hasBookmark={Boolean(currentBookmark)}
         variantsExpanded={variantsExpanded}
@@ -1354,6 +1398,7 @@ export default function ReaderPage() {
               variantId={bookModeSection.variant.id}
               hasNextChapter={hasNextChapter}
               hasPrevChapter={hasPrevChapter}
+              bookProgressPercent={bookProgressPercent}
               onNextChapter={goToNextChapter}
               onPrevChapter={goToPrevChapter}
               prefetchNextChapter={prefetchNextChapter}

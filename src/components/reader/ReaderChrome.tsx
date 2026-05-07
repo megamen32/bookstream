@@ -42,7 +42,7 @@ interface ReaderChromeProps {
   activeOverlay: ReaderChromeOverlay
   bookTitle: string
   chapterTitle: string
-  progressPercent: number
+  bookProgressPercent: number
   readingMode: ReadingMode
   hasBookmark: boolean
   variantsExpanded: boolean
@@ -136,7 +136,7 @@ export default function ReaderChrome({
   activeOverlay,
   bookTitle,
   chapterTitle,
-  progressPercent,
+  bookProgressPercent,
   readingMode,
   hasBookmark,
   variantsExpanded,
@@ -202,12 +202,12 @@ export default function ReaderChrome({
                 <div className="reader-chrome__progress-track" aria-hidden="true">
                   <div
                     className="reader-chrome__progress-fill"
-                    style={{ width: `${progressPercent}%` }}
+                    style={{ width: `${bookProgressPercent}%` }}
                   />
                 </div>
 
                 <span className="reader-chrome__progress-label">
-                  {progressPercent}%
+                  {bookProgressPercent}% книги
                 </span>
               </div>
             </div>
@@ -230,7 +230,7 @@ export default function ReaderChrome({
         </div>
 
         <div className="reader-chrome__progress-pill" data-reader-ignore-chrome="true">
-          <span className="reader-chrome__progress-value">{progressPercent}%</span>
+          <span className="reader-chrome__progress-value">{bookProgressPercent}%</span>
           <span className="reader-chrome__progress-dot" />
           <span className="reader-chrome__progress-mode">{MODE_LABELS[readingMode]}</span>
         </div>

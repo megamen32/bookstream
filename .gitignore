@@ -59,6 +59,8 @@ workspace-*.tar
 .zscripts/dev.pid
 download/*.tar.gz
 .playwright-cli/
+.playwright-mcp/
+feed-reader.png
 # Skills directory
 /skills/
 bookstream-tiptap-editor-v2.zip

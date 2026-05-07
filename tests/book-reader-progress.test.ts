@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getBookReaderPageStorageKey,
+  resolveBookProgressPercent,
   resolveBookReaderPage,
   setBookReaderPage,
 } from '../src/lib/book-reader-progress.ts'
@@ -30,5 +31,13 @@ describe('book reader progress helpers', () => {
     setBookReaderPage(storage, 'chapter-42', 1)
 
     assert.equal(values.get('bookstream-page-chapter-42'), '1')
+  })
+
+  it('derives overall book progress from chapter position and local progress', () => {
+    assert.equal(resolveBookProgressPercent(0, 0, 10), 0)
+    assert.equal(resolveBookProgressPercent(0, 0.5, 10), 5)
+    assert.equal(resolveBookProgressPercent(3, 0.25, 10), 33)
+    assert.equal(resolveBookProgressPercent(9, 1, 10), 100)
+    assert.equal(resolveBookProgressPercent(12, 0.8, 10), 98)
   })
 })

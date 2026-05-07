@@ -31,3 +31,25 @@ export function resolveBookReaderPage(savedPage: string | null, totalPages: numb
 
   return Math.max(1, Math.min(parsedPage, Math.max(1, totalPages)))
 }
+
+/**
+ * Resolves the overall book progress as a percentage.
+ *
+ * The reader stores chapter progress independently, so the visible book-level
+ * progress is derived from the current chapter index and the in-chapter fraction.
+ */
+export function resolveBookProgressPercent(
+  chapterIndex: number,
+  chapterProgress: number,
+  totalChapters: number,
+): number {
+  if (!Number.isFinite(chapterIndex) || !Number.isFinite(chapterProgress) || !Number.isFinite(totalChapters)) {
+    return 0
+  }
+
+  const safeTotalChapters = Math.max(1, Math.floor(totalChapters))
+  const safeChapterIndex = Math.min(Math.max(0, Math.floor(chapterIndex)), safeTotalChapters - 1)
+  const safeChapterProgress = Math.min(Math.max(chapterProgress, 0), 1)
+
+  return Math.round(((safeChapterIndex + safeChapterProgress) / safeTotalChapters) * 100)
+}

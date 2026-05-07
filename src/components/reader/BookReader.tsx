@@ -45,6 +45,7 @@ interface BookReaderProps {
   highlightEndOffset?: number | null
   prefetchNextChapter?: () => Promise<void> | void
   prefetchPrevChapter?: () => Promise<void> | void
+  bookProgressPercent: number
   onCenterTap?: () => void
   onNavigate?: () => void
 }
@@ -72,6 +73,7 @@ export default function BookReader({
   highlightEndOffset,
   prefetchNextChapter,
   prefetchPrevChapter,
+  bookProgressPercent,
   onCenterTap,
   onNavigate,
 }: BookReaderProps) {
@@ -82,6 +84,7 @@ export default function BookReader({
     bookId,
     chapterId,
     readerId,
+    variantType,
     readingMode,
     showMobileReactionBar,
   } = useReaderStore()
@@ -616,11 +619,6 @@ export default function BookReader({
       return
     }
 
-    const selection = window.getSelection()
-    if (selection && !selection.isCollapsed) {
-      return
-    }
-
     const dx = event.clientX - gesture.clientX
     const dy = event.clientY - gesture.clientY
     const absDx = Math.abs(dx)
@@ -642,17 +640,24 @@ export default function BookReader({
     const bounds = event.currentTarget.getBoundingClientRect()
     const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
 
-    if (relativeX <= 0.3) {
-      goPrev()
-      return
-    }
+    window.setTimeout(() => {
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed) {
+        return
+      }
 
-    if (relativeX >= 0.7) {
-      goNext()
-      return
-    }
+      if (relativeX <= 0.3) {
+        goPrev()
+        return
+      }
 
-    onCenterTap?.()
+      if (relativeX >= 0.7) {
+        goNext()
+        return
+      }
+
+      onCenterTap?.()
+    }, 0)
   }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
 
   const handlePointerCancel = useCallback(() => {
@@ -792,12 +797,6 @@ export default function BookReader({
               transform: `translate3d(-${(currentPage - 1) * pageSize.width}px, 0, 0)`,
             }}
           >
-            <TextSelector
-              containerRef={activePageRef}
-              variantId={variantId}
-              onSelectionAnnotation={handleSelectionAnnotation}
-            />
-
             {pages.map((page, pageIndex) => (
               <div
                 key={`${chapterId}-page-${pageIndex}`}
@@ -808,7 +807,12 @@ export default function BookReader({
                   lineHeight: `${lineHeight}`,
                 }}
               >
-                <div className="book-reader-page-inner">
+                <div
+                  className="book-reader-page-inner"
+                  data-chapter-id={chapterId || undefined}
+                  data-variant-id={variantId}
+                  data-variant-type={variantType}
+                >
                   {pageIndex === 0 && renderChapterHeader()}
                   {page.map(renderParagraph)}
 
@@ -826,13 +830,21 @@ export default function BookReader({
         </div>
       </div>
 
+      <TextSelector
+        containerRef={activePageRef}
+        variantId={variantId}
+        onSelectionAnnotation={handleSelectionAnnotation}
+      />
+
       <div
         className={`book-reader-hud ${showHud ? 'is-visible' : ''}`}
-        aria-label={`Страница ${currentPage} из ${totalPages}`}
+        aria-label={`Страница ${currentPage} из ${totalPages}, прогресс книги ${bookProgressPercent}%`}
       >
-        <span className="book-reader-hud__current">{currentPage}</span>
+        <span className="book-reader-hud__current">
+          {currentPage}/{totalPages}
+        </span>
         <i />
-        <span className="book-reader-hud__total">{totalPages}</span>
+        <span className="book-reader-hud__total">{bookProgressPercent}% книги</span>
       </div>
     </div>
   )
