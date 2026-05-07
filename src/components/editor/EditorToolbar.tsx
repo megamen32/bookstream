@@ -74,6 +74,7 @@ export function EditorToolbar({
   editor,
   saving,
   saveStatus,
+  saveDisabled,
   focusMode,
   onToggleFocusMode,
   onSave,
@@ -447,7 +448,7 @@ export function EditorToolbar({
           type="button"
           size="sm"
           className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
-          disabled={saving}
+          disabled={saving || saveDisabled}
           onClick={() => {
             void onSave?.()
           }}

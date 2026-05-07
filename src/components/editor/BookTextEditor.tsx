@@ -48,6 +48,7 @@ export function BookTextEditor({
   titlePlaceholder = 'Название главы',
   saving,
   saveStatus,
+  saveDisabled,
   onChange,
   onTitleChange,
   onSave,
@@ -191,6 +192,7 @@ export function BookTextEditor({
         editor={editor}
         saving={saving}
         saveStatus={saveStatus}
+        saveDisabled={saveDisabled}
         focusMode={focusMode}
         onToggleFocusMode={() => setFocusMode((value) => !value)}
         onSave={onSave}
@@ -199,7 +201,7 @@ export function BookTextEditor({
 
       <BubbleMenu
         editor={editor}
-        tippyOptions={{ duration: 140, placement: 'top' }}
+        options={{ placement: 'top' }}
         className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-xl backdrop-blur"
       >
         <Button
@@ -298,7 +300,7 @@ export function BookTextEditor({
 
       <FloatingMenu
         editor={editor}
-        tippyOptions={{ duration: 140, placement: 'left' }}
+        options={{ placement: 'left' }}
         className="hidden items-center gap-1 rounded-full border bg-background/95 p-1 shadow-xl backdrop-blur md:flex"
       >
         <Button
@@ -354,7 +356,7 @@ export function BookTextEditor({
         </Button>
       </FloatingMenu>
 
-      <div className="mx-auto w-full max-w-[780px] px-5 py-8 md:px-10 md:py-12">
+      <div className="w-full px-5 py-8 md:px-10 md:py-12">
         {onTitleChange ? (
           <Input
             value={title ?? ''}

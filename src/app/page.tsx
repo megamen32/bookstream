@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, Sparkles } from 'lucide-react'
 
 interface Author {
   id: string
@@ -154,6 +154,32 @@ export default function HomePage() {
             <p className="text-sm">Скоро здесь появятся первые публикации</p>
           </div>
         )}
+
+        <section className="mt-16">
+          <Card className="overflow-hidden border-amber-200/60 bg-gradient-to-br from-amber-50 via-white to-orange-50 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="h-4 w-4 text-amber-600" />
+                Философия проекта
+              </CardTitle>
+              <CardDescription>
+                Интерактивность, ясность и уважение к тексту.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              <p>
+                <span className="font-medium text-foreground">Интерактивность — это всё.</span>{' '}
+                Мы делаем книги снова живыми: читаем их в сети, делимся, обсуждаем и комментируем
+                вместе, как в большом книжном клубе.
+              </p>
+              <p>
+                Дизайн здесь не ради эффекта. Важны удобство, минимализм и интерфейс, который не
+                отвлекает от текста и не перегружает лишним.
+              </p>
+              <p>Всё должно быть современным, быстрым и понятным с первого взгляда.</p>
+            </CardContent>
+          </Card>
+        </section>
       </main>
 
       {/* Footer */}

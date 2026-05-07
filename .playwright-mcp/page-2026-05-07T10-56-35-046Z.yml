@@ -1,0 +1,47 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - link "Александр Петров" [ref=e4] [cursor=pointer]:
+      - /url: /alex
+      - img [ref=e5]
+      - text: Александр Петров
+    - heading "Евангелие от Иуды" [level=3] [ref=e8]
+    - generic [ref=e9]:
+      - paragraph [ref=e10]: Евангелие от Иуды
+      - paragraph [ref=e11]:
+        - text: Александр Петров · 3 глав ·
+        - generic [ref=e12]:
+          - img [ref=e13]
+          - text: "5"
+      - paragraph [ref=e15]: Альтернативный взгляд на предательство
+    - link "Читать" [ref=e16] [cursor=pointer]:
+      - /url: /alex/gospel-of-judas/read
+      - button "Читать" [ref=e17]:
+        - img
+        - text: Читать
+    - generic [ref=e19]:
+      - img [ref=e20]
+      - heading "Цитаты читателей" [level=2] [ref=e24]
+    - generic [ref=e41]:
+      - heading "Содержание" [level=2] [ref=e42]
+      - generic [ref=e43]:
+        - link "0. Предисловие 3 варианта" [ref=e44] [cursor=pointer]:
+          - /url: /alex/gospel-of-judas/read?chapter=cmourfgq80006u55pl9bc38og
+          - generic [ref=e46]:
+            - generic [ref=e47]: "0."
+            - generic [ref=e48]: Предисловие
+            - generic [ref=e49]: 3 варианта
+        - link "1. Глава 1. Тёмный коридор 1 вариант" [ref=e50] [cursor=pointer]:
+          - /url: /alex/gospel-of-judas/read?chapter=cmourfgq90008u55pk1jyfq1p
+          - generic [ref=e52]:
+            - generic [ref=e53]: "1."
+            - generic [ref=e54]: Глава 1. Тёмный коридор
+            - generic [ref=e55]: 1 вариант
+        - link "2. Глава 2. Свет в конце 2 варианта" [ref=e56] [cursor=pointer]:
+          - /url: /alex/gospel-of-judas/read?chapter=cmourfgqa000au55p4eadcmut
+          - generic [ref=e58]:
+            - generic [ref=e59]: "2."
+            - generic [ref=e60]: Глава 2. Свет в конце
+            - generic [ref=e61]: 2 варианта
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e62]

@@ -9,6 +9,7 @@ export interface BookTextEditorProps {
   titlePlaceholder?: string
   saving?: boolean
   saveStatus?: EditorSaveStatus
+  saveDisabled?: boolean
   onChange: (html: string) => void
   onTitleChange?: (title: string) => void
   onSave?: () => void | Promise<void>
@@ -20,6 +21,7 @@ export interface EditorToolbarProps {
   editor: Editor
   saving?: boolean
   saveStatus?: EditorSaveStatus
+  saveDisabled?: boolean
   focusMode: boolean
   onToggleFocusMode: () => void
   onSave?: () => void | Promise<void>

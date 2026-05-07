@@ -1,0 +1,65 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - img [ref=e6]
+          - heading "Bookstream" [level=1] [ref=e8]
+        - generic [ref=e9]: Платформа для чтения
+    - main [ref=e10]:
+      - generic [ref=e11]:
+        - heading "Читайте книги по-новому" [level=2] [ref=e12]
+        - paragraph [ref=e13]: Три варианта текста, комментарии к абзацам, настройки чтения и многое другое
+      - generic [ref=e14]:
+        - heading "Последние книги" [level=3] [ref=e15]
+        - generic [ref=e16]:
+          - link "Защищённая кооперация как оптимум выживания технологической цивилизации Александр Петров Защищённая кооперация как оптимум выживания технологической цивилизации 42 глав Читать →" [ref=e17] [cursor=pointer]:
+            - /url: /alex/zaschischyonnaya-kooperaciya-kak-optimum-vyzhivaniya-tehnologicheskoy-civilizacii
+            - generic [ref=e18]:
+              - heading "Защищённая кооперация как оптимум выживания технологической цивилизации" [level=3] [ref=e20]
+              - generic [ref=e21]:
+                - paragraph [ref=e22]: Александр Петров
+                - paragraph [ref=e23]: Защищённая кооперация как оптимум выживания технологической цивилизации
+                - generic [ref=e24]:
+                  - generic [ref=e25]: 42 глав
+                  - generic [ref=e26]: Читать →
+          - link "История Анонимного государства Александр Петров Ироничная история о политике и обществе 35 глав Читать →" [ref=e27] [cursor=pointer]:
+            - /url: /alex/istoriya
+            - generic [ref=e28]:
+              - heading "История Анонимного государства" [level=3] [ref=e30]
+              - generic [ref=e31]:
+                - paragraph [ref=e32]: Александр Петров
+                - paragraph [ref=e33]: Ироничная история о политике и обществе
+                - generic [ref=e34]:
+                  - generic [ref=e35]: 35 глав
+                  - generic [ref=e36]: Читать →
+          - 'link "Метро 2033: Разбор Александр Петров Глубокий анализ культового романа 2 глав Читать →" [ref=e37] [cursor=pointer]':
+            - /url: /alex/metro-2033-review
+            - generic [ref=e38]:
+              - 'heading "Метро 2033: Разбор" [level=3] [ref=e40]'
+              - generic [ref=e41]:
+                - paragraph [ref=e42]: Александр Петров
+                - paragraph [ref=e43]: Глубокий анализ культового романа
+                - generic [ref=e44]:
+                  - generic [ref=e45]: 2 глав
+                  - generic [ref=e46]: Читать →
+          - link "Евангелие от Иуды Александр Петров Альтернативный взгляд на предательство 3 глав Читать →" [ref=e47] [cursor=pointer]:
+            - /url: /alex/gospel-of-judas
+            - generic [ref=e48]:
+              - heading "Евангелие от Иуды" [level=3] [ref=e50]
+              - generic [ref=e51]:
+                - paragraph [ref=e52]: Александр Петров
+                - paragraph [ref=e53]: Альтернативный взгляд на предательство
+                - generic [ref=e54]:
+                  - generic [ref=e55]: 3 глав
+                  - generic [ref=e56]: Читать →
+      - generic [ref=e57]:
+        - heading "Авторы" [level=3] [ref=e58]
+        - link "Александр Петров" [ref=e60] [cursor=pointer]:
+          - /url: /alex
+          - button "Александр Петров" [ref=e61]
+    - contentinfo [ref=e62]:
+      - generic [ref=e63]: Bookstream — платформа для чтения с интерактивными комментариями
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e64]

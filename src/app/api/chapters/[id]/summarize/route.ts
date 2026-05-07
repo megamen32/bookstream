@@ -17,7 +17,8 @@ async function callLLM(systemPrompt: string, userPrompt: string): Promise<string
 async function upsertVariant(
   chapterId: string,
   variantType: string,
-  text: string
+  text: string,
+  editedByAuthor = false
 ): Promise<{ variantId: string; paragraphCount: number } | null> {
   const paragraphs = text
     .split(/\n+/)
@@ -32,13 +33,79 @@ async function upsertVariant(
     where: {
       chapterId_variantType: { chapterId, variantType },
     },
-    update: { contentHtml },
-    create: { chapterId, variantType, contentHtml },
+    update: { contentHtml, editedByAuthor },
+    create: { chapterId, variantType, contentHtml, editedByAuthor },
   })
 
   const syncedParagraphs = await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
 
   return { variantId: variant.id, paragraphCount: syncedParagraphs.length }
+}
+
+function buildFallbackPrompt(variantType: string, wordCount: number): string {
+  if (variantType === 'clean') {
+    const target50 = Math.round(wordCount * 0.5)
+    return `Сократи текст до примерно ${target50} слов (50%), сохрани нарратив. Чистый текст, без markdown.`
+  }
+
+  if (variantType === 'essence') {
+    const target20 = Math.round(wordCount * 0.2)
+    return `Выжми ядро — ${target20} слов (20%), дающих 80% смысла. Один абзац = одна мысль. Без markdown.`
+  }
+
+  if (variantType === 'original') {
+    return 'Перепиши исходный текст без сокращений, сохраняя стиль, структуру и смысл. Без markdown и комментариев.'
+  }
+
+  return `Перепиши текст для версии "${variantType}" без markdown и комментариев.`
+}
+
+async function buildVariantDefinition(
+  requestedVariantType: string,
+  wordCount: number
+): Promise<Array<{ type: string; prompt: string }>> {
+  const presets = await db.variantPreset.findMany({
+    orderBy: { position: 'asc' },
+  })
+
+  if (requestedVariantType) {
+    const preset = presets.find((item) => item.slug === requestedVariantType)
+    if (preset) {
+      let prompt = preset.systemPromptTemplate
+      if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
+        const targetWords = Math.round((wordCount * preset.targetSizePercent) / 100)
+        prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
+      }
+      return [{ type: requestedVariantType, prompt }]
+    }
+
+    return [{ type: requestedVariantType, prompt: buildFallbackPrompt(requestedVariantType, wordCount) }]
+  }
+
+  if (presets.length > 0) {
+    return presets.map((preset) => {
+      let prompt = preset.systemPromptTemplate
+      if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
+        const targetWords = Math.round((wordCount * preset.targetSizePercent) / 100)
+        prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
+      }
+      return { type: preset.slug, prompt }
+    })
+  }
+
+  const target50 = Math.round(wordCount * 0.5)
+  const target20 = Math.round(wordCount * 0.2)
+
+  return [
+    {
+      type: 'clean',
+      prompt: `Сократи текст до примерно ${target50} слов (50%), сохрани нарратив. Чистый текст, без markdown.`,
+    },
+    {
+      type: 'essence',
+      prompt: `Выжми ядро — ${target20} слов (20%), дающих 80% смысла. Один абзац = одна мысль. Без markdown.`,
+    },
+  ]
 }
 
 /**
@@ -61,6 +128,8 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json().catch(() => ({}))
+    const requestedVariantType =
+      typeof body.variantType === 'string' ? body.variantType.trim() : ''
 
     // 1. Find original variant
     const original = await db.chapterVariant.findUnique({
@@ -89,70 +158,38 @@ export async function POST(
     }
 
     // 2. Build list of variant definitions to generate
-    const variantDefs: Array<{ type: string; prompt: string }> = []
+    let variantDefs: Array<{ type: string; prompt: string }> = []
 
-    // Mode A: explicit preset IDs
-    if (body.presetIds && Array.isArray(body.presetIds)) {
+    if (requestedVariantType) {
+      variantDefs = await buildVariantDefinition(requestedVariantType, wordCount)
+    } else if (body.presetIds && Array.isArray(body.presetIds)) {
       const presets = await db.variantPreset.findMany({
         where: { id: { in: body.presetIds } },
         orderBy: { position: 'asc' },
       })
-      for (const preset of presets) {
+
+      variantDefs = presets.map((preset) => {
         let prompt = preset.systemPromptTemplate
-        // Replace {word_count} only if targetSizePercent is set
         if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
-          const targetWords = Math.round(wordCount * preset.targetSizePercent / 100)
+          const targetWords = Math.round((wordCount * preset.targetSizePercent) / 100)
           prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
         }
-        variantDefs.push({ type: preset.slug, prompt })
-      }
-    }
-
-    // Mode B: explicit variants in body
-    if (body.variants && Array.isArray(body.variants)) {
-      for (const v of body.variants) {
-        variantDefs.push({ type: v.type, prompt: v.prompt })
-      }
-    }
-
-    // Mode C: default — fetch all presets from DB
-    if (variantDefs.length === 0) {
-      const presets = await db.variantPreset.findMany({
-        orderBy: { position: 'asc' },
+        return { type: preset.slug, prompt }
       })
-
-      if (presets.length > 0) {
-        for (const preset of presets) {
-          let prompt = preset.systemPromptTemplate
-          if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
-            const targetWords = Math.round(wordCount * preset.targetSizePercent / 100)
-            prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
-          }
-          variantDefs.push({ type: preset.slug, prompt })
-        }
-      } else {
-        // Fallback hardcoded prompts (if no presets seeded yet)
-        const target50 = Math.round(wordCount * 0.5)
-        const target20 = Math.round(wordCount * 0.2)
-
-        variantDefs.push(
-          {
-            type: 'clean',
-            prompt: `Сократи текст до примерно ${target50} слов (50%), сохрани нарратив. Чистый текст, без markdown.`,
-          },
-          {
-            type: 'essence',
-            prompt: `Выжми ядро — ${target20} слов (20%), дающих 80% смысла. Один абзац = одна мысль. Без markdown.`,
-          },
-        )
-      }
+    } else if (body.variants && Array.isArray(body.variants)) {
+      variantDefs = body.variants.map((v: { type: string; prompt: string }) => ({
+        type: v.type,
+        prompt: v.prompt,
+      }))
+    } else {
+      variantDefs = await buildVariantDefinition('', wordCount)
     }
 
     // 3. Generate all in parallel
     const results = await Promise.all(
       variantDefs.map(async ({ type, prompt }) => {
         const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`)
-        const saved = await upsertVariant(id, type, result)
+        const saved = await upsertVariant(id, type, result, false)
         return { type, ...saved }
       })
     )
