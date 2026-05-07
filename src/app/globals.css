@@ -157,10 +157,10 @@
 
 [data-reader-theme="light"] {
   --r-bg: #ffffff;
-  --r-bg-secondary: #f8f8f8;
+  --r-bg-secondary: #f3f4f6;
   --r-text: #1a1a1a;
-  --r-text-secondary: #666666;
-  --r-border: #e0e0e0;
+  --r-text-secondary: #667085;
+  --r-border: #d5dae3;
   --r-accent: #4a7c59;
   --r-accent-foreground: #ffffff;
 }
@@ -176,21 +176,21 @@
 }
 
 [data-reader-theme="dark"] {
-  --r-bg: #1a1a2e;
-  --r-bg-secondary: #232340;
-  --r-text: #e0e0e0;
-  --r-text-secondary: #a0a0b0;
-  --r-border: #333355;
+  --r-bg: #14171d;
+  --r-bg-secondary: #1c212b;
+  --r-text: #edf1f7;
+  --r-text-secondary: #9da8ba;
+  --r-border: #2b3240;
   --r-accent: #6c8c50;
   --r-accent-foreground: #ffffff;
 }
 
 [data-reader-theme="oled"] {
   --r-bg: #000000;
-  --r-bg-secondary: #111111;
-  --r-text: #ffffff;
-  --r-text-secondary: #999999;
-  --r-border: #222222;
+  --r-bg-secondary: #0d1015;
+  --r-text: #f5f7fb;
+  --r-text-secondary: #8d98aa;
+  --r-border: #1b2028;
   --r-accent: #7c9a50;
   --r-accent-foreground: #ffffff;
 }
@@ -203,6 +203,9 @@
   background-color: var(--r-bg);
   color: var(--r-text);
   transition: background-color 0.3s ease, color 0.3s ease;
+  background-image:
+    radial-gradient(circle at top center, color-mix(in srgb, var(--r-accent) 8%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--r-bg-secondary) 42%, transparent), transparent 18rem);
 
   /* Map shadcn CSS vars to reader theme so all shadcn components
      (Sheet, Slider, Dropdown, etc.) respect the active theme */
@@ -234,16 +237,125 @@
    ========================================== */
 
 .reader-content {
-  font-family: system-ui, -apple-system, sans-serif;
-  line-height: 1.6;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.72;
   color: var(--r-text);
 }
 
 .reader-content p {
-  margin-bottom: 1em;
-  text-align: justify;
-  hyphens: auto;
+  margin-bottom: 1.05em;
+  text-align: start;
+  hyphens: manual;
   color: var(--r-text);
+}
+
+.reader-shell {
+  position: relative;
+}
+
+.reader-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem 0.65rem 0.5rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--r-border) 65%, transparent);
+  background: color-mix(in srgb, var(--r-bg) 76%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.reader-header__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  color: var(--r-text);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.reader-header__icon-button:hover {
+  background: color-mix(in srgb, var(--r-bg-secondary) 74%, transparent);
+  border-color: color-mix(in srgb, var(--r-border) 58%, transparent);
+}
+
+.reader-header__icon-button.is-accented {
+  color: var(--r-accent);
+  background: color-mix(in srgb, var(--r-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--r-accent) 26%, transparent);
+}
+
+.reader-header__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader-header__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--r-text);
+}
+
+.reader-header__subline {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  margin-top: 0.2rem;
+}
+
+.reader-header__chapter {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--r-text-secondary);
+}
+
+.reader-header__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.reader-header__progress-track {
+  width: 2.35rem;
+  height: 0.2rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--r-border) 90%, transparent);
+  overflow: hidden;
+}
+
+.reader-header__progress-bar {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--r-accent);
+  transition: width 0.3s ease;
+}
+
+.reader-header__progress-label {
+  min-width: 1.9rem;
+  font-size: 0.625rem;
+  color: var(--r-text-secondary);
+}
+
+.reader-variant-bar {
+  flex-shrink: 0;
+  padding: 0.55rem 1rem 0.75rem;
 }
 
 .bookstream-selection-frame,
@@ -255,10 +367,10 @@
 
 .bookstream-word-highlight {
   display: inline;
-  padding: 0.08em 0.18em;
-  border-radius: 0.3em;
-  background: color-mix(in srgb, var(--r-accent) 18%, transparent);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--r-accent) 55%, transparent);
+  padding: 0.1em 0.2em;
+  border-radius: 0.38em;
+  background: color-mix(in srgb, var(--r-accent) 16%, var(--r-bg) 84%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--r-accent) 48%, transparent), 0 6px 16px rgba(0, 0, 0, 0.06);
   animation: wordHighlightPop 260ms ease-out;
 }
 
@@ -320,7 +432,7 @@
   text-transform: uppercase;
   color: var(--r-accent-foreground);
   background: color-mix(in srgb, var(--r-accent) 88%, #000 12%);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
   transform: translateY(-0.15em);
   pointer-events: none;
   animation: reactionBadgePop 260ms ease-out;
@@ -350,11 +462,11 @@
 }
 
 .bookstream-selection-frame {
-  background-color: color-mix(in srgb, var(--r-accent) 9%, transparent);
+  background-color: color-mix(in srgb, var(--r-accent) 8%, transparent);
 }
 
 .bookstream-quote-frame {
-  background-color: color-mix(in srgb, var(--r-accent) 7%, transparent);
+  background-color: color-mix(in srgb, rgb(245 158 11) 9%, transparent);
 }
 
 .reader-content[data-line-width="narrow"] {
@@ -697,4 +809,29 @@
 .tap-zone-right {
   right: 0;
   width: 33.33%;
+}
+
+@media (max-width: 768px) {
+  .reader-header {
+    padding-inline: 0.35rem;
+  }
+
+  .reader-header__icon-button {
+    width: 2.5rem;
+    height: 2.5rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  .reader-variant-bar {
+    padding: 0.45rem 0.75rem 0.65rem;
+  }
+
+  .reader-content p {
+    margin-bottom: 0.95em;
+  }
+
+  .desktop-comments-toggle {
+    display: none !important;
+  }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -105,6 +105,7 @@ function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment,
 
 export default function ReaderPage() {
   const params = useParams()
+  const router = useRouter()
   const authorSlug = params.authorSlug as string
   const bookSlug = params.bookSlug as string
 
@@ -159,10 +160,30 @@ export default function ReaderPage() {
   const restoreTokenRef = useRef(0)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeChapterRef = useRef<string | null>(null)
+  const chapterSectionCacheRef = useRef(new Map<string, FeedSectionData>())
+  const chapterSectionRequestRef = useRef(new Map<string, Promise<FeedSectionData | null>>())
+  const feedWindowPrefetchRef = useRef(new Set<string>())
 
   const setSearchContentNode = useCallback((node: HTMLDivElement | null) => {
     searchContentRef.current = node
   }, [])
+
+  const getChapterCacheKey = useCallback((targetChapterId: string, requestedVariant: VariantType): string => (
+    `${targetChapterId}:${requestedVariant}`
+  ), [])
+
+  const cacheBookSection = useCallback((section: FeedSectionData): void => {
+    chapterSectionCacheRef.current.set(
+      getChapterCacheKey(section.chapter.id, section.variant.variantType),
+      section,
+    )
+  }, [getChapterCacheKey])
+
+  const cacheBookSections = useCallback((sections: FeedSectionData[]): void => {
+    for (const section of sections) {
+      cacheBookSection(section)
+    }
+  }, [cacheBookSection])
 
   useEffect(() => {
     if (initialized.current) return
@@ -277,6 +298,17 @@ export default function ReaderPage() {
     targetChapterId: string,
     requestedVariant: VariantType,
   ): Promise<FeedSectionData | null> => {
+    const cacheKey = getChapterCacheKey(targetChapterId, requestedVariant)
+    const cached = chapterSectionCacheRef.current.get(cacheKey)
+    if (cached) {
+      return cached
+    }
+
+    const pending = chapterSectionRequestRef.current.get(cacheKey)
+    if (pending) {
+      return await pending
+    }
+
     const requestChapter = async (nextVariant: VariantType): Promise<FeedSectionData | null> => {
       const response = await fetch(`/api/chapters/${targetChapterId}?variantType=${nextVariant}`)
       if (response.ok) {
@@ -294,7 +326,7 @@ export default function ReaderPage() {
           setVariantPresets(data.variantPresets)
         }
 
-        return {
+        const section: FeedSectionData = {
           chapter: {
             id: data.chapter.id,
             title: data.chapter.title,
@@ -306,11 +338,24 @@ export default function ReaderPage() {
             })),
           },
           variant: data.variant,
+          preview: {
+            comments: [],
+            stats: {
+              commentsCount: 0,
+              reactionsCount: 0,
+              quotesCount: 0,
+              bookmarksCount: null,
+              topQuote: null,
+            },
+          },
           commentsPreview: [],
           commentCount: 0,
           prevChapterId: data.prevChapter?.id || null,
           nextChapterId: data.nextChapter?.id || null,
         }
+
+        cacheBookSection(section)
+        return section
       }
 
       if (response.status === 404 && nextVariant !== 'original') {
@@ -321,8 +366,15 @@ export default function ReaderPage() {
       return null
     }
 
-    return requestChapter(requestedVariant)
-  }, [setVariantType])
+    const request = requestChapter(requestedVariant)
+    chapterSectionRequestRef.current.set(cacheKey, request)
+
+    try {
+      return await request
+    } finally {
+      chapterSectionRequestRef.current.delete(cacheKey)
+    }
+  }, [cacheBookSection, getChapterCacheKey, setVariantType])
 
   const applyActiveVariantOptions = useCallback((sections: FeedSectionData[], nextActiveChapterId: string | null): void => {
     if (!nextActiveChapterId) {
@@ -352,6 +404,7 @@ export default function ReaderPage() {
     const data = await fetchFeedWindow(bookId, anchorId, requestedVariant, before, after)
     if (!data) return
 
+    cacheBookSections(data.sections)
     setFeedSections(data.sections)
     setFeedHasMorePrev(data.hasPrev)
     setFeedHasMoreNext(data.hasNext)
@@ -370,7 +423,41 @@ export default function ReaderPage() {
     if (shouldScrollToChapter) {
       setScrollToChapterId(anchorId)
     }
-  }, [applyActiveVariantOptions, bookId, fetchFeedWindow])
+  }, [applyActiveVariantOptions, bookId, cacheBookSections, fetchFeedWindow])
+
+  const prefetchFeedWindow = useCallback(async (
+    anchorId: string,
+    requestedVariant: VariantType,
+    before: number,
+    after: number,
+  ): Promise<void> => {
+    if (!bookId) return
+
+    const prefetchKey = `${anchorId}:${requestedVariant}:${before}:${after}`
+    if (feedWindowPrefetchRef.current.has(prefetchKey)) return
+
+    feedWindowPrefetchRef.current.add(prefetchKey)
+
+    try {
+      const data = await fetchFeedWindow(bookId, anchorId, requestedVariant, before, after)
+      if (!data) return
+
+      cacheBookSections(data.sections)
+      setFeedSections((current) => mergeSections(current, data.sections))
+
+      if (before > 0) {
+        setFeedHasMorePrev((current) => current || data.hasPrev)
+      }
+      if (after > 0) {
+        setFeedHasMoreNext((current) => current || data.hasNext)
+      }
+      if (data.variantPresets) {
+        setVariantPresets(data.variantPresets)
+      }
+    } finally {
+      feedWindowPrefetchRef.current.delete(prefetchKey)
+    }
+  }, [bookId, cacheBookSections, fetchFeedWindow])
 
   const saveReadingProgress = useCallback((targetChapterId: string, progress: number): void => {
     if (!bookId || !readerId) return
@@ -488,6 +575,16 @@ export default function ReaderPage() {
           book.chapters.map((chapter) => ({
             chapter,
             variant: { id: '', variantType: targetVariant, paragraphs: [] },
+            preview: {
+              comments: [],
+              stats: {
+                commentsCount: 0,
+                reactionsCount: 0,
+                quotesCount: 0,
+                bookmarksCount: null,
+                topQuote: null,
+              },
+            },
             commentsPreview: [],
             commentCount: 0,
             prevChapterId: null,
@@ -499,6 +596,7 @@ export default function ReaderPage() {
         if (targetMode === 'feed') {
           const data = await fetchFeedWindow(book.id, targetChapterId, targetVariant, 1, 1)
           if (data) {
+            cacheBookSections(data.sections)
             setFeedSections(data.sections)
             setFeedHasMorePrev(data.hasPrev)
             setFeedHasMoreNext(data.hasNext)
@@ -535,6 +633,7 @@ export default function ReaderPage() {
     applyActiveVariantOptions,
     authorSlug,
     bookSlug,
+    cacheBookSections,
     fetchFeedWindow,
     fetchSingleChapter,
     loadChapterCommentCount,
@@ -584,9 +683,9 @@ export default function ReaderPage() {
 
     if (readingMode === 'book') {
       if (!bookModeSection || bookModeSection.chapter.id !== activeChapterId || bookModeSection.variant.variantType !== variantType) {
-        const frameId = window.requestAnimationFrame(() => {
-          void fetchSingleChapter(activeChapterId, variantType).then((section) => {
-            if (!section) return
+      const frameId = window.requestAnimationFrame(() => {
+        void fetchSingleChapter(activeChapterId, variantType).then((section) => {
+          if (!section) return
             setBookModeSection(section)
             setAvailableVariants(section.chapter.variants.map((variant) => variant.variantType))
           })
@@ -603,6 +702,34 @@ export default function ReaderPage() {
       return () => window.cancelAnimationFrame(frameId)
     }
   }, [activeChapterId, bookModeSection, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, variantType])
+
+  useEffect(() => {
+    if (!bookData || !activeChapterId) return
+
+    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
+    if (currentIndex < 0) return
+
+    const prevChapterId = bookData.chapters[currentIndex - 1]?.id || null
+    const nextChapterId = bookData.chapters[currentIndex + 1]?.id || null
+
+    if (readingMode === 'book') {
+      if (prevChapterId) {
+        void fetchSingleChapter(prevChapterId, variantType)
+      }
+      if (nextChapterId) {
+        void fetchSingleChapter(nextChapterId, variantType)
+      }
+      return
+    }
+
+    if (prevChapterId && !feedSections.some((section) => section.chapter.id === prevChapterId)) {
+      void prefetchFeedWindow(activeChapterId, variantType, 1, 0)
+    }
+
+    if (nextChapterId && !feedSections.some((section) => section.chapter.id === nextChapterId)) {
+      void prefetchFeedWindow(activeChapterId, variantType, 0, 1)
+    }
+  }, [activeChapterId, bookData, feedSections, fetchSingleChapter, prefetchFeedWindow, readingMode, variantType])
 
   const handleActiveChapterChange = useCallback((nextChapterId: string, progress: number, fromScroll: boolean): void => {
     setActiveChapterId((current) => current === nextChapterId ? current : nextChapterId)
@@ -634,6 +761,7 @@ export default function ReaderPage() {
       const data = await fetchFeedWindow(bookId, lastSection.chapter.id, variantType, 0, 1)
       if (!data) return
 
+      cacheBookSections(data.sections)
       setFeedSections((current) => mergeSections(current, data.sections))
       setFeedHasMoreNext(data.hasNext)
       if (data.variantPresets) {
@@ -642,7 +770,7 @@ export default function ReaderPage() {
     } finally {
       setFeedLoadingNext(false)
     }
-  }, [bookId, feedHasMoreNext, feedLoadingNext, feedSections, fetchFeedWindow, variantType])
+  }, [bookId, cacheBookSections, feedHasMoreNext, feedLoadingNext, feedSections, fetchFeedWindow, variantType])
 
   const loadMorePrev = useCallback(async (): Promise<void> => {
     if (!bookId || !feedHasMorePrev || feedLoadingPrev || feedSections.length === 0) return
@@ -653,6 +781,7 @@ export default function ReaderPage() {
       const data = await fetchFeedWindow(bookId, firstSection.chapter.id, variantType, 1, 0)
       if (!data) return
 
+      cacheBookSections(data.sections)
       setFeedSections((current) => mergeSections(current, data.sections))
       setFeedHasMorePrev(data.hasPrev)
       if (data.variantPresets) {
@@ -661,7 +790,7 @@ export default function ReaderPage() {
     } finally {
       setFeedLoadingPrev(false)
     }
-  }, [bookId, feedHasMorePrev, feedLoadingPrev, feedSections, fetchFeedWindow, variantType])
+  }, [bookId, cacheBookSections, feedHasMorePrev, feedLoadingPrev, feedSections, fetchFeedWindow, variantType])
 
   const handleVariantChange = useCallback(async (newType: VariantType) => {
     if (!activeChapterId) return
@@ -721,21 +850,25 @@ export default function ReaderPage() {
   const handleChapterChange = useCallback(async (newChapterId: string) => {
     setQuoteTargetParagraphId(null)
     setQuoteTargetParagraphEndId(null)
-    setActiveChapterId(newChapterId)
-    setChapterId(newChapterId)
-    setScrollProgress(0)
-    void loadChapterCommentCount(newChapterId)
 
     if (readingMode === 'feed') {
+      setActiveChapterId(newChapterId)
+      setChapterId(newChapterId)
+      setScrollProgress(0)
+      void loadChapterCommentCount(newChapterId)
       await replaceFeedSections(newChapterId, variantType, 1, 1, 0, true)
     } else {
       const section = await fetchSingleChapter(newChapterId, variantType)
       if (section) {
         setBookModeSection(section)
         setAvailableVariants(section.chapter.variants.map((variant) => variant.variantType))
+        setActiveChapterId(newChapterId)
+        setChapterId(newChapterId)
+        setScrollProgress(0)
+        void loadChapterCommentCount(newChapterId)
       }
     }
-  }, [fetchSingleChapter, readingMode, replaceFeedSections, setChapterId, variantType])
+  }, [fetchSingleChapter, loadChapterCommentCount, readingMode, replaceFeedSections, setChapterId, variantType])
 
   const goToNextChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
@@ -750,6 +883,46 @@ export default function ReaderPage() {
     if (currentIndex <= 0) return
     void handleChapterChange(bookData.chapters[currentIndex - 1].id)
   }, [activeChapterId, bookData, handleChapterChange])
+
+  const buildChapterHref = useCallback((targetChapterId: string): string => {
+    const searchParams = new URLSearchParams()
+    searchParams.set('chapter', targetChapterId)
+    searchParams.set('variant', variantType)
+
+    return `/${authorSlug}/${bookSlug}/read?${searchParams.toString()}`
+  }, [authorSlug, bookSlug, variantType])
+
+  const prefetchNextChapter = useCallback((): void => {
+    if (!bookData || !activeChapterId) return
+
+    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
+    if (currentIndex < 0 || currentIndex >= bookData.chapters.length - 1) return
+
+    const nextChapterId = bookData.chapters[currentIndex + 1].id
+    router.prefetch(buildChapterHref(nextChapterId))
+
+    if (readingMode === 'book') {
+      void fetchSingleChapter(nextChapterId, variantType)
+    } else {
+      void prefetchFeedWindow(activeChapterId, variantType, 0, 1)
+    }
+  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readingMode, router, variantType])
+
+  const prefetchPrevChapter = useCallback((): void => {
+    if (!bookData || !activeChapterId) return
+
+    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
+    if (currentIndex <= 0) return
+
+    const prevChapterId = bookData.chapters[currentIndex - 1].id
+    router.prefetch(buildChapterHref(prevChapterId))
+
+    if (readingMode === 'book') {
+      void fetchSingleChapter(prevChapterId, variantType)
+    } else {
+      void prefetchFeedWindow(activeChapterId, variantType, 1, 0)
+    }
+  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readingMode, router, variantType])
 
   const handleSendComment = useCallback(async (body: string): Promise<ReaderComment | null> => {
     if (!activeChapterId || !bookId || !readerId || !username) return null
@@ -784,6 +957,22 @@ export default function ReaderPage() {
         section.chapter.id === activeChapterId
           ? {
               ...section,
+              preview: {
+                ...section.preview,
+                comments: prependUniqueComment(
+                  section.preview.comments,
+                  {
+                    id: data.comment!.id,
+                    authorName: data.comment!.username,
+                    body: data.comment!.body,
+                  },
+                  5,
+                ),
+                stats: {
+                  ...section.preview.stats,
+                  commentsCount: section.preview.stats.commentsCount + 1,
+                },
+              },
               commentsPreview: prependUniqueComment(section.commentsPreview, data.comment!, 5),
               commentCount: section.commentCount + 1,
             }
@@ -889,7 +1078,7 @@ export default function ReaderPage() {
 
   return (
     <div
-      className="reader-wrapper h-screen flex flex-col"
+      className="reader-wrapper reader-shell h-screen flex flex-col"
       data-reader-theme={theme}
       style={themeVars as React.CSSProperties}
     >
@@ -899,80 +1088,30 @@ export default function ReaderPage() {
         contentRef={searchContentRef}
       />
 
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.25rem',
-          padding: '0.5rem 0.5rem 0.5rem 0.25rem',
-          borderBottom: '1px solid var(--r-border)',
-          backgroundColor: 'var(--r-bg)',
-          flexShrink: 0,
-          zIndex: 30,
-        }}
-      >
+      <header className="reader-header">
         <Link
           href={`/${authorSlug}/${bookSlug}`}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: 'var(--r-text)',
-          }}
+          className="reader-header__icon-button"
         >
           <ArrowLeft size={20} />
         </Link>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              color: 'var(--r-text)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={bookData.title}
-          >
+        <div className="reader-header__meta">
+          <div className="reader-header__title" title={bookData.title}>
             {bookData.title}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div
-              style={{
-                fontSize: '0.6875rem',
-                color: 'var(--r-text-secondary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+          <div className="reader-header__subline">
+            <div className="reader-header__chapter">
               {currentTitle}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-              <div
-                style={{
-                  width: '2rem',
-                  height: '3px',
-                  borderRadius: '9999px',
-                  backgroundColor: 'var(--r-border)',
-                  overflow: 'hidden',
-                }}
-              >
+            <div className="reader-header__progress">
+              <div className="reader-header__progress-track">
                 <div
-                  style={{
-                    width: `${progressPercent}%`,
-                    height: '100%',
-                    borderRadius: '9999px',
-                    backgroundColor: 'var(--r-accent)',
-                    transition: 'width 0.3s ease',
-                  }}
+                  className="reader-header__progress-bar"
+                  style={{ width: `${progressPercent}%` }}
                 />
               </div>
-              <span style={{ fontSize: '0.625rem', color: 'var(--r-text-secondary)', minWidth: '1.75rem' }}>
+              <span className="reader-header__progress-label">
                 {progressPercent}%
               </span>
             </div>
@@ -981,18 +1120,7 @@ export default function ReaderPage() {
 
         <button
           onClick={() => setShowSearch(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: 'var(--r-text)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-          }}
+          className="reader-header__icon-button"
           title="Поиск (Ctrl+F)"
         >
           <Search size={20} />
@@ -1000,18 +1128,8 @@ export default function ReaderPage() {
 
         <button
           onClick={currentBookmark ? scrollToBookmark : undefined}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: currentBookmark ? 'var(--r-accent)' : 'var(--r-text)',
-            background: 'none',
-            border: 'none',
-            cursor: currentBookmark ? 'pointer' : 'default',
-          }}
+          className={`reader-header__icon-button${currentBookmark ? ' is-accented' : ''}`}
+          style={{ cursor: currentBookmark ? 'pointer' : 'default' }}
           title={currentBookmark ? 'Перейти к закладке' : 'Нет закладки'}
         >
           {currentBookmark ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
@@ -1019,18 +1137,7 @@ export default function ReaderPage() {
 
         <button
           onClick={() => void toggleReadingMode()}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: 'var(--r-text)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-          }}
+          className="reader-header__icon-button"
           title={readingMode === 'feed' ? 'Режим книги' : 'Режим ленты'}
         >
           {readingMode === 'feed' ? <BookOpen size={20} /> : <AlignJustify size={20} />}
@@ -1044,20 +1151,7 @@ export default function ReaderPage() {
 
         <button
           onClick={() => setShowDesktopComments(!showDesktopComments)}
-          style={{
-            display: 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: showDesktopComments ? 'var(--r-accent)' : 'var(--r-text)',
-            background: showDesktopComments ? 'var(--r-bg-secondary)' : 'none',
-            border: 'none',
-            cursor: 'pointer',
-            borderRadius: '0.375rem',
-          }}
-          className="desktop-comments-toggle"
+          className={`desktop-comments-toggle reader-header__icon-button${showDesktopComments ? ' is-accented' : ''}`}
           title="Панель комментариев"
         >
           <MessageSquare size={20} />
@@ -1086,15 +1180,7 @@ export default function ReaderPage() {
 
         <Link
           href="/me/annotations"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: 'var(--r-text)',
-          }}
+          className="reader-header__icon-button"
           title="Мои аннотации"
         >
           <UserRound size={20} />
@@ -1102,18 +1188,7 @@ export default function ReaderPage() {
 
         <button
           onClick={() => setShowSettings(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            color: 'var(--r-text)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-          }}
+          className="reader-header__icon-button"
           title="Настройки"
         >
           <Settings size={20} />
@@ -1121,13 +1196,7 @@ export default function ReaderPage() {
       </header>
 
       {(Object.keys(variantPresets).length > 0 || availableVariants.length > 1) && (
-        <div
-          style={{
-            padding: '0.5rem 1rem',
-            borderBottom: '1px solid var(--r-border)',
-            flexShrink: 0,
-          }}
-        >
+        <div className="reader-variant-bar">
           <VariantSlider
             onVariantChange={handleVariantChange}
             generatedVariants={availableVariants}
@@ -1172,6 +1241,8 @@ export default function ReaderPage() {
               hasPrevChapter={hasPrevChapter}
               onNextChapter={goToNextChapter}
               onPrevChapter={goToPrevChapter}
+              prefetchNextChapter={prefetchNextChapter}
+              prefetchPrevChapter={prefetchPrevChapter}
               chapterTitle={bookModeSection.chapter.title}
               onSendComment={handleSendComment}
               commentCount={commentCount}
@@ -1219,6 +1290,9 @@ export default function ReaderPage() {
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
 
       <style>{`
+        .desktop-comments-toggle {
+          display: none !important;
+        }
         @media (min-width: 1024px) {
           .desktop-comments-toggle {
             display: flex !important;
@@ -1227,9 +1301,6 @@ export default function ReaderPage() {
           .desktop-sidebar-comments {
             display: block !important;
           }
-        }
-        .group:hover .bookmark-btn {
-          opacity: 1 !important;
         }
       `}</style>
     </div>

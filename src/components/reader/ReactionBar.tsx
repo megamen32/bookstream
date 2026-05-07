@@ -207,7 +207,7 @@ export default function ReactionBar({
       role="group"
       aria-label="Реакции"
       className={cn(
-        'reaction-bar items-center gap-1 pt-1 transition-opacity duration-200 ease-in-out md:flex md:opacity-0 md:group-hover:opacity-100',
+        'reaction-bar items-center gap-1 pt-2 transition-opacity duration-200 ease-in-out md:flex md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
         showOnMobile ? 'flex opacity-100' : 'hidden md:flex',
       )}
       style={{ color: 'var(--r-text-secondary)' }}
@@ -235,28 +235,29 @@ export default function ReactionBar({
               alignItems: 'center',
               gap: '0.125rem',
               minWidth: '1.75rem',
-              height: '1.75rem',
-              padding: '0 0.25rem',
+              height: '1.9rem',
+              padding: '0 0.4rem',
               borderRadius: '9999px',
               border: isActive
-                ? '1px solid var(--r-accent)'
-                : '1px solid transparent',
+                ? '1px solid color-mix(in srgb, var(--r-accent) 70%, white 30%)'
+                : '1px solid color-mix(in srgb, var(--r-border) 55%, transparent)',
               background: isActive
-                ? 'color-mix(in srgb, var(--r-accent) 12%, transparent)'
-                : 'transparent',
+                ? 'color-mix(in srgb, var(--r-accent) 14%, var(--r-bg) 86%)'
+                : 'color-mix(in srgb, var(--r-bg-secondary) 62%, transparent)',
               cursor: isTogglingThis ? 'wait' : 'pointer',
               color: isActive ? 'var(--r-accent)' : 'var(--r-text-secondary)',
               fontSize: '0.8125rem',
               lineHeight: 1,
-              transition: 'background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease',
+              transition: 'background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, opacity 150ms ease',
               outline: 'none',
               userSelect: 'none',
               opacity: isTogglingThis ? 0.6 : 1,
               animation: pulsingEmoji === emoji ? 'reactionShake 650ms ease-out' : undefined,
+              boxShadow: isActive ? '0 12px 24px rgba(0, 0, 0, 0.12)' : 'none',
             }}
             onMouseEnter={(e) => {
               if (!isActive) {
-                e.currentTarget.style.background = 'var(--r-bg-secondary)'
+                e.currentTarget.style.background = 'color-mix(in srgb, var(--r-bg-secondary) 82%, white 18%)'
               }
             }}
             onMouseLeave={(e) => {

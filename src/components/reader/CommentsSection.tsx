@@ -285,8 +285,8 @@ export default function CommentsSection({
     <div
       ref={sectionRef}
       style={{
-        borderTop: '1px solid var(--r-border)',
-        paddingTop: '1rem',
+        borderTop: '1px solid color-mix(in srgb, var(--r-border) 72%, transparent)',
+        paddingTop: '1.25rem',
       }}
     >
       <div
@@ -314,8 +314,9 @@ export default function CommentsSection({
             gap: '0.25rem',
             padding: '0.25rem',
             borderRadius: '9999px',
-            backgroundColor: 'var(--r-bg-secondary)',
-            border: '1px solid var(--r-border)',
+            backgroundColor: 'color-mix(in srgb, var(--r-bg-secondary) 74%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--r-border) 70%, transparent)',
+            backdropFilter: 'blur(14px)',
           }}
           aria-label="Сортировка комментариев"
         >
@@ -327,7 +328,7 @@ export default function CommentsSection({
               backgroundColor: sortMode === 'top' ? 'var(--r-accent)' : 'transparent',
               color: sortMode === 'top' ? 'var(--r-accent-foreground)' : 'var(--r-text-secondary)',
               borderRadius: '9999px',
-              padding: '0.35rem 0.75rem',
+              padding: '0.4rem 0.8rem',
               fontSize: '0.75rem',
               fontWeight: 600,
               cursor: 'pointer',
@@ -343,7 +344,7 @@ export default function CommentsSection({
               backgroundColor: sortMode === 'date' ? 'var(--r-accent)' : 'transparent',
               color: sortMode === 'date' ? 'var(--r-accent-foreground)' : 'var(--r-text-secondary)',
               borderRadius: '9999px',
-              padding: '0.35rem 0.75rem',
+              padding: '0.4rem 0.8rem',
               fontSize: '0.75rem',
               fontWeight: 600,
               cursor: 'pointer',
@@ -358,9 +359,10 @@ export default function CommentsSection({
         <div
           style={{
             marginBottom: '0.75rem',
-            borderRadius: '0.5rem',
-            backgroundColor: 'var(--r-bg-secondary)',
-            padding: '0.625rem 0.75rem',
+            borderRadius: '1rem',
+            backgroundColor: 'color-mix(in srgb, var(--r-bg-secondary) 70%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--r-border) 65%, transparent)',
+            padding: '0.75rem 0.9rem',
             color: 'var(--r-text-secondary)',
             fontSize: '0.75rem',
           }}
@@ -497,7 +499,17 @@ export default function CommentsSection({
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingBottom: '1rem' }}>
+          <div style={{
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'center',
+            padding: '0.4rem',
+            paddingBottom: '1rem',
+            borderRadius: '1.25rem',
+            background: 'color-mix(in srgb, var(--r-bg-secondary) 66%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--r-border) 68%, transparent)',
+            boxShadow: '0 14px 36px rgba(0, 0, 0, 0.08)',
+          }}>
             <input
               ref={inputRef}
               type="text"
@@ -508,10 +520,10 @@ export default function CommentsSection({
               disabled={cooldown > 0 || isSending}
               style={{
                 flex: 1,
-                background: 'var(--r-bg-secondary)',
-                border: '1px solid var(--r-border)',
+                background: 'transparent',
+                border: 'none',
                 borderRadius: '1.25rem',
-                padding: '0.5rem 1rem',
+                padding: '0.7rem 1rem',
                 fontSize: '0.875rem',
                 color: 'var(--r-text)',
                 outline: 'none',
@@ -530,6 +542,7 @@ export default function CommentsSection({
                 padding: 0,
                 backgroundColor: 'var(--r-accent)',
                 color: 'var(--r-accent-foreground)',
+                boxShadow: '0 10px 24px color-mix(in srgb, var(--r-accent) 28%, transparent)',
               }}
             >
               {cooldown > 0 ? `${cooldown}` : isSending ? '…' : '→'}

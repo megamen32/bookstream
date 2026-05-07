@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
-import { mapAnnotationComment, sortCommentsByTop } from '@/lib/annotations'
+import { mapAnnotationComment, mapAnnotationQuote, sortCommentsByTop, sortQuotesByTop } from '@/lib/annotations'
 import { db } from '@/lib/db'
 
 interface RouteParams {
@@ -123,7 +123,7 @@ export async function GET(
         )
         const parsedParagraphs = buildParagraphInputsFromHtml(variantWithParagraphs.contentHtml)
 
-        const [annotations, annotationCount] = await Promise.all([
+        const [annotations, commentCount, reactionsCount, quotesCount, quoteRows] = await Promise.all([
           db.annotation.findMany({
             where: {
               chapterId: chapter.id,
@@ -153,11 +153,73 @@ export async function GET(
               status: 'active',
             },
           }),
+          db.annotation.count({
+            where: {
+              chapterId: chapter.id,
+              kind: 'reaction',
+              status: 'active',
+            },
+          }),
+          db.annotation.count({
+            where: {
+              chapterId: chapter.id,
+              kind: 'quote',
+              status: 'active',
+            },
+          }),
+          db.annotation.findMany({
+            where: {
+              chapterId: chapter.id,
+              kind: 'quote',
+              status: 'active',
+              selectedText: {
+                not: null,
+              },
+              paragraphId: {
+                not: null,
+              },
+            },
+            include: {
+              votes: {
+                select: {
+                  readerId: true,
+                },
+              },
+              chapter: {
+                select: {
+                  id: true,
+                  title: true,
+                  position: true,
+                },
+              },
+            },
+            take: 50,
+          }),
         ])
 
         const commentsPreview = sortCommentsByTop(
           annotations.map((annotation) => mapAnnotationComment(annotation, readerId)),
         ).slice(0, previewLimit)
+
+        const topQuote = sortQuotesByTop(
+          quoteRows
+            .map((quote) => mapAnnotationQuote(quote, readerId))
+            .filter((quote): quote is NonNullable<typeof quote> => Boolean(quote)),
+        )[0] || null
+
+        const topQuoteCommentsCount = topQuote
+          ? await db.annotation.count({
+              where: {
+                chapterId: chapter.id,
+                kind: 'comment',
+                status: 'active',
+                paragraphId: topQuote.paragraphId,
+                endParagraphId: topQuote.endParagraphId,
+                startOffset: topQuote.startOffset,
+                endOffset: topQuote.endOffset,
+              },
+            })
+          : 0
 
         return {
           chapter: {
@@ -180,8 +242,32 @@ export async function GET(
               indentPx: parsedParagraphs[paragraphIndex]?.indentPx ?? 0,
             })),
           },
+          preview: {
+            comments: commentsPreview.map((comment) => ({
+              id: comment.id,
+              authorName: comment.username,
+              body: comment.body,
+            })),
+            stats: {
+              commentsCount: commentCount,
+              reactionsCount,
+              quotesCount,
+              bookmarksCount: null,
+              topQuote: topQuote
+                ? {
+                    text: topQuote.text,
+                    reactionsCount: topQuote.upvoteCount,
+                    commentsCount: topQuoteCommentsCount,
+                    chapterId: topQuote.chapterId,
+                    variantType: topQuote.variantType,
+                    paragraphId: topQuote.paragraphId,
+                    paragraphEndId: topQuote.paragraphEndId,
+                  }
+                : null,
+            },
+          },
           commentsPreview,
-          commentCount: annotationCount,
+          commentCount,
           prevChapterId: windowChapters[localIndex - 1]?.id || book.chapters[startIndex + localIndex - 1]?.id || null,
           nextChapterId: windowChapters[localIndex + 1]?.id || book.chapters[startIndex + localIndex + 1]?.id || null,
         }

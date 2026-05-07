@@ -1,0 +1,467 @@
+.book-reader-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--r-bg);
+  color: var(--r-text);
+  touch-action: pan-y;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.book-reader-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  padding:
+    0.85rem
+    clamp(0.72rem, 3vw, 1.15rem)
+    max(2.4rem, env(safe-area-inset-bottom));
+}
+
+.book-reader-page-area {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 920px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.book-reader-measure {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.book-reader-pages-track {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  will-change: transform;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.16s ease;
+}
+
+.book-reader-page {
+  flex: 0 0 auto;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.chapter-next .book-reader-pages-track,
+.chapter-prev .book-reader-pages-track {
+  opacity: 0.72;
+}
+
+.book-reader-paragraph-shell {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 0.72em;
+  padding: 0;
+  border-radius: 0.55rem;
+  box-sizing: border-box;
+}
+
+.book-reader-paragraph-shell.has-user-mark {
+  background: color-mix(in srgb, var(--r-accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--r-accent) 16%, transparent);
+}
+
+.book-reader-paragraph-shell.is-quote-target {
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f59e0b 24%, transparent);
+}
+
+.book-reader-paragraph {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  color: var(--r-text);
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  font-weight: 400;
+  letter-spacing: -0.004em;
+  hyphens: auto;
+  text-wrap: pretty;
+  padding: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.book-reader-paragraph p {
+  margin: 0;
+  max-width: 100%;
+}
+
+.book-reader-paragraph * {
+  max-width: 100%;
+}
+
+.book-reader-paragraph img,
+.book-reader-paragraph video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.book-reader-paragraph table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.book-reader-paragraph [style*='white-space'] {
+  white-space: normal !important;
+}
+
+.book-reader-page-inner {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.book-reader-chapter-header {
+  width: 100%;
+  margin: 0 0 1.35rem;
+  padding: 0.1rem 0 0.3rem;
+  text-align: center;
+  break-inside: avoid;
+}
+
+.book-reader-chapter-title {
+  margin: 0;
+  color: var(--r-text);
+  font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+  line-height: 1.08;
+  font-weight: 780;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.book-reader-quote-pill {
+  position: absolute;
+  top: -0.74rem;
+  right: 0.2rem;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  height: 1.35rem;
+  padding: 0 0.62rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--r-accent) 92%, black);
+  color: var(--r-accent-foreground);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.book-reader-end {
+  text-align: center;
+  padding: 0.8rem 0 1.2rem;
+}
+
+.book-reader-end span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.8rem;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--r-bg-secondary) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--r-border) 70%, transparent);
+  color: var(--r-text-secondary);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.book-reader-tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.book-reader-tap-zone-left {
+  left: 0;
+  width: 30%;
+}
+
+.book-reader-tap-zone-center {
+  left: 30%;
+  width: 40%;
+}
+
+.book-reader-tap-zone-right {
+  right: 0;
+  width: 30%;
+}
+
+.book-reader-hud {
+  position: absolute;
+  left: 50%;
+  bottom: max(0.85rem, env(safe-area-inset-bottom));
+  z-index: 24;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 1.9rem;
+  padding: 0 0.78rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--r-bg-secondary) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--r-border) 70%, transparent);
+  color: var(--r-text-secondary);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 720;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  transform: translate(-50%, 0.35rem) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.book-reader-hud.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.book-reader-hud i {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.book-reader-comment-button {
+  position: absolute;
+  right: max(0.85rem, env(safe-area-inset-right));
+  bottom: max(0.85rem, env(safe-area-inset-bottom));
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--r-accent-foreground);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.3), transparent 35%),
+    linear-gradient(135deg, var(--r-accent), color-mix(in srgb, var(--r-accent) 72%, #000));
+  box-shadow:
+    0 16px 38px color-mix(in srgb, var(--r-accent) 30%, transparent),
+    0 7px 18px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.book-reader-comment-button:active {
+  transform: scale(0.94);
+  filter: brightness(0.96);
+}
+
+.book-reader-comment-badge {
+  position: absolute;
+  top: -0.24rem;
+  right: -0.22rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  border: 2px solid var(--r-bg);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 850;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.32);
+}
+
+.book-reader-comments-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-height: 78%;
+  overflow: hidden;
+  border-radius: 1.45rem 1.45rem 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--r-border) 82%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--r-bg) 94%, transparent), var(--r-bg)),
+    var(--r-bg);
+  box-shadow: 0 -24px 70px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(26px) saturate(1.2);
+  -webkit-backdrop-filter: blur(26px) saturate(1.2);
+  animation: bookReaderSheetIn 0.2s ease-out;
+}
+
+.book-reader-comments-drag {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 2.45rem;
+  padding-top: 0.35rem;
+  cursor: ns-resize;
+}
+
+.book-reader-comments-handle {
+  width: 2.65rem;
+  height: 0.27rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--r-text-secondary) 28%, transparent);
+}
+
+.book-reader-comments-close {
+  position: absolute;
+  top: 50%;
+  right: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--r-text-secondary);
+  background: color-mix(in srgb, var(--r-bg-secondary) 72%, transparent);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.book-reader-comments-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1rem max(1rem, env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.bookstream-word-highlight {
+  border-radius: 0.26em;
+  background: color-mix(in srgb, var(--r-accent) 18%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.bookstream-inline-annotation-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05em;
+  height: 1.05em;
+  margin-left: 0.12em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--r-accent) 88%, black);
+  color: var(--r-accent-foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.72em;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: 0.12em;
+  box-shadow: 0 0.35em 0.9em color-mix(in srgb, var(--r-accent) 22%, transparent);
+}
+
+@keyframes bookReaderSheetIn {
+  from {
+    transform: translateY(1.1rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  .book-reader-viewport {
+    padding-inline: 0.62rem;
+    padding-top: 0.72rem;
+    padding-bottom: max(2.35rem, env(safe-area-inset-bottom));
+  }
+
+  .book-reader-page-area {
+    max-width: none;
+  }
+
+  .book-reader-paragraph-shell {
+    margin-bottom: 0.68em;
+  }
+
+  .book-reader-paragraph {
+    letter-spacing: -0.003em;
+  }
+}
+
+@media (min-width: 768px) {
+  .book-reader-viewport {
+    padding-inline: clamp(2rem, 4vw, 3.25rem);
+    padding-top: 1.25rem;
+    padding-bottom: 3.25rem;
+  }
+
+  .book-reader-page-area {
+    max-width: 960px;
+  }
+
+  .book-reader-comments-sheet {
+    left: 50%;
+    right: auto;
+    width: min(720px, calc(100vw - 2rem));
+    transform: translateX(-50%);
+    bottom: 1rem;
+    border-radius: 1.45rem;
+  }
+
+  @keyframes bookReaderSheetIn {
+    from {
+      transform: translateX(-50%) translateY(1.1rem);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  }
+}

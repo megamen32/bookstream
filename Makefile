@@ -103,6 +103,20 @@ restartdev: deps prisma service-sync
 	else \
 		systemctl restart "$(SERVICE_NAME)"; \
 	fi; \
+	echo "[service] wait for http://127.0.0.1:$(DEV_PORT)"; \
+	ready=0; \
+	for attempt in $$(seq 1 60); do \
+		if curl -fsS "http://127.0.0.1:$(DEV_PORT)" >/dev/null 2>&1; then \
+			ready=1; \
+			break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ "$$ready" -ne 1 ]; then \
+		echo "[service] dev server did not become ready on port $(DEV_PORT)" >&2; \
+		journalctl -u "$(SERVICE_NAME)" -n 80 --no-pager || true; \
+		exit 1; \
+	fi; \
 	echo "[service] status"; \
 	systemctl --no-pager --full status "$(SERVICE_NAME)" | sed -n '1,20p'
 

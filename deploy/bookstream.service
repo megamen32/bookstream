@@ -8,6 +8,7 @@ Type=simple
 User=roomhacker
 Group=roomhacker
 WorkingDirectory=/home/roomhacker/PycharmProjects/bookstream
+LimitNOFILE=65536
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=HOSTNAME=0.0.0.0
 Environment=PORT=3000

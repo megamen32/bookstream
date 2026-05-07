@@ -65,12 +65,16 @@ export default function VariantSlider({
 
   return (
     <div
+      className="reader-variant-slider"
       style={{
         display: 'flex',
-        backgroundColor: 'var(--r-bg-secondary)',
-        borderRadius: '0.5rem',
-        padding: '0.1875rem',
-        gap: '0.125rem',
+        backgroundColor: 'color-mix(in srgb, var(--r-bg-secondary) 72%, transparent)',
+        borderRadius: '9999px',
+        padding: '0.25rem',
+        gap: '0.1875rem',
+        border: '1px solid color-mix(in srgb, var(--r-border) 68%, transparent)',
+        backdropFilter: 'blur(14px)',
+        overflowX: 'auto',
       }}
     >
       {sortedItems.map(({ type, preset, isGenerated }) => {
@@ -86,19 +90,19 @@ export default function VariantSlider({
             disabled={isGenerating}
             style={{
               flex: 1,
-              padding: '0.4375rem 0.5rem',
-              borderRadius: '0.375rem',
+              padding: '0.55rem 0.8rem',
+              borderRadius: '9999px',
               border: isActive
                 ? 'none'
                 : isGenerated
                   ? '1px solid transparent'
-                  : '1px dashed var(--r-border)',
+                  : '1px dashed color-mix(in srgb, var(--r-border) 78%, transparent)',
               cursor: isGenerating ? 'wait' : 'pointer',
               fontSize: '0.75rem',
               fontWeight: isActive ? 600 : 400,
               backgroundColor: isActive
                 ? 'var(--r-accent)'
-                : 'transparent',
+                : 'color-mix(in srgb, transparent 72%, var(--r-bg) 28%)',
               color: isActive
                 ? 'var(--r-accent-foreground)'
                 : isGenerated
@@ -106,13 +110,14 @@ export default function VariantSlider({
                   : 'var(--r-text-tertiary, var(--r-text-secondary))',
               transition: 'all 0.2s ease',
               whiteSpace: 'nowrap',
-              minHeight: '36px',
+              minHeight: '38px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '0.25rem',
               opacity: isGenerating ? 0.7 : 1,
               position: 'relative',
+              boxShadow: isActive ? '0 12px 26px color-mix(in srgb, var(--r-accent) 22%, transparent)' : 'none',
             }}
             title={
               isGenerating

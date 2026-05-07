@@ -7,9 +7,8 @@ import type { SelectionAnnotationRange } from './TextSelector'
 import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import type { CommentSubmitHandler } from './comment-types'
+import './BookReader.css'
 import { MessageSquare, X } from 'lucide-react'
-import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
-import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import {
   buildAnnotationParagraphRanges,
   splitTextByAnnotationRanges,
@@ -37,23 +36,17 @@ interface BookReaderProps {
   chapterTitle: string
   onSendComment: CommentSubmitHandler
   commentCount: number
-  /** Callback with progress (0-1) for progress bar */
   onProgress?: (percent: number) => void
-  /** Currently bookmarked paragraph stableKey */
   bookmarkedKey?: string | null
-  /** Callback to toggle bookmark */
   onToggleBookmark?: (stableKey: string) => void
-  /** Search panel open state */
   searchOpen: boolean
-  /** Callback used to expose the active content node for search */
   setContentNode?: (node: HTMLDivElement | null) => void
-  /** Book route slugs used for quote links in comments */
   authorSlug: string
   bookSlug: string
-  /** Database paragraph id requested via quote navigation */
   highlightParagraphId?: string | null
-  /** Optional end paragraph id for a multi-paragraph quote range */
   highlightParagraphEndId?: string | null
+  prefetchNextChapter?: () => Promise<void> | void
+  prefetchPrevChapter?: () => Promise<void> | void
 }
 
 export default function BookReader({
@@ -67,34 +60,137 @@ export default function BookReader({
   onSendComment,
   commentCount,
   onProgress,
-  bookmarkedKey,
-  onToggleBookmark,
-  searchOpen,
   setContentNode,
   authorSlug,
   bookSlug,
   highlightParagraphId,
   highlightParagraphEndId,
+  prefetchNextChapter,
+  prefetchPrevChapter,
 }: BookReaderProps) {
-  const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode, showMobileReactionBar } = useReaderStore()
-  const innerRef = useRef<HTMLDivElement>(null)
-  const contentRefInternal = useRef<HTMLDivElement>(null)
+  const {
+    fontSize,
+    lineHeight,
+    theme,
+    bookId,
+    chapterId,
+    readerId,
+    readingMode,
+    showMobileReactionBar,
+  } = useReaderStore()
+
+  const shellRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const pageAreaRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLDivElement>(null)
+  const activePageRef = useRef<HTMLDivElement>(null)
+
+  const [pageSize, setPageSize] = useState({ width: 0, height: 0 })
+  const [pages, setPages] = useState<Paragraph[][]>([])
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [showMenu, setShowMenu] = useState(false)
+  const [showHud, setShowHud] = useState(false)
   const [showComments, setShowComments] = useState(false)
-  const [commentsHeight, setCommentsHeight] = useState(280)
-  const restoredRef = useRef(false)
-  const quoteFocusAppliedRef = useRef(false)
-  const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
+  const [commentsHeight, setCommentsHeight] = useState(360)
   const [selectionHighlights, setSelectionHighlights] = useState<SelectionAnnotationRange[]>([])
+  const [chapterTransition, setChapterTransition] = useState<'idle' | 'next' | 'prev'>('idle')
+
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isTransitioning = useRef(false)
-  const paragraphIndexMap = useMemo(() => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])), [paragraphs])
+  const hudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const quoteFocusAppliedRef = useRef(false)
+  const isSwitchingChapterRef = useRef(false)
+  const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+  const prefetchNextStartedRef = useRef(false)
+  const prefetchPrevStartedRef = useRef(false)
+
+  const totalPages = Math.max(1, pages.length)
+  const showCommentButton = readingMode !== 'book'
+
+  const paragraphIndexMap = useMemo(
+    () => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])),
+    [paragraphs],
+  )
+
+  const getTextRangesForParagraph = useCallback(
+    (paragraphId: string): AnnotationParagraphRange[] => {
+      const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
+      return ranges.filter((range) => range.paragraphId === paragraphId)
+    },
+    [paragraphIndexMap, paragraphs, selectionHighlights],
+  )
+
+  const showTemporaryHud = useCallback(() => {
+    setShowHud(true)
+
+    if (hudTimeoutRef.current) {
+      clearTimeout(hudTimeoutRef.current)
+    }
+
+    hudTimeoutRef.current = setTimeout(() => {
+      setShowHud(false)
+    }, 1100)
+  }, [])
+
+  const startPrefetchNext = useCallback(() => {
+    if (!hasNextChapter || !prefetchNextChapter || prefetchNextStartedRef.current) return
+
+    prefetchNextStartedRef.current = true
+
+    try {
+      void prefetchNextChapter()
+    } catch (error) {
+      console.error('Failed to prefetch next chapter:', error)
+    }
+  }, [hasNextChapter, prefetchNextChapter])
+
+  const startPrefetchPrev = useCallback(() => {
+    if (!hasPrevChapter || !prefetchPrevChapter || prefetchPrevStartedRef.current) return
+
+    prefetchPrevStartedRef.current = true
+
+    try {
+      void prefetchPrevChapter()
+    } catch (error) {
+      console.error('Failed to prefetch previous chapter:', error)
+    }
+  }, [hasPrevChapter, prefetchPrevChapter])
+
+  useEffect(() => {
+    if (currentPage >= Math.max(1, totalPages - 1)) {
+      startPrefetchNext()
+    }
+
+    if (currentPage <= 2) {
+      startPrefetchPrev()
+    }
+  }, [currentPage, totalPages, startPrefetchNext, startPrefetchPrev])
+
+  useEffect(() => {
+    const pageArea = pageAreaRef.current
+    if (!pageArea) return
+
+    const updateSize = () => {
+      setPageSize({
+        width: Math.floor(pageArea.clientWidth),
+        height: Math.floor(pageArea.clientHeight),
+      })
+    }
+
+    updateSize()
+
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(pageArea)
+    window.addEventListener('resize', updateSize)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateSize)
+    }
+  }, [])
 
   useEffect(() => {
     quoteFocusAppliedRef.current = false
-  }, [highlightParagraphId, highlightParagraphEndId])
+  }, [chapterId, highlightParagraphId, highlightParagraphEndId])
 
   useEffect(() => {
     if (!readerId || !bookId || !chapterId) return
@@ -103,16 +199,15 @@ export default function BookReader({
 
     const loadSelectionHighlights = async (): Promise<void> => {
       try {
-        const params = new URLSearchParams({
-          readerId,
-          bookId,
-        })
+        const params = new URLSearchParams({ readerId, bookId })
+
         const response = await fetch(`/api/annotations?${params.toString()}`, {
           signal: controller.signal,
         })
+
         if (!response.ok) return
 
-        const data = await response.json() as {
+        const data = (await response.json()) as {
           annotations?: UnifiedAnnotationItem[]
         }
 
@@ -139,124 +234,151 @@ export default function BookReader({
     }
 
     void loadSelectionHighlights()
+
     return () => controller.abort()
   }, [readerId, bookId, chapterId])
 
-  useEffect(() => {
-    for (const node of quoteHighlightNodesRef.current) {
-      node.classList.remove('bookstream-quote-frame')
-    }
-    quoteHighlightNodesRef.current = []
-
-    if (!highlightParagraphId || !contentRefInternal.current) return
-
-    const frameId = window.requestAnimationFrame(() => {
-      if (!contentRefInternal.current) return
-      const target = findQuoteParagraphElement(contentRefInternal.current, highlightParagraphId)
-      if (!target) return
-
-      const frames = collectParagraphRangeElements(
-        contentRefInternal.current,
-        highlightParagraphId,
-        highlightParagraphEndId,
-      )
-      for (const node of frames) {
-        node.classList.add('bookstream-quote-frame')
-      }
-      quoteHighlightNodesRef.current = frames
-
-      scrollQuoteTargetIntoView(contentRefInternal.current, target)
-      quoteFocusAppliedRef.current = true
-      restoredRef.current = true
-    })
-
-    return () => {
-      window.cancelAnimationFrame(frameId)
-      for (const node of quoteHighlightNodesRef.current) {
-        node.classList.remove('bookstream-quote-frame')
-      }
-      quoteHighlightNodesRef.current = []
-    }
-  }, [highlightParagraphId, highlightParagraphEndId, paragraphs])
-
   const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
     setSelectionHighlights((current) => {
+      const isSameRange = (entry: SelectionAnnotationRange) =>
+        entry.kind === range.kind &&
+        entry.paragraphId === range.paragraphId &&
+        entry.endParagraphId === range.endParagraphId &&
+        entry.startOffset === range.startOffset &&
+        entry.endOffset === range.endOffset &&
+        entry.emoji === range.emoji &&
+        entry.body === range.body
+
       if (!active) {
-        return current.filter(
-          (entry) =>
-            !(
-              entry.kind === range.kind &&
-              entry.paragraphId === range.paragraphId &&
-              entry.endParagraphId === range.endParagraphId &&
-              entry.startOffset === range.startOffset &&
-              entry.endOffset === range.endOffset &&
-              entry.emoji === range.emoji &&
-              entry.body === range.body
-            ),
-        )
+        return current.filter((entry) => !isSameRange(entry))
       }
 
-      return current.some(
-        (entry) =>
-          entry.kind === range.kind &&
-          entry.paragraphId === range.paragraphId &&
-          entry.endParagraphId === range.endParagraphId &&
-          entry.startOffset === range.startOffset &&
-          entry.endOffset === range.endOffset &&
-          entry.emoji === range.emoji &&
-          entry.body === range.body,
-      )
-        ? current
-        : [...current, range]
+      return current.some(isSameRange) ? current : [...current, range]
     })
   }, [])
 
-  const getTextRangesForParagraph = useCallback(
-    (paragraphId: string): AnnotationParagraphRange[] => {
-      const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
-      return ranges.filter((range) => range.paragraphId === paragraphId)
-    },
-    [paragraphIndexMap, paragraphs, selectionHighlights],
-  )
-
-  const columnWidth = lineWidth === 'narrow' ? '280px' : lineWidth === 'medium' ? '350px' : '420px'
-
-  // Calculate pages based on content height
   useEffect(() => {
-    const el = contentRefInternal.current
-    if (!el) return
-    const observer = new ResizeObserver(() => {
-      const totalWidth = el.scrollWidth
-      const pageWidth = el.clientWidth
-      const pages = pageWidth > 0 ? Math.max(1, Math.ceil(totalWidth / pageWidth)) : 1
-      setTotalPages(pages)
-      if (currentPage > pages) setCurrentPage(Math.max(1, pages))
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [lineWidth, fontSize, lineHeight, paragraphs, currentPage, showComments])
+    if (!measureRef.current || pageSize.width <= 0 || pageSize.height <= 0) return
 
-  // Restore page position
-  useEffect(() => {
-    if (restoredRef.current || !contentRefInternal.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
-    restoredRef.current = true
-    const savedPage = localStorage.getItem(`bookstream-page-${chapterId}`)
-    if (savedPage) {
-      const page = parseInt(savedPage, 10)
-      if (!isNaN(page) && page > 0) {
-        requestAnimationFrame(() => setCurrentPage(page))
+    const measure = measureRef.current
+    const result: Paragraph[][] = []
+    let current: Paragraph[] = []
+    let isFirstPage = true
+
+    const makeChapterHeaderNode = (): HTMLElement => {
+      const header = document.createElement('header')
+      header.className = 'book-reader-chapter-header'
+
+      const title = document.createElement('h1')
+      title.className = 'book-reader-chapter-title'
+      title.textContent = chapterTitle
+
+      header.appendChild(title)
+      return header
+    }
+
+    const resetMeasure = (): void => {
+      measure.innerHTML = ''
+
+      if (isFirstPage) {
+        measure.appendChild(makeChapterHeaderNode())
       }
     }
-  }, [chapterId])
 
-  // Scroll to current page
+    const makeParagraphNode = (paragraph: Paragraph) => {
+      const wrapper = document.createElement('section')
+      wrapper.className = 'book-reader-paragraph-shell'
+
+      const article = document.createElement('article')
+      article.className = 'book-reader-paragraph'
+      article.style.textAlign = paragraph.textAlign ?? 'justify'
+
+      if (paragraph.indentPx) {
+        article.style.paddingInlineStart = `${Math.min(paragraph.indentPx, 72)}px`
+      }
+
+      const p = document.createElement('p')
+
+      if (paragraph.html) {
+        p.innerHTML = paragraph.html
+      } else {
+        p.textContent = paragraph.text
+      }
+
+      article.appendChild(p)
+      wrapper.appendChild(article)
+
+      return wrapper
+    }
+
+    const commitPage = (): void => {
+      if (current.length > 0 || isFirstPage) {
+        result.push(current)
+        current = []
+        isFirstPage = false
+        resetMeasure()
+      }
+    }
+
+    resetMeasure()
+
+    for (const paragraph of paragraphs) {
+      const node = makeParagraphNode(paragraph)
+      measure.appendChild(node)
+
+      const tooTall = measure.scrollHeight > pageSize.height
+
+      if (tooTall) {
+        measure.removeChild(node)
+        commitPage()
+
+        current.push(paragraph)
+        measure.appendChild(makeParagraphNode(paragraph))
+      } else {
+        current.push(paragraph)
+      }
+
+      /**
+       * Если один абзац сам по себе выше страницы, он всё равно останется на странице.
+       * Иначе бесконечно резать текст нельзя без отдельного алгоритма line-breaking.
+       */
+      if (measure.scrollHeight > pageSize.height && current.length === 1) {
+        commitPage()
+      }
+    }
+
+    commitPage()
+
+    setPages(result.length > 0 ? result : [[]])
+
+    const savedPage = localStorage.getItem(`bookstream-page-${chapterId}`)
+    const page = savedPage ? parseInt(savedPage, 10) : 1
+
+    setCurrentPage(() => {
+      if (Number.isNaN(page)) return 1
+      return Math.max(1, Math.min(page, Math.max(1, result.length)))
+    })
+  }, [paragraphs, pageSize.width, pageSize.height, fontSize, lineHeight, chapterId, chapterTitle])
+
   useEffect(() => {
-    if (!contentRefInternal.current || !restoredRef.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
-    const pageWidth = contentRefInternal.current.clientWidth
-    contentRefInternal.current.scrollLeft = (currentPage - 1) * pageWidth
-  }, [currentPage, highlightParagraphId])
+    if (!highlightParagraphId || quoteFocusAppliedRef.current || pages.length === 0) return
 
-  // Report progress
+    const targetPageIndex = pages.findIndex((page) =>
+      page.some((paragraph) =>
+        paragraph.id === highlightParagraphId || paragraph.id === highlightParagraphEndId,
+      ),
+    )
+
+    if (targetPageIndex < 0) return
+
+    quoteFocusAppliedRef.current = true
+    const frameId = window.requestAnimationFrame(() => {
+      setCurrentPage(targetPageIndex + 1)
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [highlightParagraphEndId, highlightParagraphId, pages])
+
   useEffect(() => {
     if (totalPages > 1) {
       onProgress?.((currentPage - 1) / (totalPages - 1))
@@ -265,76 +387,122 @@ export default function BookReader({
     }
   }, [currentPage, totalPages, onProgress])
 
-  const saveProgress = useCallback((page: number) => {
-    if (!bookId || !chapterId || !readerId) return
-    localStorage.setItem(`bookstream-page-${chapterId}`, String(page))
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const scrollPercent = totalPages > 1 ? (page - 1) / (totalPages - 1) : 0
-        await fetch('/api/progress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            readerId, bookId, chapterId,
-            variantType: useReaderStore.getState().variantType,
-            scrollPercent, fontSize, lineHeight, theme, readingMode,
-          }),
-        })
-      } catch (e) {
-        console.error('Failed to save progress:', e)
+  const saveProgress = useCallback(
+    (page: number) => {
+      if (!bookId || !chapterId || !readerId) return
+
+      localStorage.setItem(`bookstream-page-${chapterId}`, String(page))
+
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
       }
-    }, 2000)
-  }, [bookId, chapterId, readerId, fontSize, lineHeight, theme, readingMode, totalPages])
+
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const scrollPercent = totalPages > 1 ? (page - 1) / (totalPages - 1) : 0
+
+          await fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              readerId,
+              bookId,
+              chapterId,
+              variantType: useReaderStore.getState().variantType,
+              scrollPercent,
+              fontSize,
+              lineHeight,
+              theme,
+              readingMode,
+            }),
+          })
+        } catch (error) {
+          console.error('Failed to save progress:', error)
+        }
+      }, 1000)
+    },
+    [bookId, chapterId, readerId, fontSize, lineHeight, theme, readingMode, totalPages],
+  )
+
+  const switchToNextChapter = useCallback(() => {
+    if (!hasNextChapter || isSwitchingChapterRef.current) return
+
+    isSwitchingChapterRef.current = true
+    setChapterTransition('next')
+    startPrefetchNext()
+
+    window.setTimeout(() => {
+      onNextChapter()
+
+      window.requestAnimationFrame(() => {
+        setChapterTransition('idle')
+        isSwitchingChapterRef.current = false
+      })
+    }, 120)
+  }, [hasNextChapter, onNextChapter, startPrefetchNext])
+
+  const switchToPrevChapter = useCallback(() => {
+    if (!hasPrevChapter || isSwitchingChapterRef.current) return
+
+    isSwitchingChapterRef.current = true
+    setChapterTransition('prev')
+    startPrefetchPrev()
+
+    window.setTimeout(() => {
+      onPrevChapter()
+
+      window.requestAnimationFrame(() => {
+        setChapterTransition('idle')
+        isSwitchingChapterRef.current = false
+      })
+    }, 120)
+  }, [hasPrevChapter, onPrevChapter, startPrefetchPrev])
 
   const goNext = useCallback(() => {
-    setCurrentPage(prev => {
+    if (showComments) return
+
+    setCurrentPage((prev) => {
       if (prev >= totalPages) {
-        if (hasNextChapter && !isTransitioning.current) {
-          isTransitioning.current = true
-          onNextChapter()
-          setTimeout(() => {
-            setCurrentPage(1)
-            restoredRef.current = true
-            isTransitioning.current = false
-          }, 100)
-        }
+        switchToNextChapter()
         return prev
       }
+
       const next = prev + 1
       saveProgress(next)
+      showTemporaryHud()
+
       return next
     })
-  }, [totalPages, saveProgress, hasNextChapter, onNextChapter])
+  }, [showComments, totalPages, saveProgress, showTemporaryHud, switchToNextChapter])
 
   const goPrev = useCallback(() => {
-    setCurrentPage(prev => {
+    if (showComments) return
+
+    setCurrentPage((prev) => {
       if (prev <= 1) {
-        if (hasPrevChapter && !isTransitioning.current) {
-          isTransitioning.current = true
-          onPrevChapter()
-          setTimeout(() => {
-            restoredRef.current = false
-            isTransitioning.current = false
-          }, 100)
-        }
+        switchToPrevChapter()
         return prev
       }
+
       const next = prev - 1
       saveProgress(next)
+      showTemporaryHud()
+
       return next
     })
-  }, [saveProgress, hasPrevChapter, onPrevChapter])
+  }, [showComments, saveProgress, showTemporaryHud, switchToPrevChapter])
 
-  // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (showComments) return // don't intercept when comments open
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (showComments) return
+
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === ' ') {
+        event.preventDefault()
         goNext()
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault()
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault()
         goPrev()
       }
     }
@@ -345,365 +513,279 @@ export default function BookReader({
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('bookstream:show-comments', handleShowComments)
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('bookstream:show-comments', handleShowComments)
     }
   }, [goNext, goPrev, showComments])
 
-  // Touch swipe handling
-  const touchStartX = useRef(0)
-  const touchStartY = useRef(0)
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX
-    touchStartY.current = e.touches[0].clientY
+  const handleTouchStart = (event: React.TouchEvent) => {
+    touchStartX.current = event.touches[0].clientX
+    touchStartY.current = event.touches[0].clientY
   }
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = (event: React.TouchEvent) => {
     if (showComments) return
-    const dx = e.changedTouches[0].clientX - touchStartX.current
-    const dy = e.changedTouches[0].clientY - touchStartY.current
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-      if (dx < 0) goNext()
-      else goPrev()
-    }
+
+    const dx = event.changedTouches[0].clientX - touchStartX.current
+    const dy = event.changedTouches[0].clientY - touchStartY.current
+
+    if (Math.abs(dx) < 36) return
+    if (Math.abs(dx) < Math.abs(dy) * 1.15) return
+
+    if (dx < 0) goNext()
+    else goPrev()
   }
 
-  const handleTapZone = (zone: 'left' | 'center' | 'right') => {
-    if (zone === 'left') goPrev()
-    else if (zone === 'right') goNext()
-    else setShowMenu(prev => !prev)
+  const renderParagraph = (paragraph: Paragraph) => {
+    const isQuoteTarget = highlightParagraphId === paragraph.id
+    const ranges = getTextRangesForParagraph(paragraph.id)
+    const hasSelectionHighlight = ranges.length > 0
+    const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
+    const canRenderRichParagraph = !hasSelectionHighlight && Boolean(paragraph.html)
+
+    return (
+      <section
+        key={paragraph.stableKey || paragraph.id}
+        className={[
+          'book-reader-paragraph-shell',
+          isQuoteTarget ? 'is-quote-target' : '',
+          hasSelectionHighlight ? 'has-user-mark' : '',
+        ].join(' ')}
+      >
+        {isQuoteTarget && (
+          <span className="book-reader-quote-pill">
+            Цитата
+          </span>
+        )}
+
+        <article
+          data-paragraph-id={paragraph.id}
+          data-stable-key={paragraph.stableKey}
+          className="book-reader-paragraph"
+          style={{
+            textAlign: paragraph.textAlign ?? 'justify',
+            paddingInlineStart: paragraph.indentPx
+              ? `${Math.min(paragraph.indentPx, 72)}px`
+              : undefined,
+          }}
+        >
+          {canRenderRichParagraph ? (
+            <p dangerouslySetInnerHTML={{ __html: paragraph.html || '' }} />
+          ) : (
+            <p>
+              {textSegments.map((segment, index) =>
+                segment.highlighted ? (
+                  <span
+                    key={`${paragraph.id}-hl-${index}`}
+                    className="bookstream-inline-annotation"
+                  >
+                    <span className="bookstream-word-highlight">
+                      {segment.text}
+                    </span>
+
+                    {segment.badges.map((badge, badgeIndex) => (
+                      <span
+                        key={`${paragraph.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                        className="bookstream-inline-annotation-badge"
+                        data-kind={badge.kind}
+                        title={
+                          badge.kind === 'reaction'
+                            ? 'Вы поставили реакцию'
+                            : badge.kind === 'quote'
+                              ? 'Вы вынесли цитату'
+                              : 'Вы оставили комментарий'
+                        }
+                      >
+                        {badge.kind === 'reaction'
+                          ? badge.emoji || '•'
+                          : badge.kind === 'quote'
+                            ? '»'
+                            : '✎'}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span key={`${paragraph.id}-txt-${index}`}>
+                    {segment.text}
+                  </span>
+                ),
+              )}
+            </p>
+          )}
+        </article>
+
+        <ReactionBar
+          paragraphId={paragraph.id}
+          variantId={variantId}
+          showOnMobile={showMobileReactionBar}
+        />
+      </section>
+    )
   }
 
-  const handleBookmarkClick = useCallback((e: React.MouseEvent, stableKey: string) => {
-    e.stopPropagation()
-    onToggleBookmark?.(stableKey)
-  }, [onToggleBookmark])
-
-  const showCommentButton = readingMode !== 'book'
+  const renderChapterHeader = () => (
+    <header className="book-reader-chapter-header">
+      <h1 className="book-reader-chapter-title">
+        {chapterTitle}
+      </h1>
+    </header>
+  )
 
   return (
     <div
-      ref={innerRef}
-      style={{ position: 'relative', height: '100%', overflow: 'hidden' }}
+      ref={shellRef}
+      className={`book-reader-shell chapter-${chapterTransition}`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Scrollable content container */}
-      <div
-        ref={(node) => {
-          contentRefInternal.current = node
-          setContentNode?.(showComments ? null : node)
-        }}
-        style={{
-          columnWidth: columnWidth,
-          columnGap: '2rem',
-          columnFill: 'auto',
-          height: '100%',
-          overflow: 'hidden',
-          padding: '1.5rem 1rem',
-          fontSize: `${fontSize}px`,
-          lineHeight: `${lineHeight}`,
-        }}
-      >
-        <div style={{ position: 'relative' }}>
+      <div ref={viewportRef} className="book-reader-viewport">
+        <div ref={pageAreaRef} className="book-reader-page-area">
           <div
+            ref={measureRef}
+            className="book-reader-measure"
             style={{
-              columnSpan: 'all',
-              breakInside: 'avoid',
-              margin: '0 0 1.5rem',
-              padding: '0 0 1rem',
-              textAlign: 'center',
+              width: pageSize.width > 0 ? `${pageSize.width}px` : undefined,
+              fontSize: `${fontSize}px`,
+              lineHeight: `${lineHeight}`,
+            }}
+          />
+
+          <div
+            ref={(node) => {
+              activePageRef.current = node
+              setContentNode?.(showComments ? null : node)
+            }}
+            className="book-reader-pages-track"
+            style={{
+              width: `${totalPages * pageSize.width}px`,
+              transform: `translate3d(-${(currentPage - 1) * pageSize.width}px, 0, 0)`,
             }}
           >
-            <h1
-              style={{
-                margin: 0,
-                color: 'var(--r-text)',
-                fontSize: 'clamp(1.4rem, 2.8vw, 2.2rem)',
-                lineHeight: 1.08,
-                fontWeight: 780,
-                letterSpacing: '-0.05em',
-              }}
-            >
-              {chapterTitle}
-            </h1>
-          </div>
-          <TextSelector containerRef={contentRefInternal} variantId={variantId} onSelectionAnnotation={handleSelectionAnnotation} />
-          {paragraphs.map((p) => {
-            const isQuoteTarget = highlightParagraphId === p.id
-            const ranges = getTextRangesForParagraph(p.id)
-            const hasSelectionHighlight = ranges.length > 0
-            const textSegments = splitTextByAnnotationRanges(p.text, ranges)
-            const canRenderRichParagraph = !hasSelectionHighlight && Boolean(p.html)
+            <TextSelector
+              containerRef={activePageRef}
+              variantId={variantId}
+              onSelectionAnnotation={handleSelectionAnnotation}
+            />
 
-            return (
+            {pages.map((page, pageIndex) => (
               <div
-                key={p.stableKey || p.id}
-                className="group"
+                key={`${chapterId}-page-${pageIndex}`}
+                className="book-reader-page"
                 style={{
-                  position: 'relative',
-                  backgroundColor: hasSelectionHighlight
-                    ? 'color-mix(in srgb, var(--r-accent) 6%, transparent)'
-                    : isQuoteTarget
-                      ? 'rgba(245, 158, 11, 0.10)'
-                      : 'transparent',
-                  transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
+                  width: pageSize.width > 0 ? `${pageSize.width}px` : '100%',
+                  fontSize: `${fontSize}px`,
+                  lineHeight: `${lineHeight}`,
                 }}
               >
-                {isQuoteTarget && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '-0.6rem',
-                      right: '0.5rem',
-                      zIndex: 2,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.2rem 0.55rem',
-                      borderRadius: '9999px',
-                      backgroundColor: 'var(--r-accent)',
-                      color: 'var(--r-accent-foreground)',
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    Цитата
-                  </span>
-                )}
-                <article
-                  data-paragraph-id={p.id}
-                  data-stable-key={p.stableKey}
-                  style={{
-                    breakInside: 'avoid',
-                    marginBottom: '0.5em',
-                    textAlign: p.textAlign ?? 'justify',
-                    hyphens: 'auto',
-                    color: 'var(--r-text)',
-                    fontFamily: 'Georgia, "Times New Roman", Times, serif',
-                    paddingInlineStart: p.indentPx ? `${Math.min(p.indentPx, 160)}px` : undefined,
-                  }}
-                >
-                  {canRenderRichParagraph ? (
-                    <p style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: p.html || '' }} />
-                  ) : (
-                    <p style={{ margin: 0 }}>
-                      {textSegments.map((segment, index) =>
-                        segment.highlighted ? (
-                          <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
-                            <span className="bookstream-word-highlight">{segment.text}</span>
-                            {segment.badges.map((badge, badgeIndex) => (
-                              <span
-                                key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
-                                className="bookstream-inline-annotation-badge"
-                                data-kind={badge.kind}
-                                title={
-                                  badge.kind === 'reaction'
-                                    ? 'Вы поставили реакцию'
-                                    : badge.kind === 'quote'
-                                      ? 'Вы вынесли цитату'
-                                      : 'Вы оставили комментарий'
-                                }
-                              >
-                                {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
-                              </span>
-                            ))}
-                          </span>
-                        ) : (
-                          <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
-                        ),
-                      )}
-                    </p>
-                  )}
-                </article>
-                <ReactionBar paragraphId={p.id} variantId={variantId} showOnMobile={showMobileReactionBar} />
-              </div>
-            )
-          })}
+                <div className="book-reader-page-inner">
+                  {pageIndex === 0 && renderChapterHeader()}
+                  {page.map(renderParagraph)}
 
-          {/* End hint */}
-          <div style={{ breakInside: 'avoid', textAlign: 'center', padding: '1rem 0' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                backgroundColor: 'var(--r-bg-secondary)',
-                color: 'var(--r-text-secondary)',
-                padding: '0.375rem 1rem',
-                borderRadius: '9999px',
-                fontSize: '0.75rem',
-              }}
-            >
-              {hasNextChapter ? 'Листните &rarr; следующая глава' : 'Конец книги'}
-            </span>
+                  {pageIndex === pages.length - 1 && (
+                    <footer className="book-reader-end">
+                      <span>
+                        {hasNextChapter ? 'Листните дальше →' : 'Конец книги'}
+                      </span>
+                    </footer>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Tap zones */}
-      <div className="tap-zone tap-zone-left" onClick={() => handleTapZone('left')} />
-      <div className="tap-zone tap-zone-center" onClick={() => handleTapZone('center')} />
-      <div className="tap-zone tap-zone-right" onClick={() => handleTapZone('right')} />
+      <button
+        className="book-reader-tap-zone book-reader-tap-zone-left"
+        aria-label="Предыдущая страница"
+        onClick={goPrev}
+      />
 
-      {/* Page indicator */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '1rem',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          backgroundColor: 'var(--r-bg-secondary)',
-          color: 'var(--r-text-secondary)',
-          padding: '0.25rem 0.75rem',
-          borderRadius: '9999px',
-          fontSize: '0.75rem',
-          zIndex: 20,
-          opacity: showMenu ? 1 : 0,
-          transition: 'opacity 0.2s ease',
-          pointerEvents: showMenu ? 'auto' : 'none',
-        }}
-      >
-        {currentPage} / {totalPages}
+      <button
+        className="book-reader-tap-zone book-reader-tap-zone-center"
+        aria-label="Показать прогресс"
+        onClick={showTemporaryHud}
+      />
+
+      <button
+        className="book-reader-tap-zone book-reader-tap-zone-right"
+        aria-label="Следующая страница"
+        onClick={goNext}
+      />
+
+      <div className={`book-reader-hud ${showHud ? 'is-visible' : ''}`}>
+        <span>{currentPage}</span>
+        <i />
+        <span>{totalPages}</span>
       </div>
 
       {showCommentButton && (
         <button
+          className="book-reader-comment-button"
           onClick={() => setShowComments(true)}
-          style={{
-            position: 'absolute',
-            bottom: '0.75rem',
-            right: '0.75rem',
-            width: '44px',
-            height: '44px',
-            borderRadius: '50%',
-            backgroundColor: 'var(--r-accent)',
-            color: 'var(--r-accent-foreground)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1.125rem',
-            border: 'none',
-            cursor: 'pointer',
-            zIndex: 20,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            transition: 'transform 0.2s ease',
-          }}
           title="Комментарии"
         >
-          <MessageSquare size={20} />
+          <MessageSquare size={20} strokeWidth={2.2} />
+
           {commentCount > 0 && (
-            <span style={{
-              position: 'absolute',
-              top: '-2px',
-              right: '-2px',
-              backgroundColor: '#ef4444',
-              color: '#fff',
-              fontSize: '0.625rem',
-              fontWeight: 700,
-              width: '1.125rem',
-              height: '1.125rem',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
+            <span className="book-reader-comment-badge">
               {commentCount > 99 ? '99+' : commentCount}
             </span>
           )}
         </button>
       )}
 
-      {/* Slide-up Comments Panel (Telegram-style) */}
       {showComments && (
         <div
-          className="slide-up-enter"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: commentsHeight,
-            maxHeight: '70%',
-            backgroundColor: 'var(--r-bg)',
-            borderTop: '1px solid var(--r-border)',
-            zIndex: 40,
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
-            borderRadius: '1rem 1rem 0 0',
-          }}
+          className="book-reader-comments-sheet"
+          style={{ height: commentsHeight }}
         >
-          {/* Drag handle + close button */}
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0.5rem 1rem 0.375rem',
-              position: 'relative',
-              cursor: 'ns-resize',
-              flexShrink: 0,
-            }}
-            onMouseDown={(e) => {
-              const startY = e.clientY
+            className="book-reader-comments-drag"
+            onMouseDown={(event) => {
+              const startY = event.clientY
               const startH = commentsHeight
-              const onMove = (ev: MouseEvent) => {
-                const delta = startY - ev.clientY
-                setCommentsHeight(Math.max(200, Math.min(window.innerHeight * 0.7, startH + delta)))
+
+              const onMove = (moveEvent: MouseEvent) => {
+                const delta = startY - moveEvent.clientY
+                setCommentsHeight(
+                  Math.max(240, Math.min(window.innerHeight * 0.78, startH + delta)),
+                )
               }
+
               const onUp = () => {
                 document.removeEventListener('mousemove', onMove)
                 document.removeEventListener('mouseup', onUp)
               }
+
               document.addEventListener('mousemove', onMove)
               document.addEventListener('mouseup', onUp)
             }}
           >
-            <div style={{
-              width: '2.5rem',
-              height: '0.25rem',
-              borderRadius: '9999px',
-              backgroundColor: 'var(--r-border)',
-            }} />
+            <div className="book-reader-comments-handle" />
+
             <button
+              className="book-reader-comments-close"
               onClick={() => setShowComments(false)}
-              style={{
-                position: 'absolute',
-                right: '0.75rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--r-text-secondary)',
-                padding: '0.25rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-              }}
+              aria-label="Закрыть комментарии"
             >
               <X size={18} />
             </button>
           </div>
 
-          {/* Comments content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem' }}>
-          <CommentsSection
-            chapterId={chapterId || ''}
-            onSendComment={onSendComment}
-            authorSlug={authorSlug}
-            bookSlug={bookSlug}
-          />
-        </div>
+          <div className="book-reader-comments-content">
+            <CommentsSection
+              chapterId={chapterId || ''}
+              onSendComment={onSendComment}
+              authorSlug={authorSlug}
+              bookSlug={bookSlug}
+            />
+          </div>
         </div>
       )}
+
     </div>
   )
 }
