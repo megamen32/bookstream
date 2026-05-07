@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { ThumbsUp } from 'lucide-react'
 
 interface CommentVoteButtonProps {
   reacted: boolean
@@ -29,13 +29,13 @@ export default function CommentVoteButton({
       onClick={onClick}
       className={[
         compact
-          ? 'h-8 rounded-full px-3 text-[0.78rem] font-semibold'
-          : 'rounded-full text-sm font-semibold',
+          ? 'h-8 rounded-full px-3 text-[0.78rem] font-semibold shadow-sm'
+          : 'rounded-full text-sm font-semibold shadow-sm',
         className,
       ].filter(Boolean).join(' ')}
-      aria-label={reacted ? 'Убрать голос' : 'Поставить голос'}
+      aria-label={reacted ? 'Убрать лайк' : 'Поставить лайк'}
     >
-      <Plus size={14} className="mr-1 shrink-0" />
+      <ThumbsUp size={14} className="mr-1 shrink-0" />
       {upvoteCount}
     </Button>
   )
