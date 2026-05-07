@@ -8,8 +8,12 @@ import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
-import { splitTextByRanges } from '@/lib/text-highlighting'
-import { buildAnnotationParagraphRanges, type UnifiedAnnotationItem } from '@/lib/annotations'
+import {
+  buildAnnotationParagraphRanges,
+  splitTextByAnnotationRanges,
+  type AnnotationParagraphRange,
+  type UnifiedAnnotationItem,
+} from '@/lib/annotations'
 
 interface Paragraph {
   id: string
@@ -48,14 +52,6 @@ interface FeedReaderProps {
   highlightParagraphId?: string | null
   /** Optional end paragraph id for a multi-paragraph quote range */
   highlightParagraphEndId?: string | null
-}
-
-interface ParagraphTextRange {
-  start: number
-  end: number
-  kind: 'reaction' | 'quote' | 'comment'
-  badgeLabel: string
-  emoji: string | null
 }
 
 export default function FeedReader({
@@ -205,17 +201,9 @@ export default function FeedReader({
   }, [])
 
   const getTextRangesForParagraph = useCallback(
-    (paragraphId: string): ParagraphTextRange[] => {
+    (paragraphId: string): AnnotationParagraphRange[] => {
       const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
-      return ranges
-        .filter((range) => range.paragraphId === paragraphId)
-        .map((range) => ({
-          start: range.startOffset,
-          end: range.endOffset,
-          kind: range.kind,
-          badgeLabel: range.badgeLabel,
-          emoji: range.emoji ?? null,
-        }))
+      return ranges.filter((range) => range.paragraphId === paragraphId)
     },
     [paragraphIndexMap, paragraphs, selectionHighlights],
   )
@@ -323,15 +311,7 @@ export default function FeedReader({
             const isQuoteTarget = highlightParagraphId === p.id
             const ranges = getTextRangesForParagraph(p.id)
             const hasSelectionHighlight = ranges.length > 0
-            const textSegments = splitTextByRanges(p.text, ranges.map((range) => ({ start: range.start, end: range.end })))
-            const annotationBadges = Array.from(
-              new Map(
-                ranges.map((range) => [
-                  `${range.kind}:${range.emoji || range.badgeLabel}`,
-                  range,
-                ]),
-              ).values(),
-            )
+            const textSegments = splitTextByAnnotationRanges(p.text, ranges)
 
             return (
               <div
@@ -354,32 +334,6 @@ export default function FeedReader({
                   transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
                 }}
               >
-                {annotationBadges.length > 0 && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '-0.6rem',
-                      right: '0.5rem',
-                      zIndex: 2,
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      justifyContent: 'flex-end',
-                      gap: '0.25rem',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {annotationBadges.map((range) => (
-                      <span
-                        key={`${p.id}-${range.kind}-${range.emoji || range.badgeLabel}`}
-                        className="bookstream-annotation-badge"
-                        data-kind={range.kind}
-                        title={range.kind === 'reaction' ? 'Вы поставили реакцию' : range.kind === 'quote' ? 'Вы вынесли цитату' : 'Вы оставили комментарий'}
-                      >
-                        {range.kind === 'reaction' ? `${range.emoji || '•'} вы` : range.badgeLabel}
-                      </span>
-                    ))}
-                  </div>
-                )}
                 {isQuoteTarget && (
                   <span
                     style={{
@@ -410,41 +364,57 @@ export default function FeedReader({
                   data-stable-key={p.stableKey}
                   style={{ marginBottom: '0.5rem' }}
                 >
-                {/* Bookmark button — left side, visible on hover */}
-                <button
-                  onClick={(e) => handleBookmarkClick(e, p.stableKey)}
-                  title={bookmarkedKey === p.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
-                  style={{
-                    position: 'absolute',
-                    left: '-2rem',
-                    top: '0',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1rem',
-                    opacity: bookmarkedKey === p.stableKey ? 1 : 0,
-                    transition: 'opacity 0.2s ease, transform 0.2s ease',
-                    transform: bookmarkedKey === p.stableKey ? 'scale(1.1)' : 'scale(1)',
-                    color: bookmarkedKey === p.stableKey ? 'var(--r-accent)' : 'var(--r-text-secondary)',
-                    padding: '0.25rem',
-                    lineHeight: 1,
-                    pointerEvents: 'auto',
-                  }}
-                  className="bookmark-btn"
-                >
-                  {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
-                </button>
-                <p style={{ margin: 0 }}>
-                  {textSegments.map((segment, index) =>
-                    segment.highlighted ? (
-                      <span key={`${p.id}-hl-${index}`} className="bookstream-word-highlight">
-                        {segment.text}
-                      </span>
-                    ) : (
-                      <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
-                    ),
-                  )}
-                </p>
+                  {/* Bookmark button — left side, visible on hover */}
+                  <button
+                    onClick={(e) => handleBookmarkClick(e, p.stableKey)}
+                    title={bookmarkedKey === p.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
+                    style={{
+                      position: 'absolute',
+                      left: '-2rem',
+                      top: '0',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '1rem',
+                      opacity: bookmarkedKey === p.stableKey ? 1 : 0,
+                      transition: 'opacity 0.2s ease, transform 0.2s ease',
+                      transform: bookmarkedKey === p.stableKey ? 'scale(1.1)' : 'scale(1)',
+                      color: bookmarkedKey === p.stableKey ? 'var(--r-accent)' : 'var(--r-text-secondary)',
+                      padding: '0.25rem',
+                      lineHeight: 1,
+                      pointerEvents: 'auto',
+                    }}
+                    className="bookmark-btn"
+                  >
+                    {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
+                  </button>
+                  <p style={{ margin: 0 }}>
+                    {textSegments.map((segment, index) =>
+                      segment.highlighted ? (
+                        <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
+                          <span className="bookstream-word-highlight">{segment.text}</span>
+                          {segment.badges.map((badge, badgeIndex) => (
+                            <span
+                              key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                              className="bookstream-inline-annotation-badge"
+                              data-kind={badge.kind}
+                              title={
+                                badge.kind === 'reaction'
+                                  ? 'Вы поставили реакцию'
+                                  : badge.kind === 'quote'
+                                    ? 'Вы вынесли цитату'
+                                    : 'Вы оставили комментарий'
+                              }
+                            >
+                              {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
+                      ),
+                    )}
+                  </p>
                 </article>
                 {/* Reactions bar */}
                 <ReactionBar paragraphId={p.id} variantId={variantId} />

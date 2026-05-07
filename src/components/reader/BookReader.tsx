@@ -9,8 +9,12 @@ import ReactionBar from './ReactionBar'
 import { MessageSquare, X } from 'lucide-react'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
-import { splitTextByRanges } from '@/lib/text-highlighting'
-import { buildAnnotationParagraphRanges, type UnifiedAnnotationItem } from '@/lib/annotations'
+import {
+  buildAnnotationParagraphRanges,
+  splitTextByAnnotationRanges,
+  type AnnotationParagraphRange,
+  type UnifiedAnnotationItem,
+} from '@/lib/annotations'
 
 interface Paragraph {
   id: string
@@ -46,14 +50,6 @@ interface BookReaderProps {
   highlightParagraphId?: string | null
   /** Optional end paragraph id for a multi-paragraph quote range */
   highlightParagraphEndId?: string | null
-}
-
-interface ParagraphTextRange {
-  start: number
-  end: number
-  kind: 'reaction' | 'quote' | 'comment'
-  badgeLabel: string
-  emoji: string | null
 }
 
 export default function BookReader({
@@ -212,17 +208,9 @@ export default function BookReader({
   }, [])
 
   const getTextRangesForParagraph = useCallback(
-    (paragraphId: string): ParagraphTextRange[] => {
+    (paragraphId: string): AnnotationParagraphRange[] => {
       const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
-      return ranges
-        .filter((range) => range.paragraphId === paragraphId)
-        .map((range) => ({
-          start: range.startOffset,
-          end: range.endOffset,
-          kind: range.kind,
-          badgeLabel: range.badgeLabel,
-          emoji: range.emoji ?? null,
-        }))
+      return ranges.filter((range) => range.paragraphId === paragraphId)
     },
     [paragraphIndexMap, paragraphs, selectionHighlights],
   )
@@ -438,15 +426,7 @@ export default function BookReader({
             const isQuoteTarget = highlightParagraphId === p.id
             const ranges = getTextRangesForParagraph(p.id)
             const hasSelectionHighlight = ranges.length > 0
-            const textSegments = splitTextByRanges(p.text, ranges.map((range) => ({ start: range.start, end: range.end })))
-            const annotationBadges = Array.from(
-              new Map(
-                ranges.map((range) => [
-                  `${range.kind}:${range.emoji || range.badgeLabel}`,
-                  range,
-                ]),
-              ).values(),
-            )
+            const textSegments = splitTextByAnnotationRanges(p.text, ranges)
 
             return (
               <div
@@ -468,32 +448,6 @@ export default function BookReader({
                   transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
                 }}
               >
-                {annotationBadges.length > 0 && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '-0.6rem',
-                      right: '0.5rem',
-                      zIndex: 2,
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      justifyContent: 'flex-end',
-                      gap: '0.25rem',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {annotationBadges.map((range) => (
-                      <span
-                        key={`${p.id}-${range.kind}-${range.emoji || range.badgeLabel}`}
-                        className="bookstream-annotation-badge"
-                        data-kind={range.kind}
-                        title={range.kind === 'reaction' ? 'Вы поставили реакцию' : range.kind === 'quote' ? 'Вы вынесли цитату' : 'Вы оставили комментарий'}
-                      >
-                        {range.kind === 'reaction' ? `${range.emoji || '•'} вы` : range.badgeLabel}
-                      </span>
-                    ))}
-                  </div>
-                )}
                 {isQuoteTarget && (
                   <span
                     style={{
@@ -527,8 +481,24 @@ export default function BookReader({
                   <p style={{ margin: 0 }}>
                     {textSegments.map((segment, index) =>
                       segment.highlighted ? (
-                        <span key={`${p.id}-hl-${index}`} className="bookstream-word-highlight">
-                          {segment.text}
+                        <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
+                          <span className="bookstream-word-highlight">{segment.text}</span>
+                          {segment.badges.map((badge, badgeIndex) => (
+                            <span
+                              key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                              className="bookstream-inline-annotation-badge"
+                              data-kind={badge.kind}
+                              title={
+                                badge.kind === 'reaction'
+                                  ? 'Вы поставили реакцию'
+                                  : badge.kind === 'quote'
+                                    ? 'Вы вынесли цитату'
+                                    : 'Вы оставили комментарий'
+                              }
+                            >
+                              {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
+                            </span>
+                          ))}
                         </span>
                       ) : (
                         <span key={`${p.id}-txt-${index}`}>{segment.text}</span>

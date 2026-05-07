@@ -232,6 +232,13 @@
   animation: wordHighlightPop 260ms ease-out;
 }
 
+.bookstream-inline-annotation {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  vertical-align: baseline;
+}
+
 .bookstream-word-reaction-badge {
   position: absolute;
   top: -0.72rem;
@@ -266,6 +273,35 @@
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
   pointer-events: none;
   animation: reactionBadgePop 260ms ease-out;
+}
+
+.bookstream-inline-annotation-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.22rem;
+  border-radius: 9999px;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--r-accent-foreground);
+  background: color-mix(in srgb, var(--r-accent) 88%, #000 12%);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.14);
+  transform: translateY(-0.15em);
+  pointer-events: none;
+  animation: reactionBadgePop 260ms ease-out;
+}
+
+.bookstream-inline-annotation-badge[data-kind="quote"] {
+  background: color-mix(in srgb, rgb(245 158 11) 86%, #000 14%);
+}
+
+.bookstream-inline-annotation-badge[data-kind="comment"] {
+  background: color-mix(in srgb, rgb(59 130 246) 86%, #000 14%);
 }
 
 .bookstream-annotation-badge[data-kind="reaction"] {

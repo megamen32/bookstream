@@ -27,6 +27,12 @@ export interface AnnotationParagraphRange {
   selectedText?: string | null
 }
 
+export interface AnnotationTextSegment {
+  text: string
+  highlighted: boolean
+  badges: AnnotationParagraphRange[]
+}
+
 export interface ParagraphLike {
   id: string
   text: string
@@ -201,4 +207,44 @@ export function buildAnnotationParagraphRanges<T extends AnnotationLike>(
   }
 
   return ranges
+}
+
+export function splitTextByAnnotationRanges(
+  text: string,
+  ranges: AnnotationParagraphRange[],
+): AnnotationTextSegment[] {
+  if (text.length === 0 || ranges.length === 0) {
+    return [{ text, highlighted: false, badges: [] }]
+  }
+
+  const boundaries = new Set<number>([0, text.length])
+  for (const range of ranges) {
+    const start = Math.max(0, Math.min(range.startOffset, text.length))
+    const end = Math.max(0, Math.min(range.endOffset, text.length))
+    if (end > start) {
+      boundaries.add(start)
+      boundaries.add(end)
+    }
+  }
+
+  const sortedBoundaries = Array.from(boundaries).sort((a, b) => a - b)
+  const segments: AnnotationTextSegment[] = []
+
+  for (let index = 0; index < sortedBoundaries.length - 1; index += 1) {
+    const start = sortedBoundaries[index]
+    const end = sortedBoundaries[index + 1]
+    if (end <= start) continue
+
+    const activeBadges = ranges.filter((range) => range.startOffset < end && range.endOffset > start)
+    const segmentText = text.slice(start, end)
+    if (!segmentText) continue
+
+    segments.push({
+      text: segmentText,
+      highlighted: activeBadges.length > 0,
+      badges: activeBadges,
+    })
+  }
+
+  return segments.length > 0 ? segments : [{ text, highlighted: false, badges: [] }]
 }
