@@ -52,5 +52,8 @@ test
 prompt
 
 server.log
+workspace-*.tar
+.zscripts/dev.pid
+download/*.tar.gz
 # Skills directory
 /skills/

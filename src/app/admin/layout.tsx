@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { BookOpen, Library, Upload, User, LogOut, Menu } from 'lucide-react'
+import { BookOpen, Library, Upload, User, LogOut, Menu, Palette } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/admin', label: 'Библиотека', icon: Library },
   { href: '/admin/upload', label: 'Загрузить', icon: Upload },
+  { href: '/admin/variants', label: 'Варианты', icon: Palette },
   { href: '/admin/profile', label: 'Профиль', icon: User },
 ]
 

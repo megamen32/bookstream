@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Settings, BookOpen, AlignJustify } from 'lucide-react'
+import { ArrowLeft, Settings, BookOpen, AlignJustify, Search, Bookmark, BookmarkCheck } from 'lucide-react'
 import { useReaderStore, type VariantType } from '@/lib/store'
 import { applyTheme, themes } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
@@ -13,6 +13,8 @@ import { MessageSquare } from 'lucide-react'
 import VariantSlider from '@/components/reader/VariantSlider'
 import SettingsPanel from '@/components/reader/SettingsPanel'
 import TableOfContents from '@/components/reader/TableOfContents'
+import SearchPanel from '@/components/reader/SearchPanel'
+import CommentsSection from '@/components/reader/CommentsSection'
 
 interface Paragraph {
   id: string
@@ -33,6 +35,20 @@ interface ChapterData {
     chapters: Array<{ id: string; title: string; position: number }>
   }
   variants: Array<{ id: string; variantType: string }>
+}
+
+const BOOKMARKS_KEY = 'bookstream-bookmarks'
+
+function loadBookmarks(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '{}')
+  } catch { return {} }
+}
+
+function saveBookmarks(bm: Record<string, string>) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bm))
 }
 
 export default function ReaderPage() {
@@ -70,13 +86,22 @@ export default function ReaderPage() {
   const [chapterData, setChapterData] = useState<ChapterData | null>(null)
   const [paragraphs, setParagraphs] = useState<Paragraph[]>([])
   const [variantId, setVariantId] = useState<string>('')
-  const [availableVariants, setAvailableVariants] = useState<VariantType[]>([])
-  const [variantPresets, setVariantPresets] = useState<Record<string, { label: string; emoji: string; description?: string; targetSizePercent?: number | null; position?: number }>>({})
+  const [availableVariants, setAvailableVariants] = useState<string[]>([])
+  const [variantPresets, setVariantPresets] = useState<Record<string, { id: string; label: string; emoji: string; description?: string; targetSizePercent?: number | null; position?: number }>>({})
   const [loading, setLoading] = useState(true)
+  const [generatingVariant, setGeneratingVariant] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [showDesktopComments, setShowDesktopComments] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
+  const [scrollProgress, setScrollProgress] = useState(0)
+  const [bookmarkedKey, setBookmarkedKey] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
+  const searchContentRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
+  const setSearchContentNode = useCallback((node: HTMLDivElement | null) => {
+    searchContentRef.current = node
+  }, [])
 
   // Initialize store from localStorage
   useEffect(() => {
@@ -85,18 +110,35 @@ export default function ReaderPage() {
     loadFromStorage()
   }, [loadFromStorage])
 
-  // Sync reader theme CSS vars to document root so portaled components
-  // (Sheet, Dialog, Popover, etc.) pick up the correct colors
+  // Load bookmark for current chapter
+  useEffect(() => {
+    if (!chapterId) return
+    const frameId = window.requestAnimationFrame(() => {
+      const bms = loadBookmarks()
+      setBookmarkedKey(bms[chapterId] || null)
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [chapterId])
+
+  // Ctrl+F handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        setShowSearch(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  // Sync reader theme CSS vars to document root
   useEffect(() => {
     const root = document.documentElement
     const vars = themes[theme].vars
-
-    // Set --r-* vars
     for (const [key, val] of Object.entries(vars)) {
       root.style.setProperty(key, val)
     }
-
-    // Map shadcn CSS vars to reader theme (same as .reader-wrapper does)
     root.style.setProperty('--background', vars['--r-bg'])
     root.style.setProperty('--foreground', vars['--r-text'])
     root.style.setProperty('--card', vars['--r-bg'])
@@ -116,7 +158,6 @@ export default function ReaderPage() {
     root.style.setProperty('--ring', vars['--r-accent'])
 
     return () => {
-      // Clean up: remove all --r-* vars and restore shadcn defaults
       for (const key of Object.keys(vars)) {
         root.style.removeProperty(key)
       }
@@ -142,23 +183,16 @@ export default function ReaderPage() {
         setChapterData(data.chapter)
         setParagraphs(data.variant?.paragraphs || [])
         setVariantId(data.variant?.id || '')
-
-        // Detect available variants
         const variants = data.chapter?.variants?.map((v: { variantType: string }) => v.variantType) || []
         setAvailableVariants(variants as VariantType[])
-
-        // Store variant preset metadata for dynamic labels
         if (data.variantPresets) {
           setVariantPresets(data.variantPresets)
         }
-
-        // Fetch comment count
         const commentsRes = await fetch(`/api/chapters/${cId}/comments`)
         if (commentsRes.ok) {
           const commentsData = await commentsRes.json()
           setCommentCount(commentsData.comments?.length || 0)
         }
-
         return data.chapter
       }
     } catch (e) {
@@ -175,16 +209,13 @@ export default function ReaderPage() {
 
     async function init() {
       try {
-        // First fetch book to get first chapter
         const bookRes = await fetch(`/api/books/${bookSlug}?authorSlug=${authorSlug}`)
         if (!bookRes.ok) return
         const bookData = await bookRes.json()
         const book = bookData
-
         if (!book) return
         setBookId(book.id)
 
-        // Check for saved progress
         let targetChapterId = book.chapters[0]?.id
         let targetVariant = 'original' as VariantType
 
@@ -201,11 +232,8 @@ export default function ReaderPage() {
               if (progressData.progress.readingMode) setReadingMode(progressData.progress.readingMode as typeof readingMode)
             }
           }
-        } catch {
-          // no progress
-        }
+        } catch { /* no progress */ }
 
-        // Override with URL param if provided
         const urlChapter = searchParams.get('chapter')
         if (urlChapter) {
           targetChapterId = urlChapter
@@ -226,19 +254,43 @@ export default function ReaderPage() {
     init()
   }, [authorSlug, bookSlug, readerId])
 
-  // Handle variant change
   const handleVariantChange = useCallback(async (newType: VariantType) => {
     if (!chapterId) return
-    await fetchChapter(chapterId, newType)
-  }, [chapterId, fetchChapter])
 
-  // Handle chapter change (from Table of Contents)
+    // Check if variant already exists in DB
+    const exists = availableVariants.includes(newType)
+
+    if (!exists) {
+      // Need to generate via AI first
+      const preset = variantPresets[newType]
+      if (!preset?.id) return
+
+      setGeneratingVariant(newType)
+      try {
+        const res = await fetch(`/api/chapters/${chapterId}/summarize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ presetIds: [preset.id] }),
+        })
+        if (res.ok) {
+          // Now fetch the newly generated variant
+          await fetchChapter(chapterId, newType)
+        }
+      } catch (e) {
+        console.error('Failed to generate variant:', e)
+      } finally {
+        setGeneratingVariant(null)
+      }
+    } else {
+      await fetchChapter(chapterId, newType)
+    }
+  }, [chapterId, availableVariants, variantPresets, fetchChapter])
+
   const handleChapterChange = useCallback(async (newChapterId: string) => {
     setChapterId(newChapterId)
     await fetchChapter(newChapterId, variantType)
   }, [variantType, fetchChapter, setChapterId])
 
-  // Navigate to next/prev chapter (used by readers at chapter boundaries)
   const goToNextChapter = useCallback(() => {
     if (!chapterData) return
     const chapters = chapterData.book.chapters
@@ -261,31 +313,17 @@ export default function ReaderPage() {
     }
   }, [chapterData, chapterId, variantType, setChapterId, fetchChapter])
 
-  // Send comment
   const handleSendComment = useCallback(async (body: string) => {
     if (!chapterId || !bookId || !readerId || !username) return
-
     try {
       const quotes = replyingTo
-        ? [{
-            variantType: replyingTo.variantType,
-            paragraphId: replyingTo.paragraphId,
-            selectedText: replyingTo.text,
-          }]
+        ? [{ variantType: replyingTo.variantType, paragraphId: replyingTo.paragraphId, selectedText: replyingTo.text }]
         : undefined
-
       const res = await fetch(`/api/chapters/${chapterId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          readerId,
-          username,
-          body,
-          bookId,
-          quotes,
-        }),
+        body: JSON.stringify({ readerId, username, body, bookId, quotes }),
       })
-
       if (res.ok) {
         setCommentCount(prev => prev + 1)
         setReplyingTo(null)
@@ -295,16 +333,37 @@ export default function ReaderPage() {
     }
   }, [chapterId, bookId, readerId, username, replyingTo, setReplyingTo])
 
-  // Theme CSS variables
-  const themeVars = applyTheme(theme)
+  // Bookmark toggle
+  const handleToggleBookmark = useCallback((stableKey: string) => {
+    if (!chapterId) return
+    const bms = loadBookmarks()
+    if (bms[chapterId] === stableKey) {
+      delete bms[chapterId]
+      setBookmarkedKey(null)
+    } else {
+      bms[chapterId] = stableKey
+      setBookmarkedKey(stableKey)
+    }
+    saveBookmarks(bms)
+  }, [chapterId])
 
-  // Derived values for chapter navigation
+  // Scroll to bookmarked paragraph
+  const scrollToBookmark = useCallback(() => {
+    if (!bookmarkedKey) return
+    const el = document.querySelector(`[data-stable-key="${bookmarkedKey}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [bookmarkedKey])
+
+  const themeVars = applyTheme(theme)
   const chapters = chapterData?.book.chapters || []
   const currentChapterIndex = chapters.findIndex(c => c.id === chapterId)
   const hasNextChapter = currentChapterIndex < chapters.length - 1
   const hasPrevChapter = currentChapterIndex > 0
   const nextChapter = hasNextChapter ? chapters[currentChapterIndex + 1] : null
   const prevChapter = hasPrevChapter ? chapters[currentChapterIndex - 1] : null
+  const progressPercent = Math.round(scrollProgress * 100)
 
   if (loading) {
     return (
@@ -343,7 +402,14 @@ export default function ReaderPage() {
       data-reader-theme={theme}
       style={themeVars as React.CSSProperties}
     >
-      {/* Top bar — minimal: back, title, TOC, settings, comments */}
+      {/* Search panel */}
+      <SearchPanel
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        contentRef={searchContentRef}
+      />
+
+      {/* Top bar */}
       <header
         style={{
           display: 'flex',
@@ -372,7 +438,7 @@ export default function ReaderPage() {
           <ArrowLeft size={20} />
         </Link>
 
-        {/* Book title (truncated) */}
+        {/* Book title */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -387,18 +453,81 @@ export default function ReaderPage() {
           >
             {chapterData.book.title}
           </div>
-          <div
-            style={{
-              fontSize: '0.6875rem',
-              color: 'var(--r-text-secondary)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {chapterData.title}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div
+              style={{
+                fontSize: '0.6875rem',
+                color: 'var(--r-text-secondary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {chapterData.title}
+            </div>
+            {/* Progress indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+              <div style={{
+                width: '2rem',
+                height: '3px',
+                borderRadius: '9999px',
+                backgroundColor: 'var(--r-border)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${progressPercent}%`,
+                  height: '100%',
+                  borderRadius: '9999px',
+                  backgroundColor: 'var(--r-accent)',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <span style={{ fontSize: '0.625rem', color: 'var(--r-text-secondary)', minWidth: '1.75rem' }}>
+                {progressPercent}%
+              </span>
+            </div>
           </div>
         </div>
+
+        {/* Search button */}
+        <button
+          onClick={() => setShowSearch(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem',
+            minWidth: '44px',
+            minHeight: '44px',
+            color: 'var(--r-text)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
+          title="Поиск (Ctrl+F)"
+        >
+          <Search size={20} />
+        </button>
+
+        {/* Bookmark button */}
+        <button
+          onClick={bookmarkedKey ? scrollToBookmark : undefined}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem',
+            minWidth: '44px',
+            minHeight: '44px',
+            color: bookmarkedKey ? 'var(--r-accent)' : 'var(--r-text)',
+            background: 'none',
+            border: 'none',
+            cursor: bookmarkedKey ? 'pointer' : 'default',
+          }}
+          title={bookmarkedKey ? 'Перейти к закладке' : 'Нет закладки'}
+        >
+          {bookmarkedKey ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
+        </button>
 
         {/* Reading mode toggle */}
         <button
@@ -427,6 +556,47 @@ export default function ReaderPage() {
           onChapterChange={handleChapterChange}
         />
 
+        {/* Desktop comments toggle */}
+        <button
+          onClick={() => setShowDesktopComments(!showDesktopComments)}
+          style={{
+            display: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem',
+            minWidth: '44px',
+            minHeight: '44px',
+            color: showDesktopComments ? 'var(--r-accent)' : 'var(--r-text)',
+            background: showDesktopComments ? 'var(--r-bg-secondary)' : 'none',
+            border: 'none',
+            cursor: 'pointer',
+            borderRadius: '0.375rem',
+          }}
+          className="desktop-comments-toggle"
+          title="Панель комментариев"
+        >
+          <MessageSquare size={20} />
+          {commentCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: '0.125rem',
+              right: '0.125rem',
+              backgroundColor: 'var(--r-accent)',
+              color: 'var(--r-accent-foreground)',
+              fontSize: '0.625rem',
+              fontWeight: 700,
+              width: '1.125rem',
+              height: '1.125rem',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {commentCount > 99 ? '99+' : commentCount}
+            </span>
+          )}
+        </button>
+
         {/* Settings */}
         <button
           onClick={() => setShowSettings(true)}
@@ -446,61 +616,10 @@ export default function ReaderPage() {
         >
           <Settings size={20} />
         </button>
-
-        {/* Comments — scroll to bottom */}
-        <button
-          onClick={() => {
-            if (readingMode === 'feed') {
-              // Feed: scroll to comments section at bottom
-              commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
-            } else {
-              // Book: show comments page
-              // We'll use a custom event since BookReader manages its own state
-              window.dispatchEvent(new CustomEvent('bookstream:show-comments'))
-            }
-          }}
-          style={{
-            position: 'relative',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--r-text)',
-            padding: '0.5rem',
-            minWidth: '44px',
-            minHeight: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          title="Комментарии"
-        >
-          <MessageSquare size={20} />
-          {commentCount > 0 && (
-            <span
-              style={{
-                position: 'absolute',
-                top: '0.125rem',
-                right: '0.125rem',
-                backgroundColor: 'var(--r-accent)',
-                color: 'var(--r-accent-foreground)',
-                fontSize: '0.625rem',
-                fontWeight: 700,
-                width: '1.125rem',
-                height: '1.125rem',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {commentCount > 99 ? '99+' : commentCount}
-            </span>
-          )}
-        </button>
       </header>
 
-      {/* Variant slider */}
-      {availableVariants.length > 1 && (
+      {/* Variant slider — show if there are presets (even ungenerated) or multiple variants */}
+      {(Object.keys(variantPresets).length > 0 || availableVariants.length > 1) && (
         <div
           style={{
             padding: '0.5rem 1rem',
@@ -510,46 +629,100 @@ export default function ReaderPage() {
         >
           <VariantSlider
             onVariantChange={handleVariantChange}
-            availableVariants={availableVariants}
+            generatedVariants={availableVariants}
             variantPresets={variantPresets}
+            generatingVariant={generatingVariant}
           />
         </div>
       )}
 
-      {/* Reader content */}
-      <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {readingMode === 'feed' ? (
-          <FeedReader
-            key={`${chapterId}-${variantType}`}
-            paragraphs={paragraphs}
-            variantId={variantId}
-            nextChapter={nextChapter}
-            onNextChapter={goToNextChapter}
-            commentsSectionRef={commentsSectionRef}
-            onSendComment={handleSendComment}
-            commentCount={commentCount}
-          />
-        ) : (
-          <BookReader
-            key={`${chapterId}-${variantType}`}
-            paragraphs={paragraphs}
-            variantId={variantId}
-            hasNextChapter={hasNextChapter}
-            hasPrevChapter={hasPrevChapter}
-            onNextChapter={goToNextChapter}
-            onPrevChapter={goToPrevChapter}
-            chapterTitle={chapterData.title}
-            onSendComment={handleSendComment}
-            commentCount={commentCount}
-          />
+      {/* Reader content + optional desktop comments sidebar */}
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex' }}>
+        {/* Main content area */}
+        <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {readingMode === 'feed' ? (
+            <FeedReader
+              key={`${chapterId}-${variantType}`}
+              paragraphs={paragraphs}
+              variantId={variantId}
+              nextChapter={nextChapter}
+              onNextChapter={goToNextChapter}
+              commentsSectionRef={commentsSectionRef}
+              onSendComment={handleSendComment}
+              commentCount={commentCount}
+              setContentNode={setSearchContentNode}
+              onScrollProgress={setScrollProgress}
+              bookmarkedKey={bookmarkedKey}
+              onToggleBookmark={handleToggleBookmark}
+            />
+          ) : (
+            <BookReader
+              key={`${chapterId}-${variantType}`}
+              paragraphs={paragraphs}
+              variantId={variantId}
+              hasNextChapter={hasNextChapter}
+              hasPrevChapter={hasPrevChapter}
+              onNextChapter={goToNextChapter}
+              onPrevChapter={goToPrevChapter}
+              chapterTitle={chapterData.title}
+              onSendComment={handleSendComment}
+              commentCount={commentCount}
+              onProgress={setScrollProgress}
+              bookmarkedKey={bookmarkedKey}
+              onToggleBookmark={handleToggleBookmark}
+              searchOpen={showSearch}
+              setContentNode={setSearchContentNode}
+            />
+          )}
+        </main>
+
+        {/* Desktop comments sidebar — hidden on mobile, toggleable on desktop */}
+        {showDesktopComments && readingMode === 'feed' && (
+          <aside
+            className="slide-up-enter desktop-sidebar-comments"
+            style={{
+              width: '320px',
+              flexShrink: 0,
+              borderLeft: '1px solid var(--r-border)',
+              backgroundColor: 'var(--r-bg)',
+              overflowY: 'auto',
+              padding: '1rem',
+              display: 'none', // shown via CSS media query
+            }}
+          >
+            <CommentsSection
+              chapterId={chapterId || ''}
+              onSendComment={handleSendComment}
+            />
+          </aside>
         )}
-      </main>
+      </div>
 
       {/* Settings panel */}
       <SettingsPanel
         open={showSettings}
         onOpenChange={setShowSettings}
       />
+
+      {/* CSS for desktop-only elements */}
+      <style>{`
+        @media (min-width: 1024px) {
+          .desktop-comments-toggle {
+            display: flex !important;
+            position: relative;
+          }
+          .desktop-sidebar-comments {
+            display: block !important;
+          }
+        }
+        /* Show bookmark buttons on paragraph hover */
+        .group:hover .bookmark-btn {
+          opacity: 1 !important;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }

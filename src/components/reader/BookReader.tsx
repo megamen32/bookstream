@@ -4,6 +4,8 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import CommentsSection from './CommentsSection'
+import ReactionBar from './ReactionBar'
+import { MessageSquare, X } from 'lucide-react'
 
 interface Paragraph {
   id: string
@@ -22,6 +24,16 @@ interface BookReaderProps {
   chapterTitle: string
   onSendComment: (body: string) => void
   commentCount: number
+  /** Callback with progress (0-1) for progress bar */
+  onProgress?: (percent: number) => void
+  /** Currently bookmarked paragraph stableKey */
+  bookmarkedKey?: string | null
+  /** Callback to toggle bookmark */
+  onToggleBookmark?: (stableKey: string) => void
+  /** Search panel open state */
+  searchOpen: boolean
+  /** Callback used to expose the active content node for search */
+  setContentNode?: (node: HTMLDivElement | null) => void
 }
 
 export default function BookReader({
@@ -34,13 +46,20 @@ export default function BookReader({
   chapterTitle,
   onSendComment,
   commentCount,
+  onProgress,
+  bookmarkedKey,
+  onToggleBookmark,
+  searchOpen,
+  setContentNode,
 }: BookReaderProps) {
   const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
-  const contentRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
+  const contentRefInternal = useRef<HTMLDivElement>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [showMenu, setShowMenu] = useState(false)
   const [showComments, setShowComments] = useState(false)
+  const [commentsHeight, setCommentsHeight] = useState(280)
   const restoredRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTransitioning = useRef(false)
@@ -49,23 +68,22 @@ export default function BookReader({
 
   // Calculate pages based on content height
   useEffect(() => {
-    if (!contentRef.current) return
+    const el = contentRefInternal.current
+    if (!el) return
     const observer = new ResizeObserver(() => {
-      const el = contentRef.current
-      if (!el) return
       const totalHeight = el.scrollHeight
       const pageHeight = el.clientHeight
       const pages = Math.max(1, Math.ceil(totalHeight / pageHeight))
       setTotalPages(pages)
       if (currentPage > pages) setCurrentPage(Math.max(1, pages))
     })
-    observer.observe(contentRef.current)
+    observer.observe(el)
     return () => observer.disconnect()
   }, [lineWidth, fontSize, lineHeight, paragraphs, currentPage, showComments])
 
   // Restore page position
   useEffect(() => {
-    if (restoredRef.current || !contentRef.current) return
+    if (restoredRef.current || !contentRefInternal.current) return
     restoredRef.current = true
     const savedPage = localStorage.getItem(`bookstream-page-${chapterId}`)
     if (savedPage) {
@@ -78,10 +96,19 @@ export default function BookReader({
 
   // Scroll to current page
   useEffect(() => {
-    if (!contentRef.current || !restoredRef.current) return
-    const pageHeight = contentRef.current.clientHeight
-    contentRef.current.scrollTop = (currentPage - 1) * pageHeight
+    if (!contentRefInternal.current || !restoredRef.current) return
+    const pageHeight = contentRefInternal.current.clientHeight
+    contentRefInternal.current.scrollTop = (currentPage - 1) * pageHeight
   }, [currentPage])
+
+  // Report progress
+  useEffect(() => {
+    if (totalPages > 1) {
+      onProgress?.((currentPage - 1) / (totalPages - 1))
+    } else {
+      onProgress?.(1)
+    }
+  }, [currentPage, totalPages, onProgress])
 
   const saveProgress = useCallback((page: number) => {
     if (!bookId || !chapterId || !readerId) return
@@ -108,19 +135,12 @@ export default function BookReader({
   const goNext = useCallback(() => {
     setCurrentPage(prev => {
       if (prev >= totalPages) {
-        // End of text pages → show comments page
-        if (!showComments && commentCount >= 0) {
-          setShowComments(true)
-          return prev
-        }
-        // End of comments page → next chapter
         if (hasNextChapter && !isTransitioning.current) {
           isTransitioning.current = true
           onNextChapter()
           setTimeout(() => {
             setCurrentPage(1)
             restoredRef.current = true
-            setShowComments(false)
             isTransitioning.current = false
           }, 100)
         }
@@ -130,22 +150,16 @@ export default function BookReader({
       saveProgress(next)
       return next
     })
-  }, [totalPages, saveProgress, hasNextChapter, onNextChapter, showComments, commentCount])
+  }, [totalPages, saveProgress, hasNextChapter, onNextChapter])
 
   const goPrev = useCallback(() => {
     setCurrentPage(prev => {
-      // If on first page of comments → hide comments
-      if (showComments && prev === 1) {
-        setShowComments(false)
-        return 1
-      }
       if (prev <= 1) {
         if (hasPrevChapter && !isTransitioning.current) {
           isTransitioning.current = true
           onPrevChapter()
           setTimeout(() => {
             restoredRef.current = false
-            setShowComments(false)
             isTransitioning.current = false
           }, 100)
         }
@@ -155,11 +169,12 @@ export default function BookReader({
       saveProgress(next)
       return next
     })
-  }, [saveProgress, hasPrevChapter, onPrevChapter, showComments])
+  }, [saveProgress, hasPrevChapter, onPrevChapter])
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (showComments) return // don't intercept when comments open
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault()
         goNext()
@@ -169,13 +184,8 @@ export default function BookReader({
       }
     }
 
-    // Listen for custom event from parent to show comments
     const handleShowComments = () => {
-      if (!showComments) {
-        // Jump to last page first, then show comments on next swipe
-        setCurrentPage(totalPages)
-        setTimeout(() => setShowComments(true), 100)
-      }
+      setShowComments(true)
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -184,7 +194,7 @@ export default function BookReader({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('bookstream:show-comments', handleShowComments)
     }
-  }, [goNext, goPrev, showComments, totalPages])
+  }, [goNext, goPrev, showComments])
 
   // Touch swipe handling
   const touchStartX = useRef(0)
@@ -196,6 +206,7 @@ export default function BookReader({
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (showComments) return
     const dx = e.changedTouches[0].clientX - touchStartX.current
     const dy = e.changedTouches[0].clientY - touchStartY.current
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
@@ -210,11 +221,14 @@ export default function BookReader({
     else setShowMenu(prev => !prev)
   }
 
-  const isAtStart = currentPage <= 1 && !showComments
-  const isAtEnd = currentPage >= totalPages && !showComments
+  const handleBookmarkClick = useCallback((e: React.MouseEvent, stableKey: string) => {
+    e.stopPropagation()
+    onToggleBookmark?.(stableKey)
+  }, [onToggleBookmark])
 
   return (
     <div
+      ref={innerRef}
       style={{ position: 'relative', height: '100%', overflow: 'hidden' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -235,14 +249,17 @@ export default function BookReader({
           whiteSpace: 'nowrap',
         }}
       >
-        {showComments ? 'Комментарии' : chapterTitle}
+        {chapterTitle}
       </div>
 
       {/* Scrollable content container */}
       <div
-        ref={contentRef}
+        ref={(node) => {
+          contentRefInternal.current = node
+          setContentNode?.(showComments ? null : node)
+        }}
         style={{
-          columnWidth: showComments ? undefined : columnWidth,
+          columnWidth: columnWidth,
           columnGap: '2rem',
           columnFill: 'auto',
           height: '100%',
@@ -252,46 +269,37 @@ export default function BookReader({
           lineHeight: `${lineHeight}`,
         }}
       >
-        {showComments ? (
-          /* Comments page — single column, no pagination feel */
-          <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <CommentsSection
-              chapterId={chapterId || ''}
-              onSendComment={onSendComment}
-            />
-          </div>
-        ) : (
-          /* Text content — columnar */
-          <div style={{ position: 'relative' }}>
-            <TextSelector containerRef={contentRef} variantId={variantId} />
-            {paragraphs.map((p) => (
+        <div style={{ position: 'relative' }}>
+          <TextSelector containerRef={contentRefInternal} variantId={variantId} />
+          {paragraphs.map((p) => (
+            <div key={p.stableKey || p.id} className="group" style={{ position: 'relative' }}>
               <article
-                key={p.stableKey || p.id}
                 data-paragraph-id={p.id}
                 data-stable-key={p.stableKey}
-                style={{ breakInside: 'avoid', marginBottom: '1em', textAlign: 'justify', hyphens: 'auto', color: 'var(--r-text)', fontFamily: 'Georgia, "Times New Roman", Times, serif' }}
+                style={{ breakInside: 'avoid', marginBottom: '0.5em', textAlign: 'justify', hyphens: 'auto', color: 'var(--r-text)', fontFamily: 'Georgia, "Times New Roman", Times, serif' }}
               >
                 <p style={{ margin: 0 }}>{p.text}</p>
               </article>
-            ))}
-
-            {/* Hint to swipe right for comments at end of text */}
-            <div style={{ breakInside: 'avoid', textAlign: 'center', padding: '1rem 0' }}>
-              <span
-                style={{
-                  display: 'inline-block',
-                  backgroundColor: 'var(--r-bg-secondary)',
-                  color: 'var(--r-text-secondary)',
-                  padding: '0.375rem 1rem',
-                  borderRadius: '9999px',
-                  fontSize: '0.75rem',
-                }}
-              >
-                {hasNextChapter ? 'Листните &rarr; за комментариями, потом &rarr; следующая глава' : 'Листните &rarr; к комментариям'}
-              </span>
+              <ReactionBar paragraphId={p.id} variantId={variantId} />
             </div>
+          ))}
+
+          {/* End hint */}
+          <div style={{ breakInside: 'avoid', textAlign: 'center', padding: '1rem 0' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                backgroundColor: 'var(--r-bg-secondary)',
+                color: 'var(--r-text-secondary)',
+                padding: '0.375rem 1rem',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+              }}
+            >
+              {hasNextChapter ? 'Листните &rarr; следующая глава' : 'Конец книги'}
+            </span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Tap zones */}
@@ -317,8 +325,139 @@ export default function BookReader({
           pointerEvents: showMenu ? 'auto' : 'none',
         }}
       >
-        {showComments ? '💬' : `${currentPage} / ${totalPages}`}
+        {currentPage} / {totalPages}
       </div>
+
+      {/* Comments button (bottom-right, always visible) */}
+      <button
+        onClick={() => setShowComments(true)}
+        style={{
+          position: 'absolute',
+          bottom: '0.75rem',
+          right: '0.75rem',
+          width: '44px',
+          height: '44px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--r-accent)',
+          color: 'var(--r-accent-foreground)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '1.125rem',
+          border: 'none',
+          cursor: 'pointer',
+          zIndex: 20,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          transition: 'transform 0.2s ease',
+        }}
+        title="Комментарии"
+      >
+        <MessageSquare size={20} />
+        {commentCount > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: '-2px',
+            right: '-2px',
+            backgroundColor: '#ef4444',
+            color: '#fff',
+            fontSize: '0.625rem',
+            fontWeight: 700,
+            width: '1.125rem',
+            height: '1.125rem',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {commentCount > 99 ? '99+' : commentCount}
+          </span>
+        )}
+      </button>
+
+      {/* Slide-up Comments Panel (Telegram-style) */}
+      {showComments && (
+        <div
+          className="slide-up-enter"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: commentsHeight,
+            maxHeight: '70%',
+            backgroundColor: 'var(--r-bg)',
+            borderTop: '1px solid var(--r-border)',
+            zIndex: 40,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
+            borderRadius: '1rem 1rem 0 0',
+          }}
+        >
+          {/* Drag handle + close button */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.5rem 1rem 0.375rem',
+              position: 'relative',
+              cursor: 'ns-resize',
+              flexShrink: 0,
+            }}
+            onMouseDown={(e) => {
+              const startY = e.clientY
+              const startH = commentsHeight
+              const onMove = (ev: MouseEvent) => {
+                const delta = startY - ev.clientY
+                setCommentsHeight(Math.max(200, Math.min(window.innerHeight * 0.7, startH + delta)))
+              }
+              const onUp = () => {
+                document.removeEventListener('mousemove', onMove)
+                document.removeEventListener('mouseup', onUp)
+              }
+              document.addEventListener('mousemove', onMove)
+              document.addEventListener('mouseup', onUp)
+            }}
+          >
+            <div style={{
+              width: '2.5rem',
+              height: '0.25rem',
+              borderRadius: '9999px',
+              backgroundColor: 'var(--r-border)',
+            }} />
+            <button
+              onClick={() => setShowComments(false)}
+              style={{
+                position: 'absolute',
+                right: '0.75rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--r-text-secondary)',
+                padding: '0.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '32px',
+                height: '32px',
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Comments content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem' }}>
+            <CommentsSection
+              chapterId={chapterId || ''}
+              onSendComment={onSendComment}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

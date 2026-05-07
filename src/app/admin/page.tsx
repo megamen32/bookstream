@@ -80,7 +80,10 @@ export default function AdminLibraryPage() {
   }, [])
 
   useEffect(() => {
-    fetchBooks()
+    const run = async () => {
+      await fetchBooks()
+    }
+    void run()
   }, [fetchBooks])
 
   const handleDelete = async () => {

@@ -109,7 +109,10 @@ export default function BookEditorPage() {
   }, [bookId, selectedChapterId])
 
   useEffect(() => {
-    fetchBook()
+    const run = async () => {
+      await fetchBook()
+    }
+    void run()
   }, [fetchBook])
 
   const selectedChapter = book?.chapters.find((c) => c.id === selectedChapterId)
@@ -119,11 +122,10 @@ export default function BookEditorPage() {
   )
 
   useEffect(() => {
-    if (currentVariant) {
-      setEditContent(currentVariant.contentHtml)
-    } else {
-      setEditContent('')
-    }
+    const frameId = window.requestAnimationFrame(() => {
+      setEditContent(currentVariant?.contentHtml ?? '')
+    })
+    return () => window.cancelAnimationFrame(frameId)
   }, [currentVariant])
 
   const handleSaveVariant = async () => {

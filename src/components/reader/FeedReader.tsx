@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import CommentsSection from './CommentsSection'
+import ReactionBar from './ReactionBar'
 
 interface Paragraph {
   id: string
@@ -27,6 +28,14 @@ interface FeedReaderProps {
   commentsSectionRef?: React.RefObject<HTMLDivElement | null>
   onSendComment: (body: string) => void
   commentCount: number
+  /** Callback used to expose the scroll container for search */
+  setContentNode?: (node: HTMLDivElement | null) => void
+  /** Callback with scroll percent (0-1) for progress bar */
+  onScrollProgress?: (percent: number) => void
+  /** Currently bookmarked paragraph stableKey */
+  bookmarkedKey?: string | null
+  /** Callback to toggle bookmark on a paragraph */
+  onToggleBookmark?: (stableKey: string) => void
 }
 
 export default function FeedReader({
@@ -37,27 +46,16 @@ export default function FeedReader({
   commentsSectionRef,
   onSendComment,
   commentCount,
+  setContentNode,
+  onScrollProgress,
+  bookmarkedKey,
+  onToggleBookmark,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showNextLoader, setShowNextLoader] = useState(false)
-
-  // Expose scroll-to-comments function via ref (parent can call it)
-  const scrollToComments = useCallback(() => {
-    if (commentsSectionRef?.current) {
-      commentsSectionRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [commentsSectionRef])
-
-  // Expose via data attribute so parent can trigger scroll
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el) {
-      (el as unknown as Record<string, unknown>)._scrollToComments = scrollToComments
-    }
-  }, [scrollToComments])
 
   // Restore scroll position
   useEffect(() => {
@@ -110,6 +108,7 @@ export default function FeedReader({
       ? el.scrollTop / (el.scrollHeight - el.clientHeight)
       : 0
     saveProgress(scrollPercent)
+    onScrollProgress?.(scrollPercent)
 
     // Show loader when near bottom and there's a next chapter
     if (nextChapter) {
@@ -120,7 +119,7 @@ export default function FeedReader({
         setShowNextLoader(false)
       }
     }
-  }, [saveProgress, nextChapter])
+  }, [saveProgress, nextChapter, onScrollProgress])
 
   const handleLoadNextChapter = useCallback(() => {
     if (showNextLoader && nextChapter) {
@@ -128,9 +127,19 @@ export default function FeedReader({
     }
   }, [showNextLoader, nextChapter, onNextChapter])
 
+  const handleBookmarkClick = useCallback((e: React.MouseEvent, stableKey: string) => {
+    e.stopPropagation()
+    onToggleBookmark?.(stableKey)
+  }, [onToggleBookmark])
+
+  const contentMaxWidth = lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem'
+
   return (
     <div
-      ref={scrollRef}
+      ref={(node) => {
+        scrollRef.current = node
+        setContentNode?.(node)
+      }}
       className="reader-scrollbar"
       onScroll={handleScroll}
       style={{ overflowY: 'auto', height: '100%', padding: '1.5rem 1rem' }}
@@ -143,25 +152,52 @@ export default function FeedReader({
           style={{
             fontSize: `${fontSize}px`,
             lineHeight: `${lineHeight}`,
-            maxWidth: lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem',
+            maxWidth: contentMaxWidth,
             margin: '0 auto',
           }}
         >
           {paragraphs.map((p) => (
-            <article
-              key={p.stableKey || p.id}
-              data-paragraph-id={p.id}
-              data-stable-key={p.stableKey}
-              style={{ marginBottom: '1em' }}
-            >
-              <p style={{ margin: 0 }}>{p.text}</p>
-            </article>
+            <div key={p.stableKey || p.id} className="group" style={{ position: 'relative', marginBottom: '0.25rem' }}>
+              <article
+                data-paragraph-id={p.id}
+                data-stable-key={p.stableKey}
+                style={{ marginBottom: '0.5rem' }}
+              >
+                {/* Bookmark button — left side, visible on hover */}
+                <button
+                  onClick={(e) => handleBookmarkClick(e, p.stableKey)}
+                  title={bookmarkedKey === p.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
+                  style={{
+                    position: 'absolute',
+                    left: '-2rem',
+                    top: '0',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    opacity: bookmarkedKey === p.stableKey ? 1 : 0,
+                    transition: 'opacity 0.2s ease, transform 0.2s ease',
+                    transform: bookmarkedKey === p.stableKey ? 'scale(1.1)' : 'scale(1)',
+                    color: bookmarkedKey === p.stableKey ? 'var(--r-accent)' : 'var(--r-text-secondary)',
+                    padding: '0.25rem',
+                    lineHeight: 1,
+                    pointerEvents: 'auto',
+                  }}
+                  className="bookmark-btn"
+                >
+                  {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
+                </button>
+                <p style={{ margin: 0 }}>{p.text}</p>
+              </article>
+              {/* Reactions bar */}
+              <ReactionBar paragraphId={p.id} variantId={variantId} />
+            </div>
           ))}
         </div>
 
         {/* Telegram-style chapter separator at the end */}
         {nextChapter && (
-          <div style={{ maxWidth: lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem', margin: '1.5rem auto 2rem' }}>
+          <div style={{ maxWidth: contentMaxWidth, margin: '1.5rem auto 2rem' }}>
             <div style={{ textAlign: 'center', margin: '1.5rem 0 1rem' }}>
               <span
                 style={{
@@ -260,7 +296,7 @@ export default function FeedReader({
 
         {/* Book finished */}
         {!nextChapter && paragraphs.length > 0 && (
-          <div style={{ textAlign: 'center', padding: '1rem 1rem 0', maxWidth: lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', padding: '1rem 1rem 0', maxWidth: contentMaxWidth, margin: '0 auto' }}>
             <span
               style={{
                 display: 'inline-block',
@@ -278,7 +314,7 @@ export default function FeedReader({
         )}
 
         {/* Comments section — inline at the bottom of the scroll */}
-        <div style={{ maxWidth: lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem', margin: '1.5rem auto 0' }}>
+        <div style={{ maxWidth: contentMaxWidth, margin: '1.5rem auto 0' }}>
           <CommentsSection
             chapterId={chapterId || ''}
             onSendComment={onSendComment}

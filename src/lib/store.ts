@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 
-export type VariantType = 'original' | 'clean' | 'essence'
+export type VariantType = string
 export type ReadingMode = 'feed' | 'book'
 export type LineWidth = 'narrow' | 'medium' | 'wide'
 export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'oled'

@@ -70,7 +70,10 @@ export default function CommentsPage() {
   }, [bookId, filter])
 
   useEffect(() => {
-    fetchComments()
+    const run = async () => {
+      await fetchComments()
+    }
+    void run()
   }, [fetchComments])
 
   const handleToggleShadowban = async (comment: Comment) => {

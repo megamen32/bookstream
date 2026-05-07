@@ -57,10 +57,9 @@ export async function GET(
       },
     })
 
-    // Fetch variant presets for UI labels
-    const variantTypes = chapter.variants.map(v => v.variantType)
+    // Fetch all variant presets for UI (they define available generation options)
     const presets = await db.variantPreset.findMany({
-      where: { slug: { in: variantTypes } },
+      orderBy: { position: 'asc' },
     })
     const presetMap = Object.fromEntries(presets.map(p => [p.slug, p]))
 
