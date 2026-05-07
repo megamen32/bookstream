@@ -1,0 +1,371 @@
+- generic:
+  - generic:
+    - banner:
+      - link:
+        - /url: /alex/taynyy-orden-inoplanetyan
+        - img
+      - generic:
+        - generic: Тайный Орден Инопланетян
+        - generic:
+          - generic: Аннотация
+          - generic:
+            - generic: 2%
+      - button:
+        - img
+      - button:
+        - img
+      - button:
+        - img
+      - button:
+        - img
+      - link:
+        - /url: /me/annotations
+        - img
+      - button:
+        - img
+    - generic:
+      - generic:
+        - button:
+          - generic: 📝
+          - generic: Оригинал
+        - button:
+          - generic: ✂️
+          - generic: ✨
+          - generic: Без воды
+          - generic: 50%
+        - button:
+          - generic: 💡
+          - generic: ✨
+          - generic: Суть
+          - generic: 20%
+    - generic:
+      - main:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: Глава 1
+                - heading [level=1]: Аннотация
+              - generic:
+                - generic:
+                  - article:
+                    - button [ref=e918] [cursor=pointer]: 📑
+                    - paragraph: "Статья предлагает формальную модель межзвёздного поведения технологической цивилизации. Исходная предпосылка минимальна: цивилизация стремится продолжать существовать на больших временах. Из этой цели выводятся инструментальные требования: ей нужны знания для предсказания угроз, распределённость для защиты от локальных катастроф, оборонный потенциал для сопротивления внешним рискам и осторожность, чтобы не стать лёгкой целью для неизвестных агентов."
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e919] [cursor=pointer]: 📑
+                    - paragraph: "Модель учитывает физические ограничения: конечность энергии и ресурсов, невозможность полной термодинамической невидимости, рост управленческих издержек при больших расстояниях, риск локального вымирания и неизбежные следы агрессивных действий. Эти ограничения показывают, что крайние режимы поведения неустойчивы. Полная изоляция снижает видимость, но повышает риск стагнации и локальной гибели. Систематическая агрессия может устранить отдельные угрозы, но требует энергии, оставляет следы и провоцирует ответ. Открытая кооперация ускоряет рост знания, но делает цивилизацию слишком заметной."
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e920] [cursor=pointer]: 📑
+                    - paragraph: "Внутренним решением становится защищённая кооперация: ограниченный и проверяемый обмен информацией, распределённая инфраструктура, отсутствие систематической превентивной агрессии и минимальная физически достижимая видимость. Такой режим может объяснять Великое Молчание: зрелые цивилизации не обязательно отсутствуют и не обязательно парализованы страхом; они могут быть организованы так, чтобы выживать через скрытую, осторожную и протокольно защищённую кооперацию."
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+              - generic:
+                - generic:
+                  - generic:
+                    - img
+                    - generic: Комментарии
+                    - generic: (0)
+                  - generic: Пока нет комментариев. Будьте первым!
+                  - generic:
+                    - generic: "вы:"
+                    - button: читатель-124
+                    - button: "[изменить]"
+                  - generic:
+                    - textbox:
+                      - /placeholder: Написать комментарий...
+                    - button [disabled]: →
+              - generic:
+                - generic: Следующая глава ниже
+            - generic:
+              - generic:
+                - generic: Глава 2
+                - heading [level=1]: "1. Введение: парадокс Ферми как задача выживания"
+              - generic:
+                - generic:
+                  - article:
+                    - button [ref=e921] [cursor=pointer]: 📑
+                    - paragraph: "Парадокс Ферми начинается с простого вопроса: если в Галактике много звёзд, много планет и миллиарды лет времени, почему мы не видим очевидных следов внеземных цивилизаций?"
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e922] [cursor=pointer]: 📑
+                    - paragraph: Обычные ответы хорошо известны. Возможно, разум крайне редок. Возможно, цивилизации быстро погибают. Возможно, все молчат из страха перед другими. Возможно, развитые цивилизации существуют, но скрываются. Возможно, мы просто ищем не те сигналы.
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e923] [cursor=pointer]: 📑
+                    - paragraph: "Эти объяснения важны, но часто они описывают уже готовые сценарии. Они говорят: цивилизация может молчать, атаковать, прятаться или исчезнуть. Но остаётся более общий вопрос: какое поведение было бы устойчивым для цивилизации, которая хочет существовать долго, но не знает, кто ещё находится в Галактике?"
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e924] [cursor=pointer]: 📑
+                    - paragraph: "В этой статье предлагается рассматривать межзвёздное поведение как задачу выживания. Цивилизация не обязана быть «доброй», «злой», «любопытной» или «экспансивной» по своей природе. Достаточно предположить одно: если цивилизация продолжает действовать на больших временах, то стратегии, которые резко уменьшают вероятность её существования, будут отсеиваться."
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e925] [cursor=pointer]: 📑
+                    - paragraph: "Отсюда возникает задача: как цивилизации снизить вероятность гибели?"
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e926] [cursor=pointer]: 📑
+                    - paragraph: "Для этого ей нужны не абстрактные идеалы, а практические средства:"
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e927] [cursor=pointer]: 📑
+                    - paragraph: · знание, чтобы распознавать угрозы и исправлять ошибки;
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e928] [cursor=pointer]: 📑
+                    - paragraph: · распределённость, чтобы не погибнуть от одной локальной катастрофы;
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e929] [cursor=pointer]: 📑
+                    - paragraph: · оборона и восстановление, чтобы переживать атаки и сбои;
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e930] [cursor=pointer]: 📑
+                    - paragraph: · осторожность, чтобы не раскрыться опасным агентам;
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e931] [cursor=pointer]: 📑
+                    - paragraph: · обмен информацией, если он снижает риск быстрее, чем повышает видимость.
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e932] [cursor=pointer]: 📑
+                    - paragraph: Иными словами, знание, кооперация и скрытность здесь не задаются как моральные ценности. Они рассматриваются как инструменты выживания.
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+                - generic:
+                  - article:
+                    - button [ref=e933] [cursor=pointer]: 📑
+                    - paragraph: "Главный тезис статьи: при физических ограничениях крайние стратегии оказываются дорогими. Полная скрытность требует отказа от активности или огромных затрат на маскировку. Систематическая агрессия требует энергии и оставляет следы. Открытая кооперация делает цивилизацию видимой. Поэтому устойчивым кандидатом становится защищённая кооперация: цивилизация обменивается информацией, но делает это осторожно, направленно, проверяемо и с минимальной наблюдаемостью."
+                  - group:
+                    - button:
+                      - generic: 👍
+                    - button:
+                      - generic: 🔥
+                    - button:
+                      - generic: 💡
+                    - button:
+                      - generic: 😂
+                    - button:
+                      - generic: ⭐
+              - generic:
+                - generic: Следующая глава ниже
+            - generic: Прокрутите ниже для продолжения
+  - list
+  - alert
+  - dialog "Настройки чтения" [ref=e935]:
+    - heading "Настройки чтения" [level=2] [ref=e937]:
+      - img [ref=e938]
+      - text: Настройки чтения
+    - generic [ref=e941]:
+      - generic [ref=e942]:
+        - generic [ref=e943]:
+          - generic [ref=e944]: Размер шрифта
+          - generic [ref=e945]: 18px
+        - slider [active] [ref=e950]
+      - generic [ref=e951]:
+        - generic [ref=e952]:
+          - generic [ref=e953]: Высота строки
+          - generic [ref=e954]: "1.6"
+        - slider [ref=e959]
+      - generic [ref=e960]:
+        - generic [ref=e961]: Ширина строки
+        - generic [ref=e962]:
+          - button "Узкий" [ref=e963] [cursor=pointer]
+          - button "Средний" [ref=e964] [cursor=pointer]
+          - button "Широкий" [ref=e965] [cursor=pointer]
+      - generic [ref=e966]:
+        - generic [ref=e967]: Тема оформления
+        - generic [ref=e968]:
+          - button "Светлая" [ref=e969] [cursor=pointer]:
+            - img [ref=e971]
+            - generic [ref=e977]: Светлая
+          - button "Сепия" [ref=e978] [cursor=pointer]:
+            - img [ref=e980]
+            - generic [ref=e982]: Сепия
+          - button "Тёмная" [ref=e983] [cursor=pointer]:
+            - img [ref=e985]
+            - generic [ref=e987]: Тёмная
+          - button "OLED" [ref=e988] [cursor=pointer]:
+            - img [ref=e990]
+            - generic [ref=e992]: OLED
+      - generic [ref=e993]:
+        - generic [ref=e994]:
+          - generic [ref=e995]: Панель реакций на мобильном
+          - generic [ref=e996]: Показывать кнопки реакций под абзацами
+        - switch [ref=e997]
+      - button "Очень крупный шрифт" [ref=e998] [cursor=pointer]:
+        - img [ref=e999]
+        - text: Очень крупный шрифт
+      - link "Профиль и видимость аннотаций читатель-124 · Голубой свет Открыть" [ref=e1001] [cursor=pointer]:
+        - /url: /me/settings
+        - generic [ref=e1002]:
+          - img [ref=e1003]
+          - generic [ref=e1006]:
+            - generic [ref=e1007]: Профиль и видимость аннотаций
+            - generic [ref=e1008]: читатель-124 · Голубой свет
+        - generic [ref=e1009]: Открыть
+    - button "Close" [ref=e1010]:
+      - img [ref=e1011]
+      - generic [ref=e1014]: Close

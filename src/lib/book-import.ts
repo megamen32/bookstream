@@ -125,35 +125,37 @@ export function splitImportedHtmlIntoChaptersWithFallbackTitle(
     const candidates = shouldSkipLeadingStructuralHeading(headings, html)
       ? headings.slice(1)
       : headings
+    const chapterBoundaries = selectTopLevelChapterHeadings(candidates)
 
     const chapters: ImportedChapter[] = []
-    const baseLevel = candidates.reduce(
-      (minimumLevel, heading) => Math.min(minimumLevel, heading.level),
-      candidates[0]?.level ?? 1
+    const leadingTitle = fallbackTitle
+    const leadingContent = removeDuplicateLeadingTitleBlock(
+      html.slice(0, chapterBoundaries[0]?.index ?? html.length).trim(),
+      leadingTitle
     )
-
-    const leadingContent = html.slice(0, candidates[0]?.index ?? html.length).trim()
     if (hasReadableBlockContent(leadingContent)) {
       chapters.push({
-        title: fallbackTitle,
+        title: leadingTitle,
         content: leadingContent,
         level: 1,
       })
     }
 
-    for (let index = 0; index < candidates.length; index += 1) {
-      const start = candidates[index].endIndex
-      const end = index + 1 < candidates.length ? candidates[index + 1].index : html.length
-      const content = html.slice(start, end).trim()
+    for (let index = 0; index < chapterBoundaries.length; index += 1) {
+      const start = chapterBoundaries[index].endIndex
+      const end = index + 1 < chapterBoundaries.length ? chapterBoundaries[index + 1].index : html.length
+      const chapterTitle = chapterBoundaries[index].title
+      const rawContent = html.slice(start, end).trim()
+      const content = removeDuplicateLeadingTitleBlock(rawContent, chapterTitle)
 
       if (!hasReadableBlockContent(content)) {
         continue
       }
 
       chapters.push({
-        title: candidates[index].title,
+        title: chapterTitle,
         content,
-        level: candidates[index].level - baseLevel + 1,
+        level: 1,
       })
     }
 
@@ -224,6 +226,40 @@ function shouldSkipLeadingStructuralHeading(headings: HeadingBoundary[], html: s
 
   const betweenHeadings = html.slice(firstHeading.endIndex, secondHeading.index)
   return !hasReadableBlockContent(betweenHeadings)
+}
+
+function selectTopLevelChapterHeadings(headings: HeadingBoundary[]): HeadingBoundary[] {
+  if (headings.length === 0) {
+    return []
+  }
+
+  const topLevel = headings.reduce(
+    (minimumLevel, heading) => Math.min(minimumLevel, heading.level),
+    headings[0].level
+  )
+
+  return headings.filter((heading) => heading.level === topLevel)
+}
+
+function removeDuplicateLeadingTitleBlock(content: string, title: string): string {
+  const normalizedTitle = collapseWhitespace(title)
+  if (!normalizedTitle || !content) {
+    return content
+  }
+
+  const leadingBlockPattern = /^\s*(<(h[1-6]|p)[^>]*>[\s\S]*?<\/\2>)/
+  const match = content.match(leadingBlockPattern)
+  if (!match) {
+    return content
+  }
+
+  const leadingBlockText = collapseWhitespace(stripHtml(match[1]))
+  if (leadingBlockText !== normalizedTitle) {
+    return content
+  }
+
+  const remainingContent = content.slice(match[0].length).trim()
+  return hasReadableBlockContent(remainingContent) ? remainingContent : content
 }
 
 function hasReadableBlockContent(content: string): boolean {

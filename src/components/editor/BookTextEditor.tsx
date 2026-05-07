@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus'
 import CharacterCount from '@tiptap/extension-character-count'
@@ -33,7 +33,7 @@ import {
   Underline as UnderlineIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { EditorToolbar } from './EditorToolbar'
 import { sanitizeEditorHtml, textToParagraphHtml } from './editor-utils'
@@ -64,6 +64,7 @@ export function BookTextEditor({
   className,
 }: BookTextEditorProps) {
   const [focusMode, setFocusMode] = useState(false)
+  const titleRef = useRef<HTMLTextAreaElement | null>(null)
 
   const handleShortcut = (event: ShortcutEvent): boolean => {
     if (!event.ctrlKey && !event.metaKey) {
@@ -184,6 +185,16 @@ export function BookTextEditor({
       editor.commands.setContent(nextHtml, { emitUpdate: false })
     }
   }, [editor, value])
+
+  useEffect(() => {
+    const textarea = titleRef.current
+    if (!textarea) {
+      return
+    }
+
+    textarea.style.height = '0px'
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [title])
 
   if (!editor) {
     return <div className="min-h-[640px] animate-pulse rounded-3xl border bg-muted/40" />
@@ -384,7 +395,8 @@ export function BookTextEditor({
 
       <div className="w-full px-5 py-8 md:px-10 md:py-12">
         {onTitleChange ? (
-          <Input
+          <Textarea
+            ref={titleRef}
             value={title ?? ''}
             onChange={(event) => onTitleChange(event.target.value)}
             onKeyDown={(event) => {
@@ -392,9 +404,11 @@ export function BookTextEditor({
             }}
             placeholder={titlePlaceholder}
             aria-label={titlePlaceholder}
+            rows={1}
             className={cn(
-              'mb-6 h-auto border-0 bg-transparent px-0 py-0 text-4xl font-black tracking-[-0.06em]',
-              'text-foreground shadow-none md:text-5xl',
+              'mb-6 min-h-0 max-w-[18ch] resize-none overflow-hidden border-0 bg-transparent px-0 py-0',
+              'text-4xl font-black tracking-[-0.06em] text-foreground shadow-none md:text-5xl',
+              'whitespace-pre-wrap break-words leading-[0.95]',
               'placeholder:text-muted-foreground/55 focus-visible:border-0 focus-visible:ring-0'
             )}
           />

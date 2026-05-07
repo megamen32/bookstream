@@ -98,11 +98,13 @@ export default function TopCommentCard({
             <Link
               href={chapterHref}
               className="mt-3 flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
+              title={quote.selectedText}
+              aria-label={quote.selectedText}
             >
               <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
                 {VARIANT_LABELS[quote.variantType] || quote.variantType}
               </span>
-              <span className="min-w-0 flex-1" style={clampParagraphStyle(1)}>
+              <span className="min-w-0 flex-1" style={clampParagraphStyle(2)}>
                 {quote.selectedText}
               </span>
             </Link>

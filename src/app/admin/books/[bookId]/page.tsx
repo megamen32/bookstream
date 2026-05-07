@@ -55,6 +55,7 @@ const COVER_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'ima
 interface Chapter {
   id: string
   title: string
+  level: number
   position: number
   variants: ChapterVariant[]
 }
@@ -753,7 +754,7 @@ export default function BookEditorPage() {
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
-                    <CardTitle className="truncate text-base">Глава {selectedChapter.position}</CardTitle>
+                    <CardTitle className="truncate text-base">Глава {selectedChapter.position + 1}</CardTitle>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Название редактируется в поле ниже · Telegraph-like редактор · сохраняется как HTML
                     </p>
@@ -873,7 +874,7 @@ export default function BookEditorPage() {
               </div>
             </CardHeader>
             <CardContent className="overflow-hidden p-2">
-              <ScrollArea className="max-h-[60vh]">
+              <ScrollArea className="h-[min(70vh,calc(100vh-16rem))] pr-2">
                 <div className="space-y-1">
                   {book.chapters.map((chapter) => (
                     <button
@@ -894,11 +895,22 @@ export default function BookEditorPage() {
                           ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                       )}
+                      style={{
+                        paddingInlineStart: `${0.75 + Math.max(0, chapter.level - 1) * 1.25}rem`,
+                      }}
                     >
                       <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
                         {chapter.position + 1}.
                       </span>
                       <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
+                      {chapter.level > 1 && (
+                        <Badge
+                          variant="outline"
+                          className="rounded-full px-1.5 py-0 text-[10px]"
+                        >
+                          L{chapter.level}
+                        </Badge>
+                      )}
                       {chapter.variants.length > 1 && (
                         <Badge
                           variant="secondary"

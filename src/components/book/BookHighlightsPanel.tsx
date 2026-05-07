@@ -755,11 +755,23 @@ export default function BookHighlightsPanel({
                       />
                     ))}
                     {contentCount > visibleChapters.length && (
-                      <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
-                        <Sparkles size={14} />
-                        Ещё {contentCount - visibleChapters.length} {chapterCountLabel} скрыты до
-                        раскрытия.
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSectionToggle('toc')}
+                        className="group flex w-full items-center gap-2 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-left text-sm text-muted-foreground transition-all duration-200 hover:border-slate-300/80 hover:bg-background/80 hover:text-foreground hover:shadow-[0_10px_28px_-24px_rgba(15,23,42,0.45)]"
+                      >
+                        <Sparkles
+                          size={14}
+                          className="shrink-0 text-slate-500 transition-colors group-hover:text-slate-700"
+                        />
+                        <span className="truncate">
+                          Показать ещё {contentCount - visibleChapters.length} {chapterCountLabel}
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          className="ml-auto shrink-0 text-slate-400 transition-transform duration-200 group-hover:translate-y-0.5 group-hover:text-slate-600"
+                        />
+                      </button>
                     )}
                   </div>
                 )}

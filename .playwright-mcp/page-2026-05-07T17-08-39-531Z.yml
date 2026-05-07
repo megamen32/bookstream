@@ -1,0 +1,126 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - img [ref=e6]
+          - heading "Bookstream" [level=1] [ref=e8]
+        - generic [ref=e9]:
+          - generic [ref=e10]: Книжная витрина
+          - link "Профиль" [ref=e11] [cursor=pointer]:
+            - /url: /me/annotations
+            - img
+            - text: Профиль
+    - main [ref=e12]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]:
+            - img [ref=e17]
+            - text: Витрина обложек
+          - heading "Книги должны смотреться как премиальные постеры, а не как список файлов." [level=2] [ref=e19]
+          - paragraph [ref=e20]: Вертикальные обложки выходят на первый план, описание уходит в роль подписи, а вся витрина работает как дорогой стриминговый каталог.
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - generic [ref=e23]: "6"
+            - generic [ref=e24]: книг на витрине
+          - generic [ref=e25]:
+            - generic [ref=e26]: "1"
+            - generic [ref=e27]: авторов
+          - generic [ref=e28]:
+            - generic [ref=e29]: 3 режима
+            - generic [ref=e30]: чтения и работы с текстом
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - heading "Последние книги" [level=3] [ref=e33]
+          - paragraph [ref=e34]: Весь экран и вся композиция подчинены вертикальной обложке.
+        - generic [ref=e35]:
+          - link [ref=e36] [cursor=pointer]:
+            - /url: /alex/dnevniki-yona-tihogo-o-plastikogeneze-i-prochih-zagadkah-vselennoy
+            - article [ref=e37]:
+              - 'img "Обложка книги «Дневники Йона Тихого: \"О пластикогенезе и прочих загадках Вселенной\"»" [ref=e41]'
+              - generic [ref=e42]:
+                - paragraph [ref=e43]: Александр Петров
+                - 'heading "Дневники Йона Тихого: \"О пластикогенезе и прочих загадках Вселенной\"" [level=4] [ref=e44]'
+                - paragraph [ref=e45]: Юмористический рассказ о пластике и экологии
+                - generic [ref=e46]:
+                  - generic [ref=e47]: 1 глава
+                  - generic [ref=e48]:
+                    - text: Открыть
+                    - img [ref=e49]
+          - link [ref=e51] [cursor=pointer]:
+            - /url: /alex/dnevniki-yona-tihogo-neyroset-vmesto-robota
+            - article [ref=e52]:
+              - 'img "Обложка книги «Дневники Йона Тихого: \"Нейросеть вместо робота\"»" [ref=e56]'
+              - generic [ref=e57]:
+                - paragraph [ref=e58]: Александр Петров
+                - 'heading "Дневники Йона Тихого: \"Нейросеть вместо робота\"" [level=4] [ref=e59]'
+                - paragraph [ref=e60]: Юмористический рассказ о роботах
+                - generic [ref=e61]:
+                  - generic [ref=e62]: 1 глава
+                  - generic [ref=e63]:
+                    - text: Открыть
+                    - img [ref=e64]
+          - link [ref=e66] [cursor=pointer]:
+            - /url: /alex/taynyy-orden-inoplanetyan
+            - article [ref=e67]:
+              - img "Обложка книги «Тайный Орден Инопланетян»" [ref=e71]
+              - generic [ref=e72]:
+                - paragraph [ref=e73]: Александр Петров
+                - heading "Тайный Орден Инопланетян" [level=4] [ref=e74]
+                - paragraph [ref=e75]: "Статья предлагает формальную модель межзвёздного поведения технологической цивилизации. Исходная предпосылка минимальна: цивилизация стремится продолжать существовать на больших временах. Из этой цели выводятся инструментальные требования: ей нужны знания для предсказания угроз, распределённость для защиты от локальных катастроф, оборонный потенциал для сопротивления внешним рискам и осторожность, чтобы не стать лёгкой целью для неизвестных агентов."
+                - generic [ref=e76]:
+                  - generic [ref=e77]: 40 глав
+                  - generic [ref=e78]:
+                    - text: Открыть
+                    - img [ref=e79]
+          - link [ref=e81] [cursor=pointer]:
+            - /url: /alex/istoriya-anonimnogo-gosudarstva
+            - article [ref=e82]:
+              - img "Обложка книги «История Анонимного Государства»" [ref=e86]
+              - generic [ref=e87]:
+                - paragraph [ref=e88]: Александр Петров
+                - heading "История Анонимного Государства" [level=4] [ref=e89]
+                - paragraph [ref=e90]: В одном анонимном государстве, которое могло бы быть где угодно, от заснеженных просторов Сибири до запылённых улиц Каира, правители мира сего решили построить Идеальный Порядок
+                - generic [ref=e91]:
+                  - generic [ref=e92]: 37 глав
+                  - generic [ref=e93]:
+                    - text: Открыть
+                    - img [ref=e94]
+          - link [ref=e96] [cursor=pointer]:
+            - /url: /alex/metro-2033-review
+            - article [ref=e97]:
+              - 'heading "Метро 2033: Разбор" [level=3] [ref=e101]'
+              - generic [ref=e102]:
+                - paragraph [ref=e103]: Александр Петров
+                - 'heading "Метро 2033: Разбор" [level=4] [ref=e104]'
+                - paragraph [ref=e105]: Глубокий анализ культового романа
+                - generic [ref=e106]:
+                  - generic [ref=e107]: 2 глав
+                  - generic [ref=e108]:
+                    - text: Открыть
+                    - img [ref=e109]
+          - link [ref=e111] [cursor=pointer]:
+            - /url: /alex/gospel-of-judas
+            - article [ref=e112]:
+              - heading "Евангелие от Иуды" [level=3] [ref=e116]
+              - generic [ref=e117]:
+                - paragraph [ref=e118]: Александр Петров
+                - heading "Евангелие от Иуды" [level=4] [ref=e119]
+                - paragraph [ref=e120]: Альтернативный взгляд на предательство
+                - generic [ref=e121]:
+                  - generic [ref=e122]: 3 глав
+                  - generic [ref=e123]:
+                    - text: Открыть
+                    - img [ref=e124]
+      - generic [ref=e128]:
+        - generic [ref=e129]:
+          - heading "Авторы" [level=3] [ref=e130]
+          - paragraph [ref=e131]: Отдельные подборки и быстрый переход в каталог конкретного автора.
+        - link "Александр Петров" [ref=e133] [cursor=pointer]:
+          - /url: /alex
+          - button "Александр Петров" [ref=e134]
+    - contentinfo [ref=e135]:
+      - generic [ref=e136]: Bookstream — витрина для чтения, где обложка снова имеет вес
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e137]
