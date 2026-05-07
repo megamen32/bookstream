@@ -6,6 +6,7 @@ import TextSelector from './TextSelector'
 import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import { MessageSquare, X } from 'lucide-react'
+import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 
 interface Paragraph {
   id: string
@@ -34,6 +35,11 @@ interface BookReaderProps {
   searchOpen: boolean
   /** Callback used to expose the active content node for search */
   setContentNode?: (node: HTMLDivElement | null) => void
+  /** Book route slugs used for quote links in comments */
+  authorSlug: string
+  bookSlug: string
+  /** Database paragraph id requested via quote navigation */
+  highlightParagraphId?: string | null
 }
 
 export default function BookReader({
@@ -51,6 +57,9 @@ export default function BookReader({
   onToggleBookmark,
   searchOpen,
   setContentNode,
+  authorSlug,
+  bookSlug,
+  highlightParagraphId,
 }: BookReaderProps) {
   const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
   const innerRef = useRef<HTMLDivElement>(null)
@@ -61,8 +70,13 @@ export default function BookReader({
   const [showComments, setShowComments] = useState(false)
   const [commentsHeight, setCommentsHeight] = useState(280)
   const restoredRef = useRef(false)
+  const quoteFocusAppliedRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTransitioning = useRef(false)
+
+  useEffect(() => {
+    quoteFocusAppliedRef.current = false
+  }, [highlightParagraphId])
 
   const columnWidth = lineWidth === 'narrow' ? '280px' : lineWidth === 'medium' ? '350px' : '420px'
 
@@ -83,7 +97,7 @@ export default function BookReader({
 
   // Restore page position
   useEffect(() => {
-    if (restoredRef.current || !contentRefInternal.current) return
+    if (restoredRef.current || !contentRefInternal.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
     restoredRef.current = true
     const savedPage = localStorage.getItem(`bookstream-page-${chapterId}`)
     if (savedPage) {
@@ -94,12 +108,28 @@ export default function BookReader({
     }
   }, [chapterId])
 
+  useEffect(() => {
+    if (!highlightParagraphId || !contentRefInternal.current) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (!contentRefInternal.current) return
+      const target = findQuoteParagraphElement(contentRefInternal.current, highlightParagraphId)
+      if (target) {
+        scrollQuoteTargetIntoView(contentRefInternal.current, target)
+        quoteFocusAppliedRef.current = true
+        restoredRef.current = true
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [highlightParagraphId, paragraphs])
+
   // Scroll to current page
   useEffect(() => {
-    if (!contentRefInternal.current || !restoredRef.current) return
+    if (!contentRefInternal.current || !restoredRef.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
     const pageHeight = contentRefInternal.current.clientHeight
     contentRefInternal.current.scrollTop = (currentPage - 1) * pageHeight
-  }, [currentPage])
+  }, [currentPage, highlightParagraphId])
 
   // Report progress
   useEffect(() => {
@@ -271,18 +301,57 @@ export default function BookReader({
       >
         <div style={{ position: 'relative' }}>
           <TextSelector containerRef={contentRefInternal} variantId={variantId} />
-          {paragraphs.map((p) => (
-            <div key={p.stableKey || p.id} className="group" style={{ position: 'relative' }}>
-              <article
-                data-paragraph-id={p.id}
-                data-stable-key={p.stableKey}
-                style={{ breakInside: 'avoid', marginBottom: '0.5em', textAlign: 'justify', hyphens: 'auto', color: 'var(--r-text)', fontFamily: 'Georgia, "Times New Roman", Times, serif' }}
+          {paragraphs.map((p) => {
+            const isQuoteTarget = highlightParagraphId === p.id
+
+            return (
+              <div
+                key={p.stableKey || p.id}
+                className="group"
+                style={{
+                  position: 'relative',
+                  borderRadius: isQuoteTarget ? '0.95rem' : undefined,
+                  boxShadow: isQuoteTarget ? '0 0 0 1px var(--r-accent), 0 18px 40px rgba(0, 0, 0, 0.14)' : 'none',
+                  backgroundColor: isQuoteTarget ? 'rgba(245, 158, 11, 0.10)' : 'transparent',
+                  transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
+                }}
               >
-                <p style={{ margin: 0 }}>{p.text}</p>
-              </article>
-              <ReactionBar paragraphId={p.id} variantId={variantId} />
-            </div>
-          ))}
+                {isQuoteTarget && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-0.6rem',
+                      right: '0.5rem',
+                      zIndex: 2,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: '9999px',
+                      backgroundColor: 'var(--r-accent)',
+                      color: 'var(--r-accent-foreground)',
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    Цитата
+                  </span>
+                )}
+                <article
+                  data-paragraph-id={p.id}
+                  data-stable-key={p.stableKey}
+                  style={{ breakInside: 'avoid', marginBottom: '0.5em', textAlign: 'justify', hyphens: 'auto', color: 'var(--r-text)', fontFamily: 'Georgia, "Times New Roman", Times, serif' }}
+                >
+                  <p style={{ margin: 0 }}>{p.text}</p>
+                </article>
+                <ReactionBar paragraphId={p.id} variantId={variantId} />
+              </div>
+            )
+          })}
 
           {/* End hint */}
           <div style={{ breakInside: 'avoid', textAlign: 'center', padding: '1rem 0' }}>
@@ -451,11 +520,13 @@ export default function BookReader({
 
           {/* Comments content */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 1rem 1rem' }}>
-            <CommentsSection
-              chapterId={chapterId || ''}
-              onSendComment={onSendComment}
-            />
-          </div>
+          <CommentsSection
+            chapterId={chapterId || ''}
+            onSendComment={onSendComment}
+            authorSlug={authorSlug}
+            bookSlug={bookSlug}
+          />
+        </div>
         </div>
       )}
     </div>

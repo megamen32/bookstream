@@ -238,36 +238,51 @@
    ========================================== */
 
 .selection-toolbar {
-  position: absolute;
-  z-index: 100;
+  position: fixed;
+  z-index: 45;
   background-color: var(--r-bg-secondary);
   border: 1px solid var(--r-border);
-  border-radius: 0.5rem;
-  padding: 0.25rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+  padding: 0.375rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   gap: 0.25rem;
+  max-width: calc(100vw - 1rem);
   animation: fadeInScale 0.15s ease-out;
 }
 
 .selection-toolbar button {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.375rem;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 9999px;
   font-size: 0.875rem;
-  white-space: nowrap;
   color: var(--r-text);
   background: transparent;
   border: none;
   cursor: pointer;
-  min-height: 44px;
-  min-width: 44px;
+  min-height: 2.5rem;
+  min-width: 2.5rem;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .selection-toolbar button:hover {
   background-color: var(--r-border);
+}
+
+.selection-toolbar button:focus-visible {
+  outline: 2px solid var(--r-accent);
+  outline-offset: 2px;
+}
+
+.selection-toolbar button svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 @keyframes fadeInScale {

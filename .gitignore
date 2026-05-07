@@ -55,6 +55,7 @@ server.log
 workspace-*.tar
 .zscripts/dev.pid
 download/*.tar.gz
+.playwright-cli/
 # Skills directory
 /skills/
 bookstream-tiptap-editor-v2.zip

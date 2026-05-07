@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -22,8 +32,10 @@ import {
   Loader2,
   MessageSquare,
   Pencil,
+  Plus,
   Save,
   Sparkles,
+  Trash2,
 } from 'lucide-react'
 import { BookTextEditor } from '@/components/editor/BookTextEditor'
 import type { EditorSaveStatus } from '@/components/editor/editor-types'
@@ -89,6 +101,9 @@ export default function BookEditorPage() {
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<EditorSaveStatus>('idle')
   const [generating, setGenerating] = useState(false)
+  const [creatingChapter, setCreatingChapter] = useState(false)
+  const [deletingChapter, setDeletingChapter] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editMode, setEditMode] = useState<'info' | 'content'>('content')
 
   const [editTitle, setEditTitle] = useState('')
@@ -105,16 +120,14 @@ export default function BookEditorPage() {
         return
       }
 
-      const data = await res.json()
+      const data = (await res.json()) as BookData
+      const selectedExists = data.chapters.some((chapter) => chapter.id === selectedChapterId)
 
       setBook(data)
       setEditTitle(data.title)
       setEditDescription(data.description || '')
       setEditIsPublic(data.isPublic)
-
-      if (data.chapters.length > 0 && !selectedChapterId) {
-        setSelectedChapterId(data.chapters[0].id)
-      }
+      setSelectedChapterId(selectedExists ? selectedChapterId : data.chapters[0]?.id ?? null)
     } catch (error) {
       console.error('Error fetching book:', error)
       toast({ title: 'Ошибка загрузки', variant: 'destructive' })
@@ -265,6 +278,90 @@ export default function BookEditorPage() {
     }
   }
 
+  const handleCreateChapter = async (): Promise<void> => {
+    if (!book) {
+      return
+    }
+
+    setCreatingChapter(true)
+
+    try {
+      const res = await fetch(`/api/books/${bookId}/chapters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `Новая глава ${book.chapters.length + 1}`,
+        }),
+      })
+
+      if (!res.ok) {
+        const payload = await res.json()
+        throw new Error(payload.error || 'Не удалось создать главу')
+      }
+
+      const chapter = (await res.json()) as Chapter
+
+      setActiveVariant('original')
+      setEditMode('content')
+      await fetchBook()
+      setSelectedChapterId(chapter.id)
+
+      toast({
+        title: 'Глава создана',
+        description: 'Откройте её и отредактируйте название или текст',
+      })
+    } catch (error) {
+      toast({
+        title: 'Ошибка создания главы',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
+    } finally {
+      setCreatingChapter(false)
+    }
+  }
+
+  const handleDeleteChapter = async (): Promise<void> => {
+    if (!book || !selectedChapterId) {
+      return
+    }
+
+    const currentIndex = book.chapters.findIndex((chapter) => chapter.id === selectedChapterId)
+    const fallbackChapterId =
+      book.chapters[currentIndex + 1]?.id ?? book.chapters[currentIndex - 1]?.id ?? null
+
+    setDeletingChapter(true)
+
+    try {
+      const res = await fetch(`/api/chapters/${selectedChapterId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const payload = await res.json()
+        throw new Error(payload.error || 'Не удалось удалить главу')
+      }
+
+      setDeleteDialogOpen(false)
+      setActiveVariant('original')
+      await fetchBook()
+      setSelectedChapterId(fallbackChapterId)
+
+      toast({
+        title: 'Глава удалена',
+        description: 'Позиции оставшихся глав пересчитаны',
+      })
+    } catch (error) {
+      toast({
+        title: 'Ошибка удаления главы',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
+    } finally {
+      setDeletingChapter(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4 md:p-6 lg:p-8">
@@ -329,29 +426,54 @@ export default function BookEditorPage() {
         <aside className="w-full">
           <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Главы</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Главы</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void handleCreateChapter()
+                  }}
+                  disabled={creatingChapter}
+                  className="rounded-full"
+                >
+                  {creatingChapter ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  Глава
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="p-2">
+            <CardContent className="overflow-hidden p-2">
               <ScrollArea className="max-h-[60vh]">
                 <div className="space-y-1">
                   {book.chapters.map((chapter) => (
                     <button
                       key={chapter.id}
                       onClick={() => {
+                        const nextVariant = chapter.variants.some(
+                          (variant) => variant.variantType === activeVariant
+                        )
+                          ? activeVariant
+                          : 'original'
+
+                        setActiveVariant(nextVariant)
                         setSelectedChapterId(chapter.id)
                         setEditMode('content')
                       }}
                       className={cn(
-                        'flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
+                        'flex w-full items-center gap-2 overflow-hidden rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
                         selectedChapterId === chapter.id
                           ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                       )}
                     >
-                      <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
+                      <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
                         {chapter.position + 1}.
                       </span>
-                      <span className="truncate">{chapter.title}</span>
+                      <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
                       {chapter.variants.length > 1 && (
                         <Badge
                           variant="secondary"
@@ -502,7 +624,7 @@ export default function BookEditorPage() {
                       onClick={() => {
                         void handleSaveChapter()
                       }}
-                      disabled={saving || !editContent || !editChapterTitle.trim()}
+                      disabled={saving || !editChapterTitle.trim()}
                       className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
                     >
                       {saving ? (
@@ -511,6 +633,21 @@ export default function BookEditorPage() {
                         <Save className="mr-1 h-3 w-3" />
                       )}
                       Сохранить
+                    </Button>
+
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteDialogOpen(true)}
+                      disabled={deletingChapter}
+                      className="rounded-full"
+                    >
+                      {deletingChapter ? (
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-1 h-3 w-3" />
+                      )}
+                      Удалить
                     </Button>
 
                     <Button
@@ -580,6 +717,36 @@ export default function BookEditorPage() {
           )}
         </main>
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить главу?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedChapter
+                ? `Глава «${selectedChapter.title}» будет удалена вместе с вариантами, комментариями и реакциями.`
+                : 'Глава будет удалена без возможности восстановления.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-full">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void handleDeleteChapter()
+              }}
+              className="rounded-full bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deletingChapter ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="mt-4 sm:hidden">
         <Link href={`/admin/books/${bookId}/comments`} className="block">

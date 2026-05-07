@@ -57,6 +57,7 @@ export default function ReaderPage() {
   const router = useRouter()
   const authorSlug = params.authorSlug as string
   const bookSlug = params.bookSlug as string
+  const searchParamsString = searchParams.toString()
 
   const {
     bookId,
@@ -96,6 +97,7 @@ export default function ReaderPage() {
   const [commentCount, setCommentCount] = useState(0)
   const [scrollProgress, setScrollProgress] = useState(0)
   const [bookmarkedKey, setBookmarkedKey] = useState<string | null>(null)
+  const [quoteTargetParagraphId, setQuoteTargetParagraphId] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
@@ -234,14 +236,18 @@ export default function ReaderPage() {
           }
         } catch { /* no progress */ }
 
-        const urlChapter = searchParams.get('chapter')
+        const queryParams = new URLSearchParams(searchParamsString)
+
+        const urlChapter = queryParams.get('chapter')
         if (urlChapter) {
           targetChapterId = urlChapter
         }
-        const urlVariant = searchParams.get('variant')
+        const urlVariant = queryParams.get('variant')
         if (urlVariant) {
           targetVariant = urlVariant
         }
+        const urlParagraph = queryParams.get('paragraph')
+        setQuoteTargetParagraphId(urlParagraph)
 
         setChapterId(targetChapterId!)
         setVariantType(targetVariant)
@@ -256,10 +262,11 @@ export default function ReaderPage() {
     }
 
     init()
-  }, [authorSlug, bookSlug, readerId])
+  }, [authorSlug, bookSlug, readerId, searchParamsString])
 
   const handleVariantChange = useCallback(async (newType: VariantType) => {
     if (!chapterId) return
+    setQuoteTargetParagraphId(null)
 
     // Check if variant already exists in DB
     const exists = availableVariants.includes(newType)
@@ -291,12 +298,14 @@ export default function ReaderPage() {
   }, [chapterId, availableVariants, variantPresets, fetchChapter])
 
   const handleChapterChange = useCallback(async (newChapterId: string) => {
+    setQuoteTargetParagraphId(null)
     setChapterId(newChapterId)
     await fetchChapter(newChapterId, variantType)
   }, [variantType, fetchChapter, setChapterId])
 
   const goToNextChapter = useCallback(() => {
     if (!chapterData) return
+    setQuoteTargetParagraphId(null)
     const chapters = chapterData.book.chapters
     const idx = chapters.findIndex(c => c.id === chapterId)
     if (idx < chapters.length - 1) {
@@ -308,6 +317,7 @@ export default function ReaderPage() {
 
   const goToPrevChapter = useCallback(() => {
     if (!chapterData) return
+    setQuoteTargetParagraphId(null)
     const chapters = chapterData.book.chapters
     const idx = chapters.findIndex(c => c.id === chapterId)
     if (idx > 0) {
@@ -658,6 +668,9 @@ export default function ReaderPage() {
               onScrollProgress={setScrollProgress}
               bookmarkedKey={bookmarkedKey}
               onToggleBookmark={handleToggleBookmark}
+              authorSlug={authorSlug}
+              bookSlug={bookSlug}
+              highlightParagraphId={quoteTargetParagraphId}
             />
           ) : (
             <BookReader
@@ -676,6 +689,9 @@ export default function ReaderPage() {
               onToggleBookmark={handleToggleBookmark}
               searchOpen={showSearch}
               setContentNode={setSearchContentNode}
+              authorSlug={authorSlug}
+              bookSlug={bookSlug}
+              highlightParagraphId={quoteTargetParagraphId}
             />
           )}
         </main>
@@ -697,6 +713,8 @@ export default function ReaderPage() {
             <CommentsSection
               chapterId={chapterId || ''}
               onSendComment={handleSendComment}
+              authorSlug={authorSlug}
+              bookSlug={bookSlug}
             />
           </aside>
         )}

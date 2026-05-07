@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import { useReaderStore } from '@/lib/store'
 import { MessageSquare } from 'lucide-react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ArrowUpRight } from 'lucide-react'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 
 const VARIANT_LABELS: Record<string, string> = {
   original: 'Оригинал',
@@ -51,6 +54,7 @@ interface Comment {
     id: string
     variantType: string
     selectedText: string
+    paragraphId: string
   }>
 }
 
@@ -59,9 +63,17 @@ interface CommentsSectionProps {
   onSendComment: (body: string) => void
   /** Ref to the section so parent can scroll to it */
   sectionRef?: React.RefObject<HTMLDivElement | null>
+  authorSlug?: string
+  bookSlug?: string
 }
 
-export default function CommentsSection({ chapterId, onSendComment, sectionRef }: CommentsSectionProps) {
+export default function CommentsSection({
+  chapterId,
+  onSendComment,
+  sectionRef,
+  authorSlug,
+  bookSlug,
+}: CommentsSectionProps) {
   const { replyingTo, setReplyingTo, username, setUsername } = useReaderStore()
   const [comments, setComments] = useState<Comment[]>([])
   const [text, setText] = useState('')
@@ -187,27 +199,65 @@ export default function CommentsSection({ chapterId, onSendComment, sectionRef }
             >
               {/* Quote */}
               {comment.quotes && comment.quotes.length > 0 && (
-                <div
-                  className="quote-bar"
-                  style={{ marginBottom: '0.5rem', fontSize: '0.75rem' }}
-                >
-                  <span
-                    className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
-                    style={{ flexShrink: 0 }}
-                  >
-                    {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
-                  </span>
-                  <span
+                authorSlug && bookSlug ? (
+                  <Link
+                    href={buildQuoteReadHref(authorSlug, bookSlug, {
+                      chapterId,
+                      variantType: comment.quotes[0].variantType,
+                      paragraphId: comment.quotes[0].paragraphId,
+                    })}
+                    className="quote-bar group"
                     style={{
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      marginBottom: '0.5rem',
+                      fontSize: '0.75rem',
+                      textDecoration: 'none',
                     }}
+                    title="Открыть цитату в книге"
                   >
-                    {comment.quotes[0].selectedText}
-                  </span>
-                </div>
+                    <span
+                      className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
+                      style={{ flexShrink: 0 }}
+                    >
+                      {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {comment.quotes[0].selectedText}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[0.6875rem] font-medium text-[color:var(--r-accent)] transition-transform duration-200 group-hover:translate-x-0.5">
+                      В книгу
+                      <ArrowUpRight size={11} />
+                    </span>
+                  </Link>
+                ) : (
+                  <div
+                    className="quote-bar"
+                    style={{ marginBottom: '0.5rem', fontSize: '0.75rem' }}
+                  >
+                    <span
+                      className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
+                      style={{ flexShrink: 0 }}
+                    >
+                      {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {comment.quotes[0].selectedText}
+                    </span>
+                  </div>
+                )
               )}
 
               {/* Comment body */}

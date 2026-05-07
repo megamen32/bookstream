@@ -5,6 +5,7 @@ import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
+import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 
 interface Paragraph {
   id: string
@@ -36,6 +37,11 @@ interface FeedReaderProps {
   bookmarkedKey?: string | null
   /** Callback to toggle bookmark on a paragraph */
   onToggleBookmark?: (stableKey: string) => void
+  /** Book route slugs used for quote links in comments */
+  authorSlug: string
+  bookSlug: string
+  /** Database paragraph id requested via quote navigation */
+  highlightParagraphId?: string | null
 }
 
 export default function FeedReader({
@@ -50,16 +56,24 @@ export default function FeedReader({
   onScrollProgress,
   bookmarkedKey,
   onToggleBookmark,
+  authorSlug,
+  bookSlug,
+  highlightParagraphId,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredRef = useRef(false)
+  const quoteFocusAppliedRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showNextLoader, setShowNextLoader] = useState(false)
 
+  useEffect(() => {
+    quoteFocusAppliedRef.current = false
+  }, [highlightParagraphId])
+
   // Restore scroll position
   useEffect(() => {
-    if (restoredRef.current || !scrollRef.current) return
+    if (restoredRef.current || !scrollRef.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
     restoredRef.current = true
 
     const savedScroll = localStorage.getItem(`bookstream-scroll-${chapterId}`)
@@ -68,6 +82,22 @@ export default function FeedReader({
       scrollRef.current.scrollTop = pos
     }
   }, [chapterId])
+
+  useEffect(() => {
+    if (!highlightParagraphId || !scrollRef.current) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (!scrollRef.current) return
+      const target = findQuoteParagraphElement(scrollRef.current, highlightParagraphId)
+      if (target) {
+        scrollQuoteTargetIntoView(scrollRef.current, target)
+        quoteFocusAppliedRef.current = true
+        restoredRef.current = true
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [highlightParagraphId, paragraphs])
 
   const saveProgress = useCallback((scrollPercent: number) => {
     if (!bookId || !chapterId || !readerId) return
@@ -156,13 +186,52 @@ export default function FeedReader({
             margin: '0 auto',
           }}
         >
-          {paragraphs.map((p) => (
-            <div key={p.stableKey || p.id} className="group" style={{ position: 'relative', marginBottom: '0.25rem' }}>
-              <article
-                data-paragraph-id={p.id}
-                data-stable-key={p.stableKey}
-                style={{ marginBottom: '0.5rem' }}
+          {paragraphs.map((p) => {
+            const isQuoteTarget = highlightParagraphId === p.id
+
+            return (
+              <div
+                key={p.stableKey || p.id}
+                className="group"
+                style={{
+                  position: 'relative',
+                  marginBottom: '0.25rem',
+                  borderRadius: isQuoteTarget ? '0.95rem' : undefined,
+                  boxShadow: isQuoteTarget ? '0 0 0 1px var(--r-accent), 0 18px 40px rgba(0, 0, 0, 0.12)' : 'none',
+                  backgroundColor: isQuoteTarget ? 'rgba(245, 158, 11, 0.10)' : 'transparent',
+                  transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
+                }}
               >
+                {isQuoteTarget && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-0.6rem',
+                      right: '0.75rem',
+                      zIndex: 2,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: '9999px',
+                      backgroundColor: 'var(--r-accent)',
+                      color: 'var(--r-accent-foreground)',
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    Цитата
+                  </span>
+                )}
+                <article
+                  data-paragraph-id={p.id}
+                  data-stable-key={p.stableKey}
+                  style={{ marginBottom: '0.5rem' }}
+                >
                 {/* Bookmark button — left side, visible on hover */}
                 <button
                   onClick={(e) => handleBookmarkClick(e, p.stableKey)}
@@ -188,11 +257,12 @@ export default function FeedReader({
                   {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
                 </button>
                 <p style={{ margin: 0 }}>{p.text}</p>
-              </article>
-              {/* Reactions bar */}
-              <ReactionBar paragraphId={p.id} variantId={variantId} />
-            </div>
-          ))}
+                </article>
+                {/* Reactions bar */}
+                <ReactionBar paragraphId={p.id} variantId={variantId} />
+              </div>
+            )
+          })}
         </div>
 
         {/* Telegram-style chapter separator at the end */}
@@ -319,6 +389,8 @@ export default function FeedReader({
             chapterId={chapterId || ''}
             onSendComment={onSendComment}
             sectionRef={commentsSectionRef}
+            authorSlug={authorSlug}
+            bookSlug={bookSlug}
           />
         </div>
 

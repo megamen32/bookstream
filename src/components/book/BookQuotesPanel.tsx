@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useReaderStore } from '@/lib/store'
-import { MessageSquareQuote, Plus } from 'lucide-react'
+import { ArrowUpRight, MessageSquareQuote, Plus } from 'lucide-react'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 
 interface BookQuote {
   id: string
@@ -14,6 +15,7 @@ interface BookQuote {
   variantType: string
   variantLabel: string
   chapterId: string
+  paragraphId: string
   chapterTitle: string
   chapterPosition: number
   username: string
@@ -201,17 +203,31 @@ export default function BookQuotesPanel({
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
-                        {quote.variantLabel}
-                      </span>
-                      <span>
-                        Глава {quote.chapterPosition}. {quote.chapterTitle}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-6 text-foreground">
-                      «{quote.text}»
-                    </p>
+                    <Link
+                      href={buildQuoteReadHref(authorSlug, bookSlug, {
+                        chapterId: quote.chapterId,
+                        variantType: quote.variantType,
+                        paragraphId: quote.paragraphId,
+                      })}
+                      className="group block rounded-2xl border border-transparent bg-gradient-to-br from-amber-50/80 via-background to-amber-50/20 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-200/70 hover:shadow-[0_18px_40px_-24px_rgba(180,83,9,0.55)]"
+                      title="Открыть цитату в книге"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
+                          {quote.variantLabel}
+                        </span>
+                        <span>
+                          Глава {quote.chapterPosition}. {quote.chapterTitle}
+                        </span>
+                        <span className="ml-auto inline-flex items-center gap-1 font-medium text-amber-700 transition-transform duration-200 group-hover:translate-x-0.5">
+                          Показать в книге
+                          <ArrowUpRight size={12} />
+                        </span>
+                      </div>
+                      <p className="text-sm leading-6 text-foreground transition-colors group-hover:text-amber-950">
+                        «{quote.text}»
+                      </p>
+                    </Link>
                   </div>
                   <Button
                     type="button"
@@ -230,12 +246,6 @@ export default function BookQuotesPanel({
                   <span>
                     выбрал {quote.username} · {timeAgo(quote.createdAt)}
                   </span>
-                  <Link
-                    href={`/${authorSlug}/${bookSlug}/read?chapter=${quote.chapterId}&variant=${encodeURIComponent(quote.variantType)}`}
-                    className="font-medium text-amber-700 hover:text-amber-800"
-                  >
-                    Открыть в книге
-                  </Link>
                 </div>
               </CardContent>
             </Card>

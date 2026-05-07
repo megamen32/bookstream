@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useReaderStore } from '@/lib/store'
 
-const EMOJIS = ['👍', '🔥', '💡', '😂', '⭐'] as const
-type EmojiType = (typeof EMOJIS)[number]
+const DEFAULT_EMOJIS = ['👍', '🔥', '💡', '😂', '⭐'] as const
 
 interface ReactionBarProps {
   paragraphId: string
@@ -16,72 +15,100 @@ interface ReactionEntry {
   reacted: boolean
 }
 
-type ReactionsMap = Record<EmojiType, ReactionEntry>
+type ReactionsMap = Record<string, ReactionEntry>
 
-const EMPTY_REACTIONS: ReactionsMap = Object.fromEntries(
-  EMOJIS.map((e) => [e, { count: 0, reacted: false }])
-) as ReactionsMap
+function createEmptyReactions(): ReactionsMap {
+  return Object.fromEntries(
+    DEFAULT_EMOJIS.map((emoji) => [emoji, { count: 0, reacted: false }])
+  ) as ReactionsMap
+}
 
 export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps) {
   const readerId = useReaderStore((s) => s.readerId)
-  const [reactions, setReactions] = useState<ReactionsMap>(EMPTY_REACTIONS)
-  const [toggling, setToggling] = useState<EmojiType | null>(null)
+  const [reactions, setReactions] = useState<ReactionsMap>(createEmptyReactions())
+  const [toggling, setToggling] = useState<string | null>(null)
 
-  // Fetch existing reactions on mount / when paragraph or variant changes
-  useEffect(() => {
-    if (!paragraphId || !variantId) return
+  const refreshReactions = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!paragraphId || !variantId) return
 
-    const controller = new AbortController()
-
-    ;(async () => {
       try {
         const params = new URLSearchParams({
           paragraphId,
           chapterVariantId: variantId,
         })
         const res = await fetch(`/api/reactions?${params.toString()}`, {
-          signal: controller.signal,
+          signal,
         })
         if (!res.ok) return
 
         const data = await res.json()
-        // data is array of { emoji, count, readerIds }
         const incoming = Array.isArray(data) ? data : []
 
-        const merged: ReactionsMap = { ...EMPTY_REACTIONS }
-        for (const item of EMOJIS) {
-          const entry = incoming.find((r: { emoji: string }) => r.emoji === item)
-          if (entry) {
-            merged[item] = {
-              count: entry.count ?? 0,
-              reacted: Array.isArray(entry.readerIds)
-                ? entry.readerIds.includes(readerId)
-                : false,
-            }
+        const merged: ReactionsMap = createEmptyReactions()
+        for (const entry of incoming) {
+          merged[entry.emoji] = {
+            count: entry.count ?? 0,
+            reacted: Array.isArray(entry.readerIds) ? entry.readerIds.includes(readerId) : false,
+          }
+        }
+
+        for (const emoji of DEFAULT_EMOJIS) {
+          if (!merged[emoji]) {
+            merged[emoji] = { count: 0, reacted: false }
           }
         }
         setReactions(merged)
       } catch {
         // silently ignore — bar stays empty
       }
-    })()
+    },
+    [paragraphId, variantId, readerId],
+  )
 
-    return () => controller.abort()
-  }, [paragraphId, variantId, readerId])
+  // Fetch existing reactions on mount / when paragraph or variant changes
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      void refreshReactions(controller.signal)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [refreshReactions])
+
+  useEffect(() => {
+    const handleReactionUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ paragraphId: string; chapterVariantId: string }>
+      if (
+        customEvent.detail?.paragraphId === paragraphId &&
+        customEvent.detail?.chapterVariantId === variantId
+      ) {
+        void refreshReactions()
+      }
+    }
+
+    window.addEventListener('bookstream:reaction-updated', handleReactionUpdate)
+    return () => window.removeEventListener('bookstream:reaction-updated', handleReactionUpdate)
+  }, [paragraphId, variantId, refreshReactions])
 
   // Toggle reaction
   const handleToggle = useCallback(
-    async (emoji: EmojiType) => {
+    async (emoji: string) => {
       if (!readerId || toggling) return
 
-      const current = reactions[emoji]
+      const current = reactions[emoji] ?? { count: 0, reacted: false }
       const isAdding = !current.reacted
 
       // Optimistic update
       setReactions((prev) => ({
         ...prev,
         [emoji]: {
-          count: isAdding ? prev[emoji].count + 1 : Math.max(0, prev[emoji].count - 1),
+          count: isAdding
+            ? (prev[emoji]?.count ?? 0) + 1
+            : Math.max(0, (prev[emoji]?.count ?? 0) - 1),
           reacted: isAdding,
         },
       }))
@@ -120,7 +147,7 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
   )
 
   // Don't render if no reactions and still loading (avoid flash)
-  const hasAnyActivity = EMOJIS.some((e) => reactions[e].count > 0)
+  const displayedEmojis = Array.from(new Set([...DEFAULT_EMOJIS, ...Object.keys(reactions)]))
 
   return (
     <div
@@ -135,8 +162,8 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
       aria-label="Реакции"
       style={{ color: 'var(--r-text-secondary)' }}
     >
-      {EMOJIS.map((emoji) => {
-        const entry = reactions[emoji]
+      {displayedEmojis.map((emoji) => {
+        const entry = reactions[emoji] ?? { count: 0, reacted: false }
         const isActive = entry.reacted
         const showCount = entry.count > 0
         const isTogglingThis = toggling === emoji

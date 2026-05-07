@@ -116,3 +116,82 @@ export async function PUT(
     return NextResponse.json({ error: 'Ошибка обновления главы' }, { status: 500 })
   }
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const chapter = await db.chapter.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        bookId: true,
+        position: true,
+        variants: {
+          select: { id: true },
+        },
+      },
+    })
+
+    if (!chapter) {
+      return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
+    }
+
+    const variantIds = chapter.variants.map((variant) => variant.id)
+
+    await db.$transaction(async (tx) => {
+      await tx.comment.deleteMany({
+        where: { chapterId: id },
+      })
+
+      await tx.readingProgress.deleteMany({
+        where: {
+          bookId: chapter.bookId,
+          chapterId: id,
+        },
+      })
+
+      if (variantIds.length > 0) {
+        await tx.reaction.deleteMany({
+          where: {
+            chapterVariantId: { in: variantIds },
+          },
+        })
+
+        await tx.paragraph.deleteMany({
+          where: {
+            chapterVariantId: { in: variantIds },
+          },
+        })
+
+        await tx.chapterVariant.deleteMany({
+          where: {
+            id: { in: variantIds },
+          },
+        })
+      }
+
+      await tx.chapter.delete({
+        where: { id },
+      })
+
+      // Keep chapter positions dense so reader navigation and ordering remain stable.
+      await tx.chapter.updateMany({
+        where: {
+          bookId: chapter.bookId,
+          position: { gt: chapter.position },
+        },
+        data: {
+          position: { decrement: 1 },
+        },
+      })
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting chapter:', error)
+    return NextResponse.json({ error: 'Ошибка удаления главы' }, { status: 500 })
+  }
+}
