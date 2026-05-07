@@ -5,10 +5,16 @@ import type { ReaderComment } from './comment-types'
 
 interface TopCommentCardProps {
   comment: ReaderComment
-  chapterHref: string
+  chapterHref?: string
   quoteHref?: string
   onToggleVote?: (() => void) | null
   voteDisabled?: boolean
+  compact?: boolean
+  showChapterLink?: boolean
+  metaLabel?: string | null
+  secondaryActionLabel?: string | null
+  onSecondaryAction?: (() => void) | null
+  className?: string
 }
 
 export default function TopCommentCard({
@@ -17,6 +23,12 @@ export default function TopCommentCard({
   quoteHref,
   onToggleVote = null,
   voteDisabled = false,
+  compact = false,
+  showChapterLink = true,
+  metaLabel = null,
+  secondaryActionLabel = null,
+  onSecondaryAction = null,
+  className,
 }: TopCommentCardProps) {
   return (
     <CommentCard
@@ -25,8 +37,14 @@ export default function TopCommentCard({
       quoteHref={quoteHref || chapterHref}
       onToggleVote={onToggleVote}
       voteDisabled={voteDisabled}
-      bodyLines={2}
+      bodyLines={compact ? 3 : 2}
       quoteLines={2}
+      compact={compact}
+      showChapterLink={showChapterLink}
+      metaLabel={metaLabel}
+      secondaryActionLabel={secondaryActionLabel}
+      onSecondaryAction={onSecondaryAction}
+      className={className}
     />
   )
 }

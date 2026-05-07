@@ -8,7 +8,7 @@ export type LineWidth = 'narrow' | 'medium' | 'wide'
 export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'oled'
 export type AccentTheme = 'sky' | 'forest' | 'sunset'
 
-interface ReplyQuote {
+export interface ReplyQuote {
   text: string
   variantType: string
   paragraphId: string

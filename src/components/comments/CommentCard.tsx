@@ -28,6 +28,11 @@ interface CommentCardProps {
   bodyLines?: number
   quoteLines?: number
   className?: string
+  compact?: boolean
+  showChapterLink?: boolean
+  metaLabel?: string | null
+  secondaryActionLabel?: string | null
+  onSecondaryAction?: (() => void) | null
 }
 
 function formatRelativeDate(dateStr: string): string {
@@ -79,6 +84,11 @@ export default function CommentCard({
   bodyLines,
   quoteLines,
   className,
+  compact = false,
+  showChapterLink = true,
+  metaLabel = null,
+  secondaryActionLabel = null,
+  onSecondaryAction = null,
 }: CommentCardProps) {
   const quote = comment.quotes[0]
   const avatarColor = stringToColor(comment.username)
@@ -95,7 +105,8 @@ export default function CommentCard({
   return (
     <article
       className={cn(
-        'rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm',
+        'rounded-2xl border border-border/70 bg-card/90 shadow-sm',
+        compact ? 'p-3.5' : 'p-4',
         comment.status === 'shadowbanned' && 'opacity-60',
         className,
       )}
@@ -104,14 +115,17 @@ export default function CommentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+              className={cn(
+                'flex shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white',
+                compact ? 'h-8 w-8' : 'h-9 w-9',
+              )}
               style={{ backgroundColor: avatarColor }}
             >
               {comment.username.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-semibold" style={{ color: avatarColor }}>
+                <span className={cn(compact ? 'text-[0.82rem]' : 'text-sm', 'font-semibold')} style={{ color: avatarColor }}>
                   {comment.username}
                 </span>
                 {comment.status === 'shadowbanned' ? (
@@ -120,8 +134,11 @@ export default function CommentCard({
                     Скрыт
                   </span>
                 ) : null}
+                {metaLabel ? (
+                  <span className="text-[0.72rem] font-medium text-muted-foreground">{metaLabel}</span>
+                ) : null}
                 <span className="text-xs text-muted-foreground">{formatRelativeDate(comment.createdAt)}</span>
-                {chapterHref ? (
+                {showChapterLink && chapterHref ? (
                   <Link
                     href={chapterHref}
                     className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -129,11 +146,11 @@ export default function CommentCard({
                     {resolvedChapterLabel}
                     <ArrowUpRight size={12} />
                   </Link>
-                ) : (
+                ) : showChapterLink ? (
                   <span className="ml-auto text-xs font-medium text-muted-foreground">
                     {resolvedChapterLabel}
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
@@ -165,9 +182,19 @@ export default function CommentCard({
             )
           ) : null}
 
-          <p className="mt-3 text-sm leading-6 text-foreground/90" style={bodyStyle}>
+          <p className={cn('mt-3 text-foreground/90', compact ? 'text-[0.92rem] leading-6' : 'text-sm leading-6')} style={bodyStyle}>
             {comment.body}
           </p>
+
+          {secondaryActionLabel && onSecondaryAction ? (
+            <button
+              type="button"
+              onClick={onSecondaryAction}
+              className="mt-3 inline-flex min-h-8 items-center justify-center rounded-full bg-primary/10 px-3 text-[0.76rem] font-semibold text-foreground/80 transition-colors hover:bg-primary/15"
+            >
+              {secondaryActionLabel}
+            </button>
+          ) : null}
         </div>
 
         {action ? action : null}

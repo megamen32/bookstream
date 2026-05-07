@@ -15,6 +15,8 @@ interface QuotePayload {
   chapterId: string
   paragraphId: string
   paragraphEndId: string | null
+  startOffset: number
+  endOffset: number
   chapterTitle: string
   chapterPosition: number
   username: string
@@ -66,6 +68,8 @@ export async function GET(
           variantType: true,
           paragraphId: true,
           endParagraphId: true,
+          startOffset: true,
+          endOffset: true,
           createdAt: true,
           readerId: true,
           username: true,

@@ -1,9 +1,14 @@
 'use client'
 
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import Link from 'next/link'
-import { ArrowRight, MessageSquare, Quote, Sparkles } from 'lucide-react'
+import { ArrowRight, MessageSquare, Quote } from 'lucide-react'
+import CommentVoteButton from '@/components/reader/CommentVoteButton'
+import type { ReaderComment } from '@/components/reader/comment-types'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import { useReaderStore, type ReplyQuote } from '@/lib/store'
 import type { FeedSectionPreview } from './feed-types'
+import TopCommentCard from './TopCommentCard'
 
 interface ChapterAfterwordProps {
   chapterId: string
@@ -12,11 +17,33 @@ interface ChapterAfterwordProps {
   bookSlug: string
   preview?: FeedSectionPreview | null
   showCommentsAfterChapter?: boolean
-  onOpenComments?: (chapterId: string) => void
+  onOpenComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
 }
 
 function formatCount(value: number, singular: string, plural: string): string {
   return `${value} ${value === 1 ? singular : plural}`
+}
+
+interface VoteState {
+  reacted: boolean
+  upvoteCount: number
+}
+
+function buildReplyQuote(comment: ReaderComment): ReplyQuote | null {
+  const quote = comment.quotes[0]
+  if (!quote || !comment.paragraphId) {
+    return null
+  }
+
+  return {
+    text: quote.selectedText,
+    variantType: comment.variantType || quote.variantType,
+    paragraphId: comment.paragraphId,
+    endParagraphId: comment.endParagraphId,
+    startOffset: comment.startOffset,
+    endOffset: comment.endOffset,
+    selectedText: quote.selectedText,
+  }
 }
 
 export default function ChapterAfterword({
@@ -28,16 +55,44 @@ export default function ChapterAfterword({
   showCommentsAfterChapter = true,
   onOpenComments,
 }: ChapterAfterwordProps) {
+  const { readerId, showCommunityAnnotations } = useReaderStore()
+  const [commentVoteOverrides, setCommentVoteOverrides] = useState<Record<string, VoteState>>({})
+  const [quoteVoteOverrides, setQuoteVoteOverrides] = useState<Record<string, VoteState>>({})
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const stats = preview?.stats || null
-  const comments = preview?.comments || []
-  const topQuote = stats?.topQuote || null
+  const comments = useMemo(() => {
+    const visibleComments = [
+      preview?.leadComment,
+      ...(preview?.freshComments || []),
+    ].filter((comment): comment is ReaderComment => Boolean(comment))
+
+    const deduped = visibleComments.filter((comment, index, items) => (
+      items.findIndex((entry) => entry.id === comment.id) === index
+    ))
+
+    const filtered = showCommunityAnnotations
+      ? deduped
+      : deduped.filter((comment) => comment.readerId === readerId)
+
+    return filtered.map((comment) => ({
+      ...comment,
+      ...(commentVoteOverrides[comment.id] || {}),
+    }))
+  }, [commentVoteOverrides, preview?.freshComments, preview?.leadComment, readerId, showCommunityAnnotations])
+  const quotes = useMemo(() => {
+    const visibleQuotes = preview?.quotesPreview || []
+    return visibleQuotes.map((quote) => ({
+      ...quote,
+      ...(quoteVoteOverrides[quote.id] || {}),
+    }))
+  }, [preview?.quotesPreview, quoteVoteOverrides])
   const hasRichContent = Boolean(
     stats && (
       stats.commentsCount > 0 ||
       stats.reactionsCount > 0 ||
       stats.quotesCount > 0 ||
       comments.length > 0 ||
-      topQuote
+      quotes.length > 0
     ),
   )
 
@@ -89,6 +144,70 @@ export default function ChapterAfterword({
     )
   }
 
+  const handleToggleVote = async (
+    annotationId: string,
+    current: VoteState,
+    overrides: Record<string, VoteState>,
+    setOverrides: Dispatch<SetStateAction<Record<string, VoteState>>>,
+  ): Promise<void> => {
+    if (!readerId || togglingId) {
+      return
+    }
+
+    const previousOverride = overrides[annotationId] || null
+    setOverrides((prev) => ({
+      ...prev,
+      [annotationId]: {
+        reacted: !current.reacted,
+        upvoteCount: current.reacted ? Math.max(0, current.upvoteCount - 1) : current.upvoteCount + 1,
+      },
+    }))
+    setTogglingId(annotationId)
+
+    try {
+      const response = await fetch(`/api/annotations/${annotationId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId }),
+      })
+
+      if (!response.ok) {
+        setOverrides((prev) => {
+          const next = { ...prev }
+          if (previousOverride) {
+            next[annotationId] = previousOverride
+          } else {
+            delete next[annotationId]
+          }
+          return next
+        })
+        return
+      }
+
+      const data = await response.json() as VoteState
+      setOverrides((prev) => ({
+        ...prev,
+        [annotationId]: {
+          reacted: Boolean(data.reacted),
+          upvoteCount: Number.isFinite(data.upvoteCount) ? data.upvoteCount : current.upvoteCount,
+        },
+      }))
+    } catch (error) {
+      console.error('Failed to toggle afterword vote:', error)
+      setOverrides((prev) => {
+        const next = { ...prev }
+        if (previousOverride) {
+          next[annotationId] = previousOverride
+        } else {
+          delete next[annotationId]
+        }
+        return next
+      })
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   return (
     <section className={afterwordClassName}>
       <div className="chapter-afterword__quiet-orb" aria-hidden="true" />
@@ -98,88 +217,141 @@ export default function ChapterAfterword({
 
         <div className="chapter-afterword__title-row">
           <div>
-            <div className="chapter-afterword__title">{chapterTitle}</div>
+            <div className="chapter-afterword__title">Что думают другие</div>
             <div className="chapter-afterword__subtitle">
               {formatCount(stats.commentsCount, 'комментарий', 'комментария')}
-              {' · '}
-              {formatCount(stats.quotesCount, 'цитата', 'цитаты')}
-              {' · '}
-              {formatCount(stats.reactionsCount, 'реакция', 'реакции')}
+              {stats.quotesCount > 0 ? ` · ${formatCount(stats.quotesCount, 'цитата', 'цитаты')}` : ''}
             </div>
           </div>
 
           <button
             type="button"
             className="chapter-afterword__open-button"
-            onClick={() => onOpenComments?.(chapterId)}
+            onClick={() => onOpenComments?.(chapterId, null)}
           >
             <MessageSquare size={14} />
-            Обсудить
+            Написать комментарий
           </button>
         </div>
-
-        <div className="chapter-afterword__stats chapter-afterword__stats--large">
-          <div className="chapter-afterword__stat">
-            <MessageSquare size={14} />
-            <span>{stats.commentsCount}</span>
-            <small>comments</small>
-          </div>
-          <div className="chapter-afterword__stat">
-            <Sparkles size={14} />
-            <span>{stats.reactionsCount}</span>
-            <small>reactions</small>
-          </div>
-          <div className="chapter-afterword__stat">
-            <Quote size={14} />
-            <span>{stats.quotesCount}</span>
-            <small>quotes</small>
-          </div>
-        </div>
-
-        {topQuote ? (
-          <Link
-            href={buildQuoteReadHref(authorSlug, bookSlug, {
-              chapterId,
-              variantType: topQuote.variantType,
-              paragraphId: topQuote.paragraphId,
-              paragraphEndId: topQuote.paragraphEndId,
-            })}
-            className="chapter-afterword__top-quote"
-          >
-            <div className="chapter-afterword__top-quote-label">Топ-цитата</div>
-            <div className="chapter-afterword__top-quote-text">{topQuote.text}</div>
-            <div className="chapter-afterword__subtitle">
-              {formatCount(topQuote.reactionsCount, 'реакция', 'реакции')}
-              {' · '}
-              {formatCount(topQuote.commentsCount, 'комментарий', 'комментария')}
-            </div>
-          </Link>
-        ) : null}
 
         {comments.length > 0 ? (
           <div className="chapter-afterword__comments">
-            {comments.slice(0, 3).map((comment) => (
-              <button
-                key={comment.id}
-                type="button"
-                className="chapter-afterword__comment"
-                onClick={() => onOpenComments?.(chapterId)}
-              >
-                <div className="chapter-afterword__comment-author">{comment.authorName}</div>
-                <div className="chapter-afterword__comment-body">{comment.body}</div>
-              </button>
-            ))}
+            {comments.slice(0, 4).map((comment, index) => {
+              const replyQuote = buildReplyQuote(comment)
+              return (
+                <TopCommentCard
+                  key={comment.id}
+                  comment={comment}
+                  quoteHref={buildQuoteReadHref(authorSlug, bookSlug, {
+                    chapterId: comment.chapterId || chapterId,
+                    variantType: comment.variantType || comment.quotes[0]?.variantType || 'original',
+                    paragraphId: comment.paragraphId,
+                    paragraphEndId: comment.endParagraphId,
+                    startOffset: comment.startOffset,
+                    endOffset: comment.endOffset,
+                  })}
+                  onToggleVote={() => void handleToggleVote(comment.id, comment, commentVoteOverrides, setCommentVoteOverrides)}
+                  voteDisabled={!readerId || togglingId === comment.id}
+                  compact
+                  showChapterLink={false}
+                  metaLabel={index === 0 ? 'Главный комментарий' : 'Свежий комментарий'}
+                  secondaryActionLabel="Ответить"
+                  onSecondaryAction={() => onOpenComments?.(chapterId, replyQuote)}
+                  className={index === 0 ? 'chapter-afterword__comment-card chapter-afterword__comment-card--lead' : 'chapter-afterword__comment-card'}
+                />
+              )
+            })}
           </div>
         ) : (
+          <div className="chapter-afterword__empty">
+            <div className="chapter-afterword__quiet-title">{chapterTitle}</div>
+            <div className="chapter-afterword__quiet-subtitle">
+              Вы только что дочитали главу. Начните обсуждение, пока мысль ещё живая.
+            </div>
+            <button
+              type="button"
+              className="chapter-afterword__footer-button"
+              onClick={() => onOpenComments?.(chapterId, null)}
+            >
+              <MessageSquare size={16} />
+              Войти в обсуждение
+            </button>
+          </div>
+        )}
+
+        {quotes.length > 0 ? (
+          <div className="chapter-afterword__quotes">
+            <div className="chapter-afterword__quotes-header">
+              <span className="chapter-afterword__quotes-title">Цитаты из этой главы</span>
+              <button
+                type="button"
+                className="chapter-afterword__quotes-open"
+                onClick={() => onOpenComments?.(chapterId, null)}
+              >
+                Все комментарии
+              </button>
+            </div>
+
+            <div className="chapter-afterword__quotes-list">
+              {quotes.slice(0, 2).map((quote) => (
+                <div key={quote.id} className="chapter-afterword__quote-row">
+                  <Link
+                    href={buildQuoteReadHref(authorSlug, bookSlug, {
+                      chapterId: quote.chapterId || chapterId,
+                      variantType: quote.variantType,
+                      paragraphId: quote.paragraphId,
+                      paragraphEndId: quote.paragraphEndId,
+                      startOffset: quote.startOffset,
+                      endOffset: quote.endOffset,
+                    })}
+                    className="chapter-afterword__quote-link"
+                  >
+                    <span className="chapter-afterword__quote-icon">
+                      <Quote size={13} />
+                    </span>
+                    <span className="chapter-afterword__quote-text">{quote.text}</span>
+                  </Link>
+                  <div className="chapter-afterword__quote-actions">
+                    <CommentVoteButton
+                      reacted={quote.reacted}
+                      upvoteCount={quote.upvoteCount}
+                      compact
+                      disabled={!readerId || togglingId === quote.id}
+                      className="chapter-afterword__vote-button"
+                      onClick={() => void handleToggleVote(quote.id, quote, quoteVoteOverrides, setQuoteVoteOverrides)}
+                    />
+                    <button
+                      type="button"
+                      className="chapter-afterword__reply-button"
+                      onClick={() => onOpenComments?.(chapterId, {
+                        text: quote.text,
+                        variantType: quote.variantType,
+                        paragraphId: quote.paragraphId || '',
+                        endParagraphId: quote.paragraphEndId,
+                        startOffset: quote.startOffset,
+                        endOffset: quote.endOffset,
+                        selectedText: quote.text,
+                      })}
+                    >
+                      Ответить
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {comments.length > 0 ? (
           <button
             type="button"
-            className="chapter-afterword__footer-button"
-            onClick={() => onOpenComments?.(chapterId)}
+            className="chapter-afterword__footer-button chapter-afterword__footer-button--secondary"
+            onClick={() => onOpenComments?.(chapterId, null)}
           >
             <MessageSquare size={16} />
-            Открыть обсуждение главы
+            Все комментарии
           </button>
-        )}
+        ) : null}
       </div>
     </section>
   )

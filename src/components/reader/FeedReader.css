@@ -195,12 +195,12 @@
 }
 
 .chapter-afterword--rich {
-  min-height: 300px;
+  min-height: 260px;
   padding: 18px;
 }
 
 .chapter-afterword--loading {
-  min-height: 300px;
+  min-height: 220px;
   padding: 18px;
 }
 
@@ -257,13 +257,15 @@
 .chapter-afterword__open-button {
   flex: 0 0 auto;
   margin-left: auto;
-  padding: 9px 13px;
-  border: 1px solid color-mix(in srgb, currentColor 9%, transparent);
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, rgb(139, 92, 246) 22%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
+  background: color-mix(in srgb, rgb(139, 92, 246) 11%, transparent);
   color: inherit;
   font-size: 0.78rem;
   font-weight: 760;
+  white-space: nowrap;
   transition:
     transform 160ms ease,
     background 160ms ease;
@@ -273,124 +275,134 @@
   transform: scale(0.96);
 }
 
-.chapter-afterword__sparkle {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: rgb(139, 92, 246);
-  filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.34));
-}
-
-.chapter-afterword__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.chapter-afterword__stats--large {
+.chapter-afterword__comments {
+  display: grid;
+  gap: 10px;
   margin-top: 18px;
 }
 
-.chapter-afterword__stat {
+.chapter-afterword__comment-card {
+  border-radius: 22px;
+  border-color: color-mix(in srgb, currentColor 7%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 72%, white 1%), color-mix(in srgb, var(--background) 82%, currentColor 2%));
+}
+
+.chapter-afterword__comment-card--lead {
+  border-color: color-mix(in srgb, rgb(139, 92, 246) 18%, transparent);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, rgb(139, 92, 246) 12%, transparent), transparent 11rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 74%, white 1%), color-mix(in srgb, var(--background) 82%, currentColor 2%));
+}
+
+.chapter-afterword__vote-button {
+  min-width: 72px;
+  border-color: color-mix(in srgb, currentColor 10%, transparent);
+  background: color-mix(in srgb, var(--background) 68%, currentColor 4%);
+}
+
+.chapter-afterword__reply-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, currentColor 7%, transparent);
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--background) 70%, currentColor 4%);
-  color: color-mix(in srgb, currentColor 76%, transparent);
-  font-size: 0.82rem;
-  font-weight: 720;
+  background: color-mix(in srgb, rgb(139, 92, 246) 10%, transparent);
+  color: color-mix(in srgb, currentColor 78%, transparent);
+  font-size: 0.76rem;
+  font-weight: 760;
+  white-space: nowrap;
 }
 
-.chapter-afterword__stat svg {
-  color: rgb(139, 92, 246);
+.chapter-afterword__empty {
+  margin-top: 18px;
 }
 
-.chapter-afterword__stat small {
-  color: color-mix(in srgb, currentColor 46%, transparent);
-  font-size: 0.72rem;
-  font-weight: 560;
+.chapter-afterword__quotes {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, currentColor 7%, transparent);
 }
 
-.chapter-afterword__top-quote {
-  display: grid;
-  gap: 5px;
-  width: 100%;
-  margin-top: 14px;
-  padding: 12px 13px;
-  border: 1px solid color-mix(in srgb, rgb(139, 92, 246) 16%, transparent);
-  border-radius: 20px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, rgb(139, 92, 246) 10%, transparent), transparent),
-    color-mix(in srgb, var(--background) 72%, currentColor 3%);
-  color: inherit;
-  text-align: left;
+.chapter-afterword__quotes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.chapter-afterword__top-quote-label {
-  color: rgb(139, 92, 246);
-  font-size: 0.7rem;
-  font-weight: 780;
+.chapter-afterword__quotes-title {
+  color: color-mix(in srgb, currentColor 58%, transparent);
+  font-size: 0.73rem;
+  font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.chapter-afterword__top-quote-text {
+.chapter-afterword__quotes-open {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.chapter-afterword__quotes-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chapter-afterword__quote-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 78%, currentColor 2%);
+}
+
+.chapter-afterword__quote-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+  color: inherit;
+  text-decoration: none;
+}
+
+.chapter-afterword__quote-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, rgb(245, 158, 11) 12%, transparent);
+  color: rgb(245, 158, 11);
+  flex: 0 0 auto;
+}
+
+.chapter-afterword__quote-text {
   display: -webkit-box;
   overflow: hidden;
   color: color-mix(in srgb, currentColor 76%, transparent);
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   line-height: 1.35;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-.chapter-afterword__comments {
-  display: grid;
+.chapter-afterword__quote-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 14px;
-}
-
-.chapter-afterword__comment {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  min-height: 52px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, currentColor 6%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--background) 76%, currentColor 3%);
-  color: inherit;
-  text-align: left;
-  transition:
-    transform 160ms ease,
-    background 160ms ease;
-}
-
-.chapter-afterword__comment:active {
-  transform: scale(0.99);
-}
-
-.chapter-afterword__comment-author {
-  overflow: hidden;
-  color: color-mix(in srgb, currentColor 54%, transparent);
-  font-size: 0.74rem;
-  font-weight: 760;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chapter-afterword__comment-body {
-  display: -webkit-box;
-  overflow: hidden;
-  color: color-mix(in srgb, currentColor 78%, transparent);
-  font-size: 0.88rem;
-  line-height: 1.3;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  flex: 0 0 auto;
 }
 
 .chapter-afterword__footer-button {
@@ -399,14 +411,18 @@
   justify-content: center;
   gap: 7px;
   width: 100%;
-  margin-top: 14px;
+  margin-top: 18px;
   min-height: 44px;
   border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
+  background: color-mix(in srgb, rgb(139, 92, 246) 10%, transparent);
   color: inherit;
   font-size: 0.86rem;
   font-weight: 760;
+}
+
+.chapter-afterword__footer-button--secondary {
+  background: color-mix(in srgb, var(--background) 70%, currentColor 3%);
 }
 
 .chapter-afterword__quiet-orb {
@@ -699,7 +715,7 @@
 
   .chapter-afterword--rich,
   .chapter-afterword--loading {
-    min-height: 286px;
+    min-height: 240px;
     padding: 15px;
   }
 
@@ -713,19 +729,17 @@
     padding: 17px;
   }
 
-  .chapter-afterword__stats {
-    gap: 7px;
+  .chapter-afterword__title-row,
+  .chapter-afterword__quotes-header,
+  .chapter-afterword__quote-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .chapter-afterword__stat {
-    min-height: 32px;
-    padding: 7px 9px;
-    font-size: 0.78rem;
-  }
-
-  .chapter-afterword__comment {
-    min-height: 50px;
-    padding: 9px 10px;
+  .chapter-afterword__open-button,
+  .chapter-afterword__reply-button,
+  .chapter-afterword__vote-button {
+    width: 100%;
   }
 
   .feed-comments-sheet {

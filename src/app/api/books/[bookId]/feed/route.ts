@@ -201,25 +201,37 @@ export async function GET(
           annotations.map((annotation) => mapAnnotationComment(annotation, readerId)),
         ).slice(0, previewLimit)
 
-        const topQuote = sortQuotesByTop(
+        const sortedQuotes = sortQuotesByTop(
           quoteRows
             .map((quote) => mapAnnotationQuote(quote, readerId))
             .filter((quote): quote is NonNullable<typeof quote> => Boolean(quote)),
-        )[0] || null
+        )
+        const topQuote = sortedQuotes[0] || null
+        const quotesPreviewSource = sortedQuotes.slice(0, 2)
 
-        const topQuoteCommentsCount = topQuote
-          ? await db.annotation.count({
+        const quoteCommentEntries = await Promise.all(
+          quotesPreviewSource.map(async (quote): Promise<[string, number]> => [
+            quote.id,
+            await db.annotation.count({
               where: {
                 chapterId: chapter.id,
                 kind: 'comment',
                 status: 'active',
-                paragraphId: topQuote.paragraphId,
-                endParagraphId: topQuote.endParagraphId,
-                startOffset: topQuote.startOffset,
-                endOffset: topQuote.endOffset,
+                paragraphId: quote.paragraphId,
+                endParagraphId: quote.paragraphEndId,
+                startOffset: quote.startOffset,
+                endOffset: quote.endOffset,
               },
-            })
-          : 0
+            }),
+          ]),
+        )
+        const quoteCommentCounts = new Map<string, number>(quoteCommentEntries)
+        const leadComment = commentsPreview[0] || null
+        const freshComments = annotations
+          .map((annotation) => mapAnnotationComment(annotation, readerId))
+          .filter((comment) => comment.id !== leadComment?.id)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 3)
 
         return {
           chapter: {
@@ -243,10 +255,24 @@ export async function GET(
             })),
           },
           preview: {
-            comments: commentsPreview.map((comment) => ({
-              id: comment.id,
-              authorName: comment.username,
-              body: comment.body,
+            leadComment,
+            freshComments,
+            quotesPreview: quotesPreviewSource.map((quote) => ({
+              id: quote.id,
+              text: quote.text,
+              upvoteCount: quote.upvoteCount,
+              reacted: quote.reacted,
+              reactionsCount: quote.upvoteCount,
+              commentsCount: quoteCommentCounts.get(quote.id) ?? 0,
+              readerId: quote.readerId,
+              username: quote.username,
+              createdAt: quote.createdAt,
+              chapterId: quote.chapterId,
+              variantType: quote.variantType,
+              paragraphId: quote.paragraphId,
+              paragraphEndId: quote.paragraphEndId,
+              startOffset: quote.startOffset,
+              endOffset: quote.endOffset,
             })),
             stats: {
               commentsCount: commentCount,
@@ -255,13 +281,21 @@ export async function GET(
               bookmarksCount: null,
               topQuote: topQuote
                 ? {
+                    id: topQuote.id,
                     text: topQuote.text,
+                    upvoteCount: topQuote.upvoteCount,
+                    reacted: topQuote.reacted,
                     reactionsCount: topQuote.upvoteCount,
-                    commentsCount: topQuoteCommentsCount,
+                    commentsCount: quoteCommentCounts.get(topQuote.id) ?? 0,
+                    readerId: topQuote.readerId,
+                    username: topQuote.username,
+                    createdAt: topQuote.createdAt,
                     chapterId: topQuote.chapterId,
                     variantType: topQuote.variantType,
                     paragraphId: topQuote.paragraphId,
                     paragraphEndId: topQuote.paragraphEndId,
+                    startOffset: topQuote.startOffset,
+                    endOffset: topQuote.endOffset,
                   }
                 : null,
             },

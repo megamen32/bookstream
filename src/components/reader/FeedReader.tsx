@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type React from 'react'
 import { Bookmark, BookmarkCheck } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
+import type { ReplyQuote } from '@/lib/store'
 import './FeedReader.css'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
@@ -42,8 +43,10 @@ interface FeedReaderProps {
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
   onScrollToChapterHandled?: () => void
-  onOpenChapterComments?: (chapterId: string) => void
+  onOpenChapterComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
   onSurfaceTap?: () => void
+  onNavigate?: () => void
+  setScrollContainerNode?: (node: HTMLDivElement | null) => void
 }
 
 interface StoredSelectionAnnotationRange extends SelectionAnnotationRange {
@@ -85,6 +88,8 @@ export default function FeedReader({
   onScrollToChapterHandled,
   onOpenChapterComments,
   onSurfaceTap,
+  onNavigate,
+  setScrollContainerNode,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, bookId, readerId, showMobileReactionBar } = useReaderStore()
 
@@ -284,6 +289,8 @@ export default function FeedReader({
     const container = scrollRef.current
     if (!container) return
 
+    onNavigate?.()
+
     const topDistance = container.scrollTop
     const bottomDistance = container.scrollHeight - container.scrollTop - container.clientHeight
 
@@ -316,6 +323,7 @@ export default function FeedReader({
     loadingPrev,
     onLoadNext,
     onLoadPrev,
+    onNavigate,
     sections,
     updateActiveChapter,
   ])
@@ -522,6 +530,7 @@ export default function FeedReader({
       <div
         ref={(node) => {
           scrollRef.current = node
+          setScrollContainerNode?.(node)
           setContentNode?.(node)
         }}
         className="reader-scrollbar feed-reader"
@@ -698,7 +707,7 @@ export default function FeedReader({
                   bookSlug={bookSlug}
                   preview={section.preview}
                   showCommentsAfterChapter={showCommentsAfterChapter}
-                  onOpenComments={() => onOpenChapterComments?.(section.chapter.id)}
+                  onOpenComments={(targetChapterId, replyTo) => onOpenChapterComments?.(targetChapterId, replyTo)}
                 />
 
                 <div className="feed-chapter-footer">

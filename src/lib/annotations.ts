@@ -120,8 +120,11 @@ export interface AnnotationQuoteItem {
   text: string
   variantType: string
   chapterId: string
+  readerId: string
   paragraphId: string
   paragraphEndId: string | null
+  startOffset: number
+  endOffset: number
   chapterTitle: string
   chapterPosition: number
   username: string
@@ -156,6 +159,8 @@ export interface AnnotationQuoteRowLike {
   id: string
   selectedText: string | null
   variantType: string
+  startOffset: number
+  endOffset: number
   paragraphId: string | null
   endParagraphId: string | null
   createdAt: Date
@@ -240,8 +245,11 @@ export function mapAnnotationQuote(
     text,
     variantType: annotation.variantType,
     chapterId: annotation.chapter.id,
+    readerId: annotation.readerId,
     paragraphId,
     paragraphEndId: annotation.endParagraphId,
+    startOffset: annotation.startOffset,
+    endOffset: annotation.endOffset,
     chapterTitle: annotation.chapter.title,
     chapterPosition: annotation.chapter.position,
     username: annotation.username,

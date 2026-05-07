@@ -46,6 +46,7 @@ interface BookReaderProps {
   prefetchNextChapter?: () => Promise<void> | void
   prefetchPrevChapter?: () => Promise<void> | void
   onCenterTap?: () => void
+  onNavigate?: () => void
 }
 
 export default function BookReader({
@@ -65,6 +66,7 @@ export default function BookReader({
   prefetchNextChapter,
   prefetchPrevChapter,
   onCenterTap,
+  onNavigate,
 }: BookReaderProps) {
   const {
     fontSize,
@@ -515,6 +517,8 @@ export default function BookReader({
   }, [hasPrevChapter, onPrevChapter, startPrefetchPrev])
 
   const goNext = useCallback(() => {
+    onNavigate?.()
+
     setCurrentPage((prev) => {
       if (prev >= totalPages) {
         switchToNextChapter()
@@ -527,9 +531,11 @@ export default function BookReader({
 
       return next
     })
-  }, [totalPages, saveProgress, showTemporaryHud, switchToNextChapter])
+  }, [onNavigate, totalPages, saveProgress, showTemporaryHud, switchToNextChapter])
 
   const goPrev = useCallback(() => {
+    onNavigate?.()
+
     setCurrentPage((prev) => {
       if (prev <= 1) {
         switchToPrevChapter()
@@ -542,7 +548,7 @@ export default function BookReader({
 
       return next
     })
-  }, [saveProgress, showTemporaryHud, switchToPrevChapter])
+  }, [onNavigate, saveProgress, showTemporaryHud, switchToPrevChapter])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

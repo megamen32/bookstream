@@ -18,20 +18,22 @@ export interface ReaderChapterListItem {
   variants: Array<{ id: string; variantType: string }>
 }
 
-export interface FeedPreviewComment {
-  id: string
-  authorName: string
-  body: string
-}
-
 export interface FeedPreviewTopQuote {
+  id: string
   text: string
+  upvoteCount: number
+  reacted: boolean
   reactionsCount: number
   commentsCount: number
+  readerId: string
+  username: string
+  createdAt: string
   chapterId: string
   variantType: string
   paragraphId: string | null
   paragraphEndId: string | null
+  startOffset?: number
+  endOffset?: number
 }
 
 export interface FeedPreviewStats {
@@ -43,7 +45,9 @@ export interface FeedPreviewStats {
 }
 
 export interface FeedSectionPreview {
-  comments: FeedPreviewComment[]
+  leadComment: ReaderComment | null
+  freshComments: ReaderComment[]
+  quotesPreview: FeedPreviewTopQuote[]
   stats: FeedPreviewStats
 }
 

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
 import { sortCommentsByTop } from '@/lib/annotations'
-import { useReaderStore, type VariantType, type ReadingMode } from '@/lib/store'
+import { useReaderStore, type VariantType, type ReadingMode, type ReplyQuote } from '@/lib/store'
 import { applyTheme } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
 import BookReader from '@/components/reader/BookReader'
@@ -18,7 +18,6 @@ import ReaderCommentsOverlay from '@/components/reader/ReaderCommentsOverlay'
 import ReaderVariantsPanel from '@/components/reader/ReaderVariantsPanel'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import type {
-  FeedPreviewComment,
   FeedSectionData,
   ReaderChapterListItem,
 } from '@/components/reader/feed-types'
@@ -87,12 +86,20 @@ function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment,
   return sortCommentsByTop(next).slice(0, limit)
 }
 
-function prependUniquePreviewComment(
-  comments: FeedPreviewComment[],
-  comment: FeedPreviewComment,
-  limit: number,
-): FeedPreviewComment[] {
-  return [comment, ...comments.filter((entry) => entry.id !== comment.id)].slice(0, limit)
+function buildAfterwordComments(
+  commentsPreview: ReaderComment[],
+): Pick<FeedSectionData['preview'], 'leadComment' | 'freshComments'> {
+  const sortedTop = sortCommentsByTop(commentsPreview)
+  const leadComment = sortedTop[0] || null
+  const freshComments = commentsPreview
+    .filter((comment) => comment.id !== leadComment?.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3)
+
+  return {
+    leadComment,
+    freshComments,
+  }
 }
 
 export default function ReaderPage() {
@@ -146,6 +153,7 @@ export default function ReaderPage() {
   const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
+  const feedScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
   const hasResolvedInitialLocation = useRef(false)
   const restoreTokenRef = useRef(0)
@@ -160,6 +168,10 @@ export default function ReaderPage() {
 
   const setSearchContentNode = useCallback((node: HTMLDivElement | null) => {
     searchContentRef.current = node
+  }, [])
+
+  const setFeedScrollContainerNode = useCallback((node: HTMLDivElement | null) => {
+    feedScrollContainerRef.current = node
   }, [])
 
   const getChapterCacheKey = useCallback((targetChapterId: string, requestedVariant: VariantType): string => (
@@ -321,7 +333,9 @@ export default function ReaderPage() {
           },
           variant: data.variant,
           preview: {
-            comments: [],
+            leadComment: null,
+            freshComments: [],
+            quotesPreview: [],
             stats: {
               commentsCount: 0,
               reactionsCount: 0,
@@ -564,7 +578,9 @@ export default function ReaderPage() {
             chapter,
             variant: { id: '', variantType: targetVariant, paragraphs: [] },
             preview: {
-              comments: [],
+              leadComment: null,
+              freshComments: [],
+              quotesPreview: [],
               stats: {
                 commentsCount: 0,
                 reactionsCount: 0,
@@ -1041,18 +1057,11 @@ export default function ReaderPage() {
               ...section,
               preview: {
                 ...section.preview,
-                comments: prependUniquePreviewComment(
-                  section.preview.comments,
-                  {
-                    id: data.comment!.id,
-                    authorName: data.comment!.username,
-                    body: data.comment!.body,
-                  },
-                  5,
-                ),
+                ...buildAfterwordComments(prependUniqueComment(section.commentsPreview, data.comment!, 5)),
                 stats: {
                   ...section.preview.stats,
                   commentsCount: section.preview.stats.commentsCount + 1,
+                  topQuote: section.preview.quotesPreview[0] || section.preview.stats.topQuote,
                 },
               },
               commentsPreview: prependUniqueComment(section.commentsPreview, data.comment!, 5),
@@ -1112,6 +1121,23 @@ export default function ReaderPage() {
     setActiveOverlay('none')
   }, [])
 
+  const handleChromeWheelNavigate = useCallback((deltaY: number) => {
+    closeChrome()
+
+    if (readingMode !== 'feed') {
+      return
+    }
+
+    const container = feedScrollContainerRef.current
+    if (!container || !Number.isFinite(deltaY) || deltaY === 0) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      container.scrollTop += deltaY
+    })
+  }, [closeChrome, readingMode])
+
   const toggleChrome = useCallback(() => {
     setChromeVisible((current) => {
       const nextVisible = !current
@@ -1162,15 +1188,16 @@ export default function ReaderPage() {
     router.push(`/${authorSlug}/${bookSlug}`)
   }, [authorSlug, bookSlug, router])
 
-  const handleOpenComments = useCallback((targetChapterId?: string | null) => {
+  const handleOpenComments = useCallback((targetChapterId?: string | null, replyTo?: ReplyQuote | null) => {
     const nextChapterId = targetChapterId || activeChapterId
     if (!nextChapterId) {
       return
     }
 
+    setReplyingTo(replyTo || null)
     setCommentsChapterId(nextChapterId)
     openOverlay('comments')
-  }, [activeChapterId, openOverlay])
+  }, [activeChapterId, openOverlay, setReplyingTo])
 
   const handleQuickActionVariants = useCallback(() => {
     openOverlay('variants')
@@ -1276,6 +1303,7 @@ export default function ReaderPage() {
           scrollToBookmark()
           closeChrome()
         }}
+        onWheelNavigate={handleChromeWheelNavigate}
       />
 
       <TableOfContents
@@ -1320,6 +1348,8 @@ export default function ReaderPage() {
               onScrollToChapterHandled={() => setScrollToChapterId(null)}
               onOpenChapterComments={handleOpenComments}
               onSurfaceTap={openChrome}
+              onNavigate={closeChrome}
+              setScrollContainerNode={setFeedScrollContainerNode}
             />
           ) : bookModeSection ? (
             <BookReader
@@ -1345,6 +1375,7 @@ export default function ReaderPage() {
               highlightStartOffset={quoteTargetStartOffset}
               highlightEndOffset={quoteTargetEndOffset}
               onCenterTap={toggleChrome}
+              onNavigate={closeChrome}
             />
           ) : null}
         </main>

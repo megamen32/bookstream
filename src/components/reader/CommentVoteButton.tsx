@@ -9,6 +9,7 @@ interface CommentVoteButtonProps {
   disabled?: boolean
   onClick: () => void
   compact?: boolean
+  className?: string
 }
 
 export default function CommentVoteButton({
@@ -17,6 +18,7 @@ export default function CommentVoteButton({
   disabled = false,
   onClick,
   compact = false,
+  className,
 }: CommentVoteButtonProps) {
   return (
     <Button
@@ -25,9 +27,15 @@ export default function CommentVoteButton({
       size="sm"
       disabled={disabled}
       onClick={onClick}
-      className={compact ? 'h-8 rounded-full px-3' : 'rounded-full'}
+      className={[
+        compact
+          ? 'h-8 rounded-full px-3 text-[0.78rem] font-semibold'
+          : 'rounded-full text-sm font-semibold',
+        className,
+      ].filter(Boolean).join(' ')}
+      aria-label={reacted ? 'Убрать голос' : 'Поставить голос'}
     >
-      <Plus size={14} className="mr-1" />
+      <Plus size={14} className="mr-1 shrink-0" />
       {upvoteCount}
     </Button>
   )

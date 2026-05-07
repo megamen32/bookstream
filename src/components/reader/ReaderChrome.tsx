@@ -44,6 +44,7 @@ interface ReaderChromeProps {
   onOpenVariants: () => void
   onToggleReadingMode: () => void
   onGoToBookmark: () => void
+  onWheelNavigate?: (deltaY: number) => void
 }
 
 interface CornerButtonProps {
@@ -133,6 +134,7 @@ export default function ReaderChrome({
   onOpenVariants,
   onToggleReadingMode,
   onGoToBookmark,
+  onWheelNavigate,
 }: ReaderChromeProps): React.ReactElement | null {
   if (!visible) {
     return null
@@ -145,9 +147,20 @@ export default function ReaderChrome({
         className="reader-chrome__backdrop"
         aria-label="Скрыть элементы интерфейса"
         onClick={onClose}
+        onWheel={(event) => {
+          onWheelNavigate?.(event.deltaY)
+          onClose()
+        }}
       />
 
-      <div className="reader-chrome" data-overlay={activeOverlay}>
+      <div
+        className="reader-chrome"
+        data-overlay={activeOverlay}
+        onWheel={(event) => {
+          onWheelNavigate?.(event.deltaY)
+          onClose()
+        }}
+      >
         <div className="reader-chrome__top-left" data-reader-ignore-chrome="true">
           <div className="reader-chrome__meta-pill">
             <button

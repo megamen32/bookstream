@@ -16,13 +16,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { sortCommentsByTop } from '@/lib/annotations'
+import { getVisibleBookHighlights, type BookHighlightsSectionKey } from '@/lib/book-highlights'
 import { useReaderStore } from '@/lib/store'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import { cn } from '@/lib/utils'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import TopCommentCard from '@/components/reader/TopCommentCard'
 
-type SectionKey = 'comments' | 'quotes' | 'toc'
+type SectionKey = BookHighlightsSectionKey
 
 interface Chapter {
   id: string
@@ -456,9 +457,18 @@ export default function BookHighlightsPanel({
     return () => controller.abort()
   }, [bookId, readerId])
 
-  const visibleChapters = useMemo(() => chapters.slice(0, 3), [chapters])
-  const visibleComments = useMemo(() => comments.slice(0, 3), [comments])
-  const visibleQuotes = useMemo(() => quotes.slice(0, 3), [quotes])
+  const visibleChapters = useMemo(
+    () => getVisibleBookHighlights(chapters, activeSection, 'toc'),
+    [activeSection, chapters],
+  )
+  const visibleComments = useMemo(
+    () => getVisibleBookHighlights(comments, activeSection, 'comments'),
+    [activeSection, comments],
+  )
+  const visibleQuotes = useMemo(
+    () => getVisibleBookHighlights(quotes, activeSection, 'quotes'),
+    [activeSection, quotes],
+  )
   const contentCount = chapters.length
   const chapterCountLabel = contentCount === 1 ? 'глава' : 'глав'
   const commentCount = comments.length
