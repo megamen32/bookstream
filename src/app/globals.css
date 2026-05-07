@@ -1234,12 +1234,13 @@
   }
 
   .reader-comments-overlay__panel {
-    top: auto;
-    right: 0;
-    left: 0;
-    bottom: 0;
-    width: 100%;
-    border-radius: 1.55rem 1.55rem 0 0;
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: max(0.75rem, env(safe-area-inset-right));
+    left: max(0.75rem, env(safe-area-inset-left));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: none;
+    border-radius: 1.55rem;
   }
 
   .reader-comments-overlay__drag {
@@ -1268,5 +1269,9 @@
     top: max(0.4rem, env(safe-area-inset-top));
     right: max(0.75rem, env(safe-area-inset-right));
     z-index: 1;
+  }
+
+  .reader-comments-overlay__body {
+    overscroll-behavior: contain;
   }
 }

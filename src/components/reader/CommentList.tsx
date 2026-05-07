@@ -136,55 +136,58 @@ export default function CommentList({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="bottom"
-          className="rounded-t-2xl"
+          className="h-[min(88dvh,760px)] max-h-[min(88dvh,760px)] overflow-hidden rounded-t-2xl !gap-0 !p-0"
           style={{
-            maxHeight: '70vh',
             backgroundColor: 'var(--r-bg)',
             color: 'var(--r-text)',
             border: 'none',
           }}
         >
-          <SheetHeader>
-            <SheetTitle style={{ color: 'var(--r-text)' }}>
-              Комментарии ({comments.length})
-            </SheetTitle>
-          </SheetHeader>
-          <ScrollArea style={{ maxHeight: 'calc(70vh - 4rem)', padding: '0 1rem 1rem' }}>
-            {comments.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '2rem 1rem',
-                  color: 'var(--r-text-secondary)',
-                  fontSize: '0.875rem',
-                }}
-              >
-                Пока нет комментариев. Будьте первым!
+          <div className="flex h-full min-h-0 flex-col">
+            <SheetHeader className="pb-3 pr-14">
+              <SheetTitle style={{ color: 'var(--r-text)' }}>
+                Комментарии ({comments.length})
+              </SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="flex-1 min-h-0" style={{ padding: '0 1rem 1rem' }}>
+              <div className="pb-1">
+                {comments.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '2rem 1rem',
+                      color: 'var(--r-text-secondary)',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    Пока нет комментариев. Будьте первым!
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {comments.map((comment) => (
+                      <CommentCard
+                        key={comment.id}
+                        comment={comment}
+                        chapterHref={authorSlug && bookSlug ? `/${authorSlug}/${bookSlug}/read?chapter=${chapterId}` : undefined}
+                        quoteHref={authorSlug && bookSlug && comment.quotes[0]
+                          ? buildQuoteReadHref(authorSlug, bookSlug, {
+                              chapterId,
+                              variantType: comment.quotes[0].variantType,
+                              paragraphId: comment.quotes[0].paragraphId,
+                              paragraphEndId: comment.quotes[0].endParagraphId,
+                              startOffset: comment.startOffset,
+                              endOffset: comment.endOffset,
+                            })
+                          : undefined}
+                        onToggleVote={() => void handleToggleVote(comment.id)}
+                        voteDisabled={!readerId || togglingCommentId === comment.id}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {comments.map((comment) => (
-                  <CommentCard
-                    key={comment.id}
-                    comment={comment}
-                    chapterHref={authorSlug && bookSlug ? `/${authorSlug}/${bookSlug}/read?chapter=${chapterId}` : undefined}
-                    quoteHref={authorSlug && bookSlug && comment.quotes[0]
-                      ? buildQuoteReadHref(authorSlug, bookSlug, {
-                          chapterId,
-                          variantType: comment.quotes[0].variantType,
-                          paragraphId: comment.quotes[0].paragraphId,
-                          paragraphEndId: comment.quotes[0].endParagraphId,
-                          startOffset: comment.startOffset,
-                          endOffset: comment.endOffset,
-                        })
-                      : undefined}
-                    onToggleVote={() => void handleToggleVote(comment.id)}
-                    voteDisabled={!readerId || togglingCommentId === comment.id}
-                  />
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+            </ScrollArea>
+          </div>
         </SheetContent>
       </Sheet>
     </>
