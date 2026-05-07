@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Copy, Flame, Quote, Reply, SmilePlus } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 
 interface TextSelectorProps {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -16,6 +17,15 @@ interface ToolbarPosition {
   left: number
   selectedText: string
   paragraphId: string
+  endParagraphId: string
+  startOffset: number
+  endOffset: number
+}
+
+interface ReactionBurst {
+  emoji: string
+  top: number
+  left: number
 }
 
 const TOOLBAR_HEIGHT = 56
@@ -55,7 +65,7 @@ interface ToolbarButtonProps {
   children: ReactNode
 }
 
-function ToolbarButton({ label, onClick, children }: ToolbarButtonProps): JSX.Element {
+function ToolbarButton({ label, onClick, children }: ToolbarButtonProps): React.ReactElement {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -79,7 +89,53 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null)
   const [copied, setCopied] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const [activeParagraphIds, setActiveParagraphIds] = useState<string[]>([])
+  const [reactionBurst, setReactionBurst] = useState<ReactionBurst | null>(null)
+  const activeSelectionNodesRef = useRef<HTMLElement[]>([])
+  const preserveSelectionFrameRef = useRef(false)
   const { setReplyingTo, readerId, bookId } = useReaderStore()
+
+  const clearSelectionHighlight = useCallback(() => {
+    for (const node of activeSelectionNodesRef.current) {
+      node.classList.remove('bookstream-selection-frame')
+    }
+    activeSelectionNodesRef.current = []
+  }, [])
+
+  useEffect(() => {
+    clearSelectionHighlight()
+
+    if (!containerRef.current || activeParagraphIds.length === 0) {
+      return
+    }
+
+    const nodes = collectParagraphRangeElements(
+      containerRef.current,
+      activeParagraphIds[0],
+      activeParagraphIds[activeParagraphIds.length - 1],
+    )
+
+    for (const node of nodes) {
+      node.classList.add('bookstream-selection-frame')
+    }
+    activeSelectionNodesRef.current = nodes
+
+    return () => {
+      for (const node of nodes) {
+        node.classList.remove('bookstream-selection-frame')
+      }
+    }
+  }, [activeParagraphIds, containerRef, clearSelectionHighlight])
+
+  useEffect(() => {
+    if (!reactionBurst) return
+
+    const timeoutId = window.setTimeout(() => {
+      setReactionBurst(null)
+    }, 650)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [reactionBurst])
 
   const handleSelection = useCallback(() => {
     const selection = window.getSelection()
@@ -99,15 +155,31 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
     }
 
     // Find the closest paragraph/article element
-    let node = range.startContainer as HTMLElement
-    while (node && node !== containerRef.current) {
-      if (node.dataset && node.dataset.stableKey) {
-        break
+    const getParagraphArticle = (node: Node): HTMLElement | null => {
+      if (node instanceof HTMLElement && node.dataset.paragraphId) {
+        return node
       }
-      node = node.parentElement as HTMLElement
+      const parent = node.parentNode
+      if (!(parent instanceof Element)) return null
+      return parent.closest<HTMLElement>('[data-paragraph-id]')
     }
 
-    if (!node || node === containerRef.current) return
+    const startArticle = getParagraphArticle(range.startContainer)
+    const endArticle = getParagraphArticle(range.endContainer)
+    if (!startArticle || !endArticle) return
+
+    const paragraphArticles = Array.from(
+      containerRef.current.querySelectorAll<HTMLElement>('[data-paragraph-id]'),
+    )
+    const startIndex = paragraphArticles.indexOf(startArticle)
+    const endIndex = paragraphArticles.indexOf(endArticle)
+    if (startIndex < 0 || endIndex < 0) return
+
+    const [fromIndex, toIndex] = startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex]
+    const selectedParagraphIds = paragraphArticles.slice(fromIndex, toIndex + 1).map((article) => article.dataset.paragraphId || '')
+    if (selectedParagraphIds.length === 0 || selectedParagraphIds.some((id) => !id)) {
+      return
+    }
 
     const rect = range.getBoundingClientRect()
     const viewportWidth = window.innerWidth
@@ -128,15 +200,25 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
       top,
       left,
       selectedText,
-      paragraphId: (node as HTMLElement).dataset.paragraphId || (node as HTMLElement).dataset.stableKey || '',
+      paragraphId: selectedParagraphIds[0],
+      endParagraphId: selectedParagraphIds[selectedParagraphIds.length - 1],
+      startOffset: range.startOffset,
+      endOffset: range.endOffset,
     })
+    setActiveParagraphIds(selectedParagraphIds)
   }, [containerRef])
 
   const clearSelection = useCallback(() => {
     setTimeout(() => {
       const selection = window.getSelection()
       if (selection && selection.isCollapsed) {
+        if (preserveSelectionFrameRef.current) {
+          preserveSelectionFrameRef.current = false
+          setToolbar(null)
+          return
+        }
         setToolbar(null)
+        setActiveParagraphIds([])
       }
     }, 150)
   }, [])
@@ -165,7 +247,9 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
       text: toolbar.selectedText,
       variantType: useReaderStore.getState().variantType,
       paragraphId: toolbar.paragraphId,
+      endParagraphId: toolbar.endParagraphId,
     })
+    preserveSelectionFrameRef.current = true
     setToolbar(null)
     window.getSelection()?.removeAllRanges()
   }
@@ -206,93 +290,123 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
           chapterVariantId: variantId,
           readerId,
           emoji,
+          selection: {
+            paragraphId: toolbar.paragraphId,
+            endParagraphId: toolbar.endParagraphId,
+            selectedText: toolbar.selectedText,
+            startOffset: toolbar.startOffset,
+            endOffset: toolbar.endOffset,
+          },
         }),
       })
       if (res.ok) {
+        preserveSelectionFrameRef.current = true
+        setReactionBurst({
+          emoji,
+          top: Math.max(8, toolbar.top - 56),
+          left: toolbar.left + TOOLBAR_WIDTH / 2 - 16,
+        })
         window.dispatchEvent(
           new CustomEvent('bookstream:reaction-updated', {
             detail: {
               paragraphId: toolbar.paragraphId,
+              endParagraphId: toolbar.endParagraphId,
               chapterVariantId: variantId,
             },
           }),
         )
+        setToolbar(null)
+        window.getSelection()?.removeAllRanges()
       }
     } catch (e) {
       console.error('Failed to react:', e)
     }
     setEmojiPickerOpen(false)
-    setToolbar(null)
-    window.getSelection()?.removeAllRanges()
   }
 
-  if (!toolbar) return null
+  if (!toolbar && !reactionBurst) return null
 
   return (
-    <div
-      className="selection-toolbar"
-      style={{ top: toolbar.top, left: toolbar.left }}
-      role="toolbar"
-      aria-label="Действия с выделением"
-    >
-      <ToolbarButton label="Ответить" onClick={handleReply}>
-        <Reply size={16} />
-      </ToolbarButton>
-      <ToolbarButton label={copied ? 'Скопировано' : 'Копировать'} onClick={handleCopy}>
-        <Copy size={16} />
-      </ToolbarButton>
-      <ToolbarButton label="В цитаты" onClick={() => handleReact('⭐')}>
-        <Quote size={16} />
-      </ToolbarButton>
-      <ToolbarButton label="Огонь" onClick={() => handleReact('🔥')}>
-        <Flame size={16} />
-      </ToolbarButton>
-      <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-        <PopoverAnchor asChild>
-          <button
-            type="button"
-            aria-label="Эмодзи"
-            aria-haspopup="dialog"
-            aria-expanded={emojiPickerOpen}
-            title="Эмодзи"
-            onClick={() => setEmojiPickerOpen((open) => !open)}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <SmilePlus size={16} />
-          </button>
-        </PopoverAnchor>
-        <PopoverContent side="top" align="end" sideOffset={10} className="w-80 p-3">
-          <div className="space-y-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Эмодзи
-            </div>
-            <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-              {EMOJI_PICKER_GROUPS.map((group) => (
-                <div key={group.title} className="space-y-2">
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {group.title}
-                  </div>
-                  <div className="grid grid-cols-6 gap-1">
-                    {group.emojis.map((emoji) => (
-                      <button
-                        key={`${group.title}-${emoji}`}
-                        type="button"
-                        className="flex h-10 w-10 items-center justify-center rounded-md text-xl transition-colors hover:bg-accent hover:text-accent-foreground"
-                        aria-label={`Поставить реакцию ${emoji}`}
-                        title={emoji}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => void handleReact(emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
+    <>
+      {reactionBurst && (
+        <div
+          className="selection-reaction-burst"
+          style={{
+            top: reactionBurst.top,
+            left: reactionBurst.left,
+          }}
+          aria-hidden="true"
+        >
+          <span>{reactionBurst.emoji}</span>
+        </div>
+      )}
+      {toolbar && (
+        <div
+          className="selection-toolbar"
+          style={{ top: toolbar.top, left: toolbar.left }}
+          role="toolbar"
+          aria-label="Действия с выделением"
+        >
+          <ToolbarButton label="Ответить" onClick={handleReply}>
+            <Reply size={16} />
+          </ToolbarButton>
+          <ToolbarButton label={copied ? 'Скопировано' : 'Копировать'} onClick={handleCopy}>
+            <Copy size={16} />
+          </ToolbarButton>
+          <ToolbarButton label="В цитаты" onClick={() => handleReact('⭐')}>
+            <Quote size={16} />
+          </ToolbarButton>
+          <ToolbarButton label="Огонь" onClick={() => handleReact('🔥')}>
+            <Flame size={16} />
+          </ToolbarButton>
+          <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+            <PopoverAnchor asChild>
+              <button
+                type="button"
+                aria-label="Эмодзи"
+                aria-haspopup="dialog"
+                aria-expanded={emojiPickerOpen}
+                title="Эмодзи"
+                onClick={() => setEmojiPickerOpen((open) => !open)}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <SmilePlus size={16} />
+              </button>
+            </PopoverAnchor>
+            <PopoverContent side="top" align="end" sideOffset={10} className="w-80 p-3">
+              <div className="space-y-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Эмодзи
                 </div>
-              ))}
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+                <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                  {EMOJI_PICKER_GROUPS.map((group) => (
+                    <div key={group.title} className="space-y-2">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {group.title}
+                      </div>
+                      <div className="grid grid-cols-6 gap-1">
+                        {group.emojis.map((emoji) => (
+                          <button
+                            key={`${group.title}-${emoji}`}
+                            type="button"
+                            className="flex h-10 w-10 items-center justify-center rounded-md text-xl transition-colors hover:bg-accent hover:text-accent-foreground"
+                            aria-label={`Поставить реакцию ${emoji}`}
+                            title={emoji}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void handleReact(emoji)}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
+    </>
   )
 }

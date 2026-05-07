@@ -10,6 +10,7 @@ interface ReplyQuote {
   text: string
   variantType: string
   paragraphId: string
+  endParagraphId?: string | null
 }
 
 interface ReaderState {

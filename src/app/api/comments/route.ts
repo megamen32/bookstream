@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
               create: {
                 variantType: quote.variantType || 'original',
                 paragraphId: quote.paragraphId,
+                endParagraphId: quote.endParagraphId || null,
                 selectedText: quote.selectedText,
                 startOffset: quote.startOffset || 0,
                 endOffset: quote.endOffset || 0,

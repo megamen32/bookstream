@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useSearchParams, useRouter } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Settings, BookOpen, AlignJustify, Search, Bookmark, BookmarkCheck } from 'lucide-react'
+import { ArrowLeft, Settings, BookOpen, AlignJustify, Search, Bookmark, BookmarkCheck, UserRound } from 'lucide-react'
 import { useReaderStore, type VariantType } from '@/lib/store'
 import { applyTheme, themes } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
@@ -15,6 +15,7 @@ import SettingsPanel from '@/components/reader/SettingsPanel'
 import TableOfContents from '@/components/reader/TableOfContents'
 import SearchPanel from '@/components/reader/SearchPanel'
 import CommentsSection from '@/components/reader/CommentsSection'
+import UserActivityPanel from '@/components/reader/UserActivityPanel'
 
 interface Paragraph {
   id: string
@@ -54,7 +55,6 @@ function saveBookmarks(bm: Record<string, string>) {
 export default function ReaderPage() {
   const params = useParams()
   const searchParams = useSearchParams()
-  const router = useRouter()
   const authorSlug = params.authorSlug as string
   const bookSlug = params.bookSlug as string
   const searchParamsString = searchParams.toString()
@@ -77,11 +77,8 @@ export default function ReaderPage() {
     setFontSize,
     setLineHeight,
     setTheme,
-    setReaderId,
-    setUsername,
     setReplyingTo,
     loadFromStorage,
-    saveToStorage,
   } = useReaderStore()
 
   const [chapterData, setChapterData] = useState<ChapterData | null>(null)
@@ -94,10 +91,12 @@ export default function ReaderPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [showDesktopComments, setShowDesktopComments] = useState(false)
+  const [showActivityPanel, setShowActivityPanel] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
   const [scrollProgress, setScrollProgress] = useState(0)
   const [bookmarkedKey, setBookmarkedKey] = useState<string | null>(null)
   const [quoteTargetParagraphId, setQuoteTargetParagraphId] = useState<string | null>(null)
+  const [quoteTargetParagraphEndId, setQuoteTargetParagraphEndId] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
@@ -247,7 +246,9 @@ export default function ReaderPage() {
           targetVariant = urlVariant
         }
         const urlParagraph = queryParams.get('paragraph')
+        const urlParagraphEnd = queryParams.get('paragraphEnd')
         setQuoteTargetParagraphId(urlParagraph)
+        setQuoteTargetParagraphEndId(urlParagraphEnd)
 
         setChapterId(targetChapterId!)
         setVariantType(targetVariant)
@@ -267,6 +268,7 @@ export default function ReaderPage() {
   const handleVariantChange = useCallback(async (newType: VariantType) => {
     if (!chapterId) return
     setQuoteTargetParagraphId(null)
+    setQuoteTargetParagraphEndId(null)
 
     // Check if variant already exists in DB
     const exists = availableVariants.includes(newType)
@@ -299,6 +301,7 @@ export default function ReaderPage() {
 
   const handleChapterChange = useCallback(async (newChapterId: string) => {
     setQuoteTargetParagraphId(null)
+    setQuoteTargetParagraphEndId(null)
     setChapterId(newChapterId)
     await fetchChapter(newChapterId, variantType)
   }, [variantType, fetchChapter, setChapterId])
@@ -306,6 +309,7 @@ export default function ReaderPage() {
   const goToNextChapter = useCallback(() => {
     if (!chapterData) return
     setQuoteTargetParagraphId(null)
+    setQuoteTargetParagraphEndId(null)
     const chapters = chapterData.book.chapters
     const idx = chapters.findIndex(c => c.id === chapterId)
     if (idx < chapters.length - 1) {
@@ -318,6 +322,7 @@ export default function ReaderPage() {
   const goToPrevChapter = useCallback(() => {
     if (!chapterData) return
     setQuoteTargetParagraphId(null)
+    setQuoteTargetParagraphEndId(null)
     const chapters = chapterData.book.chapters
     const idx = chapters.findIndex(c => c.id === chapterId)
     if (idx > 0) {
@@ -331,7 +336,12 @@ export default function ReaderPage() {
     if (!chapterId || !bookId || !readerId || !username) return
     try {
       const quotes = replyingTo
-        ? [{ variantType: replyingTo.variantType, paragraphId: replyingTo.paragraphId, selectedText: replyingTo.text }]
+        ? [{
+            variantType: replyingTo.variantType,
+            paragraphId: replyingTo.paragraphId,
+            endParagraphId: replyingTo.endParagraphId,
+            selectedText: replyingTo.text,
+          }]
         : undefined
       const res = await fetch(`/api/chapters/${chapterId}/comments`, {
         method: 'POST',
@@ -421,6 +431,16 @@ export default function ReaderPage() {
         open={showSearch}
         onClose={() => setShowSearch(false)}
         contentRef={searchContentRef}
+      />
+
+      {/* Activity panel */}
+      <UserActivityPanel
+        open={showActivityPanel}
+        onOpenChange={setShowActivityPanel}
+        bookId={bookId || ''}
+        bookTitle={chapterData?.book.title}
+        authorSlug={authorSlug}
+        bookSlug={bookSlug}
       />
 
       {/* Top bar */}
@@ -613,6 +633,26 @@ export default function ReaderPage() {
 
         {/* Settings */}
         <button
+          onClick={() => setShowActivityPanel(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem',
+            minWidth: '44px',
+            minHeight: '44px',
+            color: 'var(--r-text)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
+          title="Моя активность"
+        >
+          <UserRound size={20} />
+        </button>
+
+        {/* Settings */}
+        <button
           onClick={() => setShowSettings(true)}
           style={{
             display: 'flex',
@@ -671,6 +711,7 @@ export default function ReaderPage() {
               authorSlug={authorSlug}
               bookSlug={bookSlug}
               highlightParagraphId={quoteTargetParagraphId}
+              highlightParagraphEndId={quoteTargetParagraphEndId}
             />
           ) : (
             <BookReader
@@ -692,6 +733,7 @@ export default function ReaderPage() {
               authorSlug={authorSlug}
               bookSlug={bookSlug}
               highlightParagraphId={quoteTargetParagraphId}
+              highlightParagraphEndId={quoteTargetParagraphEndId}
             />
           )}
         </main>

@@ -16,6 +16,7 @@ interface BookQuote {
   variantLabel: string
   chapterId: string
   paragraphId: string
+  paragraphEndId: string | null
   chapterTitle: string
   chapterPosition: number
   username: string
@@ -208,6 +209,7 @@ export default function BookQuotesPanel({
                         chapterId: quote.chapterId,
                         variantType: quote.variantType,
                         paragraphId: quote.paragraphId,
+                        paragraphEndId: quote.paragraphEndId,
                       })}
                       className="group block rounded-2xl border border-transparent bg-gradient-to-br from-amber-50/80 via-background to-amber-50/20 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-200/70 hover:shadow-[0_18px_40px_-24px_rgba(180,83,9,0.55)]"
                       title="Открыть цитату в книге"

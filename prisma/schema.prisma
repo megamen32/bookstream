@@ -94,17 +94,18 @@ model Comment {
 }
 
 model CommentQuote {
-  id           String    @id @default(cuid())
-  commentId    String
-  variantType  String    @default("original")
-  paragraphId  String
-  selectedText String
-  startOffset  Int       @default(0)
-  endOffset    Int       @default(0)
-  createdAt    DateTime  @default(now())
-  paragraph    Paragraph @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
-  comment      Comment   @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  upvotes      QuoteUpvote[]
+  id             String        @id @default(cuid())
+  commentId      String
+  variantType    String        @default("original")
+  paragraphId    String
+  endParagraphId String?
+  selectedText   String
+  startOffset    Int           @default(0)
+  endOffset      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  paragraph      Paragraph     @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
+  comment        Comment       @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  upvotes        QuoteUpvote[]
 }
 
 model QuoteUpvote {
@@ -123,6 +124,8 @@ model Reaction {
   chapterVariantId String
   readerId         String
   emoji            String
+  selectedText     String?
+  endParagraphId   String?
   createdAt        DateTime       @default(now())
   chapterVariant   ChapterVariant @relation(fields: [chapterVariantId], references: [id])
   paragraph        Paragraph      @relation(fields: [paragraphId], references: [id])

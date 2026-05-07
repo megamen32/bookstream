@@ -2,6 +2,7 @@ export interface QuoteReadTarget {
   chapterId: string
   variantType: string
   paragraphId?: string | null
+  paragraphEndId?: string | null
 }
 
 /**
@@ -9,7 +10,7 @@ export interface QuoteReadTarget {
  *
  * @param authorSlug Author slug used in the public book route.
  * @param bookSlug Book slug used in the public book route.
- * @param target Quote location inside the reader.
+ * @param target Quote location inside the reader, including an optional end paragraph.
  * @returns Public reader URL with query params for chapter, variant, and paragraph focus.
  */
 export function buildQuoteReadHref(authorSlug: string, bookSlug: string, target: QuoteReadTarget): string {
@@ -20,6 +21,10 @@ export function buildQuoteReadHref(authorSlug: string, bookSlug: string, target:
 
   if (target.paragraphId) {
     params.set('paragraph', target.paragraphId)
+  }
+
+  if (target.paragraphEndId && target.paragraphEndId !== target.paragraphId) {
+    params.set('paragraphEnd', target.paragraphEndId)
   }
 
   return `/${authorSlug}/${bookSlug}/read?${params.toString()}`

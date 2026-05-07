@@ -52,9 +52,15 @@ export async function POST(
         body: commentBody,
         quotes: quotes
           ? {
-              create: quotes.map((q: { variantType: string; paragraphId: string; selectedText: string }) => ({
+              create: quotes.map((q: {
+                variantType: string
+                paragraphId: string
+                endParagraphId?: string | null
+                selectedText: string
+              }) => ({
                 variantType: q.variantType,
                 paragraphId: q.paragraphId,
+                endParagraphId: q.endParagraphId || null,
                 selectedText: q.selectedText,
               })),
             }

@@ -57,6 +57,7 @@ interface Comment {
     variantType: string
     selectedText: string
     paragraphId: string
+    endParagraphId?: string | null
   }>
 }
 
@@ -195,6 +196,7 @@ export default function CommentList({
                             chapterId,
                             variantType: comment.quotes[0].variantType,
                             paragraphId: comment.quotes[0].paragraphId,
+                            paragraphEndId: comment.quotes[0].endParagraphId,
                           })}
                           className="quote-bar group"
                           style={{

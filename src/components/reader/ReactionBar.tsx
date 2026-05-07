@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useReaderStore } from '@/lib/store'
 
 const DEFAULT_EMOJIS = ['👍', '🔥', '💡', '😂', '⭐'] as const
@@ -27,6 +27,8 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
   const readerId = useReaderStore((s) => s.readerId)
   const [reactions, setReactions] = useState<ReactionsMap>(createEmptyReactions())
   const [toggling, setToggling] = useState<string | null>(null)
+  const [pulsingEmoji, setPulsingEmoji] = useState<string | null>(null)
+  const pulsingTimeoutRef = useRef<number | null>(null)
 
   const refreshReactions = useCallback(
     async (signal?: AbortSignal) => {
@@ -132,6 +134,17 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
             ...prev,
             [emoji]: current,
           }))
+          return
+        }
+
+        if (isAdding) {
+          setPulsingEmoji(emoji)
+          if (pulsingTimeoutRef.current) {
+            window.clearTimeout(pulsingTimeoutRef.current)
+          }
+          pulsingTimeoutRef.current = window.setTimeout(() => {
+            setPulsingEmoji((currentEmoji) => (currentEmoji === emoji ? null : currentEmoji))
+          }, 650)
         }
       } catch {
         // Revert on network error
@@ -145,6 +158,14 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
     },
     [readerId, toggling, reactions, paragraphId, variantId],
   )
+
+  useEffect(() => {
+    return () => {
+      if (pulsingTimeoutRef.current) {
+        window.clearTimeout(pulsingTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Don't render if no reactions and still loading (avoid flash)
   const displayedEmojis = Array.from(new Set([...DEFAULT_EMOJIS, ...Object.keys(reactions)]))
@@ -198,10 +219,11 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
               color: isActive ? 'var(--r-accent)' : 'var(--r-text-secondary)',
               fontSize: '0.8125rem',
               lineHeight: 1,
-              transition: 'background 150ms ease, border-color 150ms ease, color 150ms ease',
+              transition: 'background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease',
               outline: 'none',
               userSelect: 'none',
               opacity: isTogglingThis ? 0.6 : 1,
+              animation: pulsingEmoji === emoji ? 'reactionShake 650ms ease-out' : undefined,
             }}
             onMouseEnter={(e) => {
               if (!isActive) {

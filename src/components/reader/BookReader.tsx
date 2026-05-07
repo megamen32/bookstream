@@ -7,6 +7,7 @@ import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import { MessageSquare, X } from 'lucide-react'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
+import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 
 interface Paragraph {
   id: string
@@ -40,6 +41,8 @@ interface BookReaderProps {
   bookSlug: string
   /** Database paragraph id requested via quote navigation */
   highlightParagraphId?: string | null
+  /** Optional end paragraph id for a multi-paragraph quote range */
+  highlightParagraphEndId?: string | null
 }
 
 export default function BookReader({
@@ -60,6 +63,7 @@ export default function BookReader({
   authorSlug,
   bookSlug,
   highlightParagraphId,
+  highlightParagraphEndId,
 }: BookReaderProps) {
   const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
   const innerRef = useRef<HTMLDivElement>(null)
@@ -71,12 +75,50 @@ export default function BookReader({
   const [commentsHeight, setCommentsHeight] = useState(280)
   const restoredRef = useRef(false)
   const quoteFocusAppliedRef = useRef(false)
+  const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTransitioning = useRef(false)
 
   useEffect(() => {
     quoteFocusAppliedRef.current = false
-  }, [highlightParagraphId])
+  }, [highlightParagraphId, highlightParagraphEndId])
+
+  useEffect(() => {
+    for (const node of quoteHighlightNodesRef.current) {
+      node.classList.remove('bookstream-quote-frame')
+    }
+    quoteHighlightNodesRef.current = []
+
+    if (!highlightParagraphId || !contentRefInternal.current) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (!contentRefInternal.current) return
+      const target = findQuoteParagraphElement(contentRefInternal.current, highlightParagraphId)
+      if (!target) return
+
+      const frames = collectParagraphRangeElements(
+        contentRefInternal.current,
+        highlightParagraphId,
+        highlightParagraphEndId,
+      )
+      for (const node of frames) {
+        node.classList.add('bookstream-quote-frame')
+      }
+      quoteHighlightNodesRef.current = frames
+
+      scrollQuoteTargetIntoView(contentRefInternal.current, target)
+      quoteFocusAppliedRef.current = true
+      restoredRef.current = true
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      for (const node of quoteHighlightNodesRef.current) {
+        node.classList.remove('bookstream-quote-frame')
+      }
+      quoteHighlightNodesRef.current = []
+    }
+  }, [highlightParagraphId, highlightParagraphEndId, paragraphs])
 
   const columnWidth = lineWidth === 'narrow' ? '280px' : lineWidth === 'medium' ? '350px' : '420px'
 
@@ -107,22 +149,6 @@ export default function BookReader({
       }
     }
   }, [chapterId])
-
-  useEffect(() => {
-    if (!highlightParagraphId || !contentRefInternal.current) return
-
-    const frameId = window.requestAnimationFrame(() => {
-      if (!contentRefInternal.current) return
-      const target = findQuoteParagraphElement(contentRefInternal.current, highlightParagraphId)
-      if (target) {
-        scrollQuoteTargetIntoView(contentRefInternal.current, target)
-        quoteFocusAppliedRef.current = true
-        restoredRef.current = true
-      }
-    })
-
-    return () => window.cancelAnimationFrame(frameId)
-  }, [highlightParagraphId, paragraphs])
 
   // Scroll to current page
   useEffect(() => {

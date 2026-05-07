@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+interface ReactionSelectionPayload {
+  paragraphId: string
+  endParagraphId?: string | null
+  selectedText?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { paragraphId, chapterVariantId, readerId, emoji } = body
+    const selection: ReactionSelectionPayload | undefined = body.selection
+    const selectedText = typeof selection?.selectedText === 'string' ? selection.selectedText : ''
+    const endParagraphId = typeof selection?.endParagraphId === 'string' && selection.endParagraphId.length > 0
+      ? selection.endParagraphId
+      : paragraphId
 
     if (!paragraphId || !chapterVariantId || !readerId || !emoji) {
       return NextResponse.json(
@@ -26,7 +37,14 @@ export async function POST(request: NextRequest) {
     }
 
     await db.reaction.create({
-      data: { paragraphId, chapterVariantId, readerId, emoji },
+      data: {
+        paragraphId,
+        chapterVariantId,
+        readerId,
+        emoji,
+        selectedText: selectedText || null,
+        endParagraphId: endParagraphId === paragraphId ? null : endParagraphId,
+      },
     })
 
     return NextResponse.json({ action: 'added' }, { status: 201 })

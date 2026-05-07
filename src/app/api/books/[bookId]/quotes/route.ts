@@ -12,6 +12,7 @@ interface QuotePayload {
   variantLabel: string
   chapterId: string
   paragraphId: string
+  paragraphEndId: string | null
   chapterTitle: string
   chapterPosition: number
   username: string
@@ -51,6 +52,7 @@ export async function GET(
           selectedText: true,
           variantType: true,
           paragraphId: true,
+          endParagraphId: true,
           createdAt: true,
           comment: {
             select: {
@@ -93,6 +95,7 @@ export async function GET(
         variantLabel: formatVariantLabel(quote.variantType, presetLabels),
         chapterId: quote.comment.chapter.id,
         paragraphId: quote.paragraphId,
+        paragraphEndId: quote.endParagraphId,
         chapterTitle: quote.comment.chapter.title,
         chapterPosition: quote.comment.chapter.position,
         username: quote.comment.username,

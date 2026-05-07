@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import BookQuotesPanel from '@/components/book/BookQuotesPanel'
+import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
 
@@ -65,12 +64,23 @@ export default function BookCoverPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="max-w-2xl mx-auto px-4 py-8">
+        <div className="mx-auto max-w-3xl px-4 py-10">
           <Skeleton className="h-8 w-32 mb-8" />
           <Skeleton className="h-64 rounded-2xl mb-6" />
           <Skeleton className="h-10 w-40 mb-6" />
           <Skeleton className="h-4 w-full mb-2" />
           <Skeleton className="h-4 w-3/4" />
+          <div className="mt-8 space-y-3">
+            <div className="rounded-[1.75rem] border border-border/70 bg-card/80 p-4 shadow-sm">
+              <Skeleton className="h-5 w-56" />
+              <Skeleton className="mt-2 h-4 w-72" />
+              <Skeleton className="mt-4 h-10 w-36 rounded-full" />
+              <div className="mt-5 space-y-3">
+                <Skeleton className="h-24 w-full rounded-2xl" />
+                <Skeleton className="h-24 w-full rounded-2xl" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -91,7 +101,7 @@ export default function BookCoverPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="mx-auto max-w-3xl px-4 py-10">
         {/* Back link */}
         <Link
           href={`/${authorSlug}`}
@@ -149,37 +159,12 @@ export default function BookCoverPage() {
           </Button>
         </Link>
 
-        <BookQuotesPanel
+        <BookHighlightsPanel
           authorSlug={authorSlug}
           bookSlug={bookSlug}
           bookId={book.id}
+          chapters={book.chapters}
         />
-
-        {/* Chapter list */}
-        {book.chapters.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold mb-4">Содержание</h2>
-            <div className="flex flex-col gap-2">
-              {book.chapters.map((chapter) => (
-                <Link key={chapter.id} href={`/${authorSlug}/${bookSlug}/read?chapter=${chapter.id}`}>
-                  <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <span className="text-sm font-bold text-muted-foreground w-8 text-right flex-shrink-0">
-                        {chapter.position}.
-                      </span>
-                      <span className="text-sm font-medium">{chapter.title}</span>
-                      <span className="ml-auto text-xs text-muted-foreground flex-shrink-0">
-                        {chapter.variants.length > 1
-                          ? `${chapter.variants.length} варианта`
-                          : '1 вариант'}
-                      </span>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
