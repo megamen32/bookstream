@@ -6,6 +6,7 @@ import { useReaderStore } from '@/lib/store'
 import { MessageSquare } from 'lucide-react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import TopCommentCard from './TopCommentCard'
 import type { CommentSubmitHandler, ReaderComment } from './comment-types'
 
@@ -391,6 +392,16 @@ export default function CommentsSection({
               chapterHref={authorSlug && bookSlug
                 ? `/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`
                 : '#'}
+              quoteHref={authorSlug && bookSlug && comment.chapterId
+                ? buildQuoteReadHref(authorSlug, bookSlug, {
+                    chapterId: comment.chapterId,
+                    variantType: comment.variantType || comment.quotes[0]?.variantType || 'original',
+                    paragraphId: comment.paragraphId,
+                    paragraphEndId: comment.endParagraphId,
+                    startOffset: comment.startOffset,
+                    endOffset: comment.endOffset,
+                  })
+                : undefined}
               onToggleVote={() => void handleToggleVote(comment.id)}
               voteDisabled={!readerId || togglingCommentId === comment.id}
             />

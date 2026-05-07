@@ -1,53 +1,14 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import Link from 'next/link'
 import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore } from '@/lib/store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageSquare } from 'lucide-react'
-import { ArrowUpRight } from 'lucide-react'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
-import CommentVoteButton from './CommentVoteButton'
+import CommentCard from '@/components/comments/CommentCard'
 import type { ReaderComment } from './comment-types'
-
-const VARIANT_LABELS: Record<string, string> = {
-  original: 'Оригинал',
-  clean: 'Без воды',
-  essence: 'Суть',
-}
-
-const VARIANT_CLASSES: Record<string, string> = {
-  original: 'variant-badge original',
-  clean: 'variant-badge clean',
-  essence: 'variant-badge essence',
-}
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = now - then
-
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-
-  if (minutes < 1) return 'только что'
-  if (minutes < 60) return `${minutes} мин.`
-  if (hours < 24) return `${hours} ч.`
-  if (days < 7) return `${days} д.`
-  return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-}
-
-function stringToColor(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 60%, 45%)`
-}
 
 interface CommentListProps {
   chapterId: string
@@ -203,132 +164,23 @@ export default function CommentList({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {comments.map((comment) => (
-                  <div
+                  <CommentCard
                     key={comment.id}
-                    style={{
-                      padding: '0.75rem',
-                      backgroundColor: 'var(--r-bg-secondary)',
-                      borderRadius: '0.5rem',
-                    }}
-                  >
-                    {/* Quote */}
-                    {comment.quotes && comment.quotes.length > 0 && (
-                      authorSlug && bookSlug ? (
-                        <Link
-                          href={buildQuoteReadHref(authorSlug, bookSlug, {
-                            chapterId,
-                            variantType: comment.quotes[0].variantType,
-                            paragraphId: comment.quotes[0].paragraphId,
-                            paragraphEndId: comment.quotes[0].endParagraphId,
-                          })}
-                        className="quote-bar group"
-                        style={{
-                          marginBottom: '0.5rem',
-                          fontSize: '0.75rem',
-                          textDecoration: 'none',
-                          display: 'grid',
-                          gridTemplateColumns: 'auto minmax(0, 1fr) auto',
-                          alignItems: 'flex-start',
-                        }}
-                        title="Открыть цитату в книге"
-                      >
-                          <span
-                            className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
-                            style={{ flexShrink: 0 }}
-                          >
-                            {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
-                          </span>
-                        <span
-                          style={{
-                              minWidth: 0,
-                              whiteSpace: 'normal',
-                              overflowWrap: 'anywhere',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.45,
-                          }}
-                        >
-                          {comment.quotes[0].selectedText}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[0.6875rem] font-medium text-[color:var(--r-accent)] transition-transform duration-200 group-hover:translate-x-0.5">
-                            В книгу
-                            <ArrowUpRight size={11} />
-                          </span>
-                        </Link>
-                      ) : (
-                        <div
-                        className="quote-bar"
-                        style={{
-                          marginBottom: '0.5rem',
-                          fontSize: '0.75rem',
-                          display: 'grid',
-                          gridTemplateColumns: 'auto minmax(0, 1fr)',
-                          alignItems: 'flex-start',
-                        }}
-                      >
-                          <span
-                            className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
-                            style={{ flexShrink: 0 }}
-                          >
-                            {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
-                          </span>
-                        <span
-                          style={{
-                              minWidth: 0,
-                              whiteSpace: 'normal',
-                              overflowWrap: 'anywhere',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.45,
-                          }}
-                        >
-                          {comment.quotes[0].selectedText}
-                          </span>
-                        </div>
-                      )
-                    )}
-
-                    {/* Comment body */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                      <div
-                        style={{
-                          width: '2rem',
-                          height: '2rem',
-                          borderRadius: '50%',
-                          backgroundColor: stringToColor(comment.username),
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {comment.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: stringToColor(comment.username) }}>
-                            {comment.username}
-                          </span>
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--r-text-secondary)' }}>
-                            {timeAgo(comment.createdAt)}
-                          </span>
-                          <div style={{ marginLeft: 'auto' }}>
-                            <CommentVoteButton
-                              reacted={comment.reacted}
-                              upvoteCount={comment.upvoteCount}
-                              disabled={!readerId || togglingCommentId === comment.id}
-                              onClick={() => void handleToggleVote(comment.id)}
-                              compact
-                            />
-                          </div>
-                        </div>
-                        <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.4, wordBreak: 'break-word' }}>
-                          {comment.body}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                    comment={comment}
+                    chapterHref={authorSlug && bookSlug ? `/${authorSlug}/${bookSlug}/read?chapter=${chapterId}` : undefined}
+                    quoteHref={authorSlug && bookSlug && comment.quotes[0]
+                      ? buildQuoteReadHref(authorSlug, bookSlug, {
+                          chapterId,
+                          variantType: comment.quotes[0].variantType,
+                          paragraphId: comment.quotes[0].paragraphId,
+                          paragraphEndId: comment.quotes[0].endParagraphId,
+                          startOffset: comment.startOffset,
+                          endOffset: comment.endOffset,
+                        })
+                      : undefined}
+                    onToggleVote={() => void handleToggleVote(comment.id)}
+                    voteDisabled={!readerId || togglingCommentId === comment.id}
+                  />
                 ))}
               </div>
             )}

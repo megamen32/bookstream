@@ -4,24 +4,22 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, MessageSquare, ShieldOff, ShieldCheck, Ban, Eye } from 'lucide-react'
+import { ArrowLeft, MessageSquare, ShieldOff, ShieldCheck } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import { cn } from '@/lib/utils'
+import CommentCard, { type CommentCardComment } from '@/components/comments/CommentCard'
 
-interface Comment {
-  id: string
-  bookId: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  username: string
-  body: string
-  status: string
-  createdAt: string
+type Comment = CommentCardComment
+
+interface BookRoutingData {
+  slug: string
+  author: {
+    slug: string
+  }
 }
 
 type FilterStatus = 'all' | 'active' | 'shadowbanned'
@@ -32,27 +30,17 @@ const filters: Array<{ value: FilterStatus; label: string }> = [
   { value: 'shadowbanned', label: 'Скрытые' },
 ]
 
-function formatDate(dateStr: string) {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 export default function CommentsPage() {
   const params = useParams()
   const bookId = params.bookId as string
   const { toast } = useToast()
 
   const [comments, setComments] = useState<Comment[]>([])
+  const [bookRouting, setBookRouting] = useState<BookRoutingData | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterStatus>('all')
 
-  const fetchComments = useCallback(async () => {
+  const fetchComments = useCallback(async (): Promise<void> => {
     try {
       const params = new URLSearchParams()
       params.set('bookId', bookId)
@@ -61,7 +49,7 @@ export default function CommentsPage() {
       const res = await fetch(`/api/comments/list?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setComments(data)
+        setComments(Array.isArray(data) ? data : [])
       }
     } catch (error) {
       console.error('Error fetching comments:', error)
@@ -70,12 +58,33 @@ export default function CommentsPage() {
     }
   }, [bookId, filter])
 
+  const fetchBookRouting = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch(`/api/books/${bookId}`)
+      if (!res.ok) {
+        return
+      }
+
+      const data = await res.json() as Partial<BookRoutingData>
+      if (data.slug && data.author?.slug) {
+        setBookRouting({
+          slug: data.slug,
+          author: {
+            slug: data.author.slug,
+          },
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching book routing:', error)
+    }
+  }, [bookId])
+
   useEffect(() => {
     const run = async () => {
-      await fetchComments()
+      await Promise.all([fetchComments(), fetchBookRouting()])
     }
     void run()
-  }, [fetchComments])
+  }, [fetchBookRouting, fetchComments])
 
   const handleToggleShadowban = async (comment: Comment) => {
     const newStatus = comment.status === 'shadowbanned' ? 'active' : 'shadowbanned'
@@ -186,61 +195,47 @@ export default function CommentsPage() {
               </h3>
               <div className="space-y-2">
                 {chapterComments.map((comment) => (
-                  <Card
+                  <CommentCard
                     key={comment.id}
-                    className={cn(
-                      'transition-opacity',
-                      comment.status === 'shadowbanned' && 'opacity-60'
+                    comment={comment}
+                    chapterHref={bookRouting && comment.chapterId
+                      ? `/${bookRouting.author.slug}/${bookRouting.slug}/read?chapter=${comment.chapterId}`
+                      : undefined}
+                    chapterLabel={`Глава ${comment.chapterPosition}. ${comment.chapterTitle || 'Без главы'}`}
+                    quoteHref={bookRouting && comment.chapterId && comment.quotes[0]
+                      ? buildQuoteReadHref(bookRouting.author.slug, bookRouting.slug, {
+                          chapterId: comment.chapterId,
+                          variantType: comment.quotes[0].variantType,
+                          paragraphId: comment.quotes[0].paragraphId,
+                          paragraphEndId: comment.quotes[0].endParagraphId,
+                          startOffset: comment.startOffset,
+                          endOffset: comment.endOffset,
+                        })
+                      : undefined}
+                    bodyLines={3}
+                    className="transition-opacity"
+                    action={comment.status === 'shadowbanned' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleShadowban(comment)}
+                        className="h-8 text-green-600 hover:bg-green-50 hover:text-green-700"
+                        title="Восстановить комментарий"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleShadowban(comment)}
+                        className="h-8 text-destructive hover:bg-red-50 hover:text-destructive"
+                        title="Скрыть комментарий"
+                      >
+                        <ShieldOff className="w-4 h-4" />
+                      </Button>
                     )}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="font-medium text-sm">
-                              {comment.username}
-                            </span>
-                            {comment.status === 'shadowbanned' && (
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px] bg-red-100 text-red-700"
-                              >
-                                <Ban className="w-2.5 h-2.5 mr-0.5" />
-                                Скрыт
-                              </Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(comment.createdAt)}
-                            </span>
-                          </div>
-                          <p className="text-sm text-foreground leading-relaxed">
-                            {comment.body}
-                          </p>
-                        </div>
-                        <div className="shrink-0">
-                          {comment.status === 'shadowbanned' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleShadowban(comment)}
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50 h-8"
-                            >
-                              <ShieldCheck className="w-4 h-4" />
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleShadowban(comment)}
-                              className="text-destructive hover:text-destructive hover:bg-red-50 h-8"
-                            >
-                              <ShieldOff className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  />
                 ))}
               </div>
             </div>

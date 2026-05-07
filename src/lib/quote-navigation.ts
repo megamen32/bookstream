@@ -3,6 +3,8 @@ export interface QuoteReadTarget {
   variantType: string
   paragraphId?: string | null
   paragraphEndId?: string | null
+  startOffset?: number | null
+  endOffset?: number | null
 }
 
 /**
@@ -25,6 +27,14 @@ export function buildQuoteReadHref(authorSlug: string, bookSlug: string, target:
 
   if (target.paragraphEndId && target.paragraphEndId !== target.paragraphId) {
     params.set('paragraphEnd', target.paragraphEndId)
+  }
+
+  if (Number.isFinite(target.startOffset)) {
+    params.set('startOffset', String(target.startOffset))
+  }
+
+  if (Number.isFinite(target.endOffset)) {
+    params.set('endOffset', String(target.endOffset))
   }
 
   return `/${authorSlug}/${bookSlug}/read?${params.toString()}`

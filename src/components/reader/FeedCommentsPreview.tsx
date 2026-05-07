@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { MessageSquare } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
 import { sortCommentsByTop } from '@/lib/annotations'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import TopCommentCard from './TopCommentCard'
 import type { ReaderComment } from './comment-types'
 
@@ -161,6 +162,14 @@ export default function FeedCommentsPreview({
             key={comment.id}
             comment={comment}
             chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId || chapterId}`}
+            quoteHref={buildQuoteReadHref(authorSlug, bookSlug, {
+              chapterId: comment.chapterId || chapterId,
+              variantType: comment.variantType || comment.quotes[0]?.variantType || 'original',
+              paragraphId: comment.paragraphId,
+              paragraphEndId: comment.endParagraphId,
+              startOffset: comment.startOffset,
+              endOffset: comment.endOffset,
+            })}
             onToggleVote={() => void handleToggleVote(comment.id)}
             voteDisabled={!readerId || togglingCommentId === comment.id}
           />

@@ -658,6 +658,14 @@ export default function BookHighlightsPanel({
                           key={comment.id}
                           comment={comment}
                           chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`}
+                          quoteHref={buildQuoteReadHref(authorSlug, bookSlug, {
+                            chapterId: comment.chapterId || '',
+                            variantType: comment.variantType || comment.quotes[0]?.variantType || 'original',
+                            paragraphId: comment.paragraphId,
+                            paragraphEndId: comment.endParagraphId,
+                            startOffset: comment.startOffset,
+                            endOffset: comment.endOffset,
+                          })}
                           onToggleVote={() => void handleToggleCommentVote(comment.id)}
                           voteDisabled={!readerId || togglingCommentId === comment.id}
                         />

@@ -6,6 +6,7 @@ import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import ReactionBar from './ReactionBar'
 import './BookReader.css'
+import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import {
   buildAnnotationParagraphRanges,
   splitTextByAnnotationRanges,
@@ -40,6 +41,8 @@ interface BookReaderProps {
   setContentNode?: (node: HTMLDivElement | null) => void
   highlightParagraphId?: string | null
   highlightParagraphEndId?: string | null
+  highlightStartOffset?: number | null
+  highlightEndOffset?: number | null
   prefetchNextChapter?: () => Promise<void> | void
   prefetchPrevChapter?: () => Promise<void> | void
   onCenterTap?: () => void
@@ -57,6 +60,8 @@ export default function BookReader({
   setContentNode,
   highlightParagraphId,
   highlightParagraphEndId,
+  highlightStartOffset,
+  highlightEndOffset,
   prefetchNextChapter,
   prefetchPrevChapter,
   onCenterTap,
@@ -88,6 +93,7 @@ export default function BookReader({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const quoteFocusAppliedRef = useRef(false)
+  const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const isSwitchingChapterRef = useRef(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -99,13 +105,33 @@ export default function BookReader({
     () => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])),
     [paragraphs],
   )
+  const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
+  const quoteHighlightRanges = useMemo(() => {
+    if (!highlightParagraphId || !hasPreciseQuoteHighlight) {
+      return []
+    }
+
+    return buildAnnotationParagraphRanges(
+      [{
+        kind: 'quote',
+        paragraphId: highlightParagraphId,
+        endParagraphId: highlightParagraphEndId || highlightParagraphId,
+        startOffset: Number(highlightStartOffset),
+        endOffset: Number(highlightEndOffset),
+        selectedText: null,
+        emoji: null,
+      }],
+      paragraphs,
+      paragraphIndexMap,
+    )
+  }, [hasPreciseQuoteHighlight, highlightEndOffset, highlightParagraphEndId, highlightParagraphId, highlightStartOffset, paragraphIndexMap, paragraphs])
 
   const getTextRangesForParagraph = useCallback(
     (paragraphId: string): AnnotationParagraphRange[] => {
       const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
-      return ranges.filter((range) => range.paragraphId === paragraphId)
+      return [...ranges, ...quoteHighlightRanges].filter((range) => range.paragraphId === paragraphId)
     },
-    [paragraphIndexMap, paragraphs, selectionHighlights],
+    [paragraphIndexMap, paragraphs, quoteHighlightRanges, selectionHighlights],
   )
 
   const showTemporaryHud = useCallback(() => {
@@ -370,6 +396,46 @@ export default function BookReader({
   }, [highlightParagraphEndId, highlightParagraphId, pages])
 
   useEffect(() => {
+    for (const node of quoteHighlightNodesRef.current) {
+      node.classList.remove('bookstream-quote-frame')
+    }
+
+    quoteHighlightNodesRef.current = []
+
+    if (!highlightParagraphId || !activePageRef.current || pages.length === 0 || hasPreciseQuoteHighlight) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (!activePageRef.current) {
+        return
+      }
+
+      const frames = collectParagraphRangeElements(
+        activePageRef.current,
+        highlightParagraphId,
+        highlightParagraphEndId,
+      )
+
+      for (const node of frames) {
+        node.classList.add('bookstream-quote-frame')
+      }
+
+      quoteHighlightNodesRef.current = frames
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+
+      for (const node of quoteHighlightNodesRef.current) {
+        node.classList.remove('bookstream-quote-frame')
+      }
+
+      quoteHighlightNodesRef.current = []
+    }
+  }, [currentPage, hasPreciseQuoteHighlight, highlightParagraphEndId, highlightParagraphId, pages])
+
+  useEffect(() => {
     if (totalPages > 1) {
       onProgress?.((currentPage - 1) / (totalPages - 1))
     } else {
@@ -515,7 +581,7 @@ export default function BookReader({
   }
 
   const renderParagraph = (paragraph: Paragraph) => {
-    const isQuoteTarget = highlightParagraphId === paragraph.id
+    const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
     const ranges = getTextRangesForParagraph(paragraph.id)
     const hasSelectionHighlight = ranges.length > 0
     const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)

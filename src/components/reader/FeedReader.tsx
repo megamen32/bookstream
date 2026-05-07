@@ -37,6 +37,8 @@ interface FeedReaderProps {
   showCommentsAfterChapter?: boolean
   highlightParagraphId?: string | null
   highlightParagraphEndId?: string | null
+  highlightStartOffset?: number | null
+  highlightEndOffset?: number | null
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
   onScrollToChapterHandled?: () => void
@@ -76,6 +78,8 @@ export default function FeedReader({
   showCommentsAfterChapter = true,
   highlightParagraphId,
   highlightParagraphEndId,
+  highlightStartOffset,
+  highlightEndOffset,
   restoreRequest,
   scrollToChapterId,
   onScrollToChapterHandled,
@@ -103,6 +107,40 @@ export default function FeedReader({
       ]),
     ) as Record<string, Map<string, number>>
   ), [sections])
+  const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
+  const quoteHighlightRangesByChapter = useMemo(() => {
+    if (!highlightParagraphId || !hasPreciseQuoteHighlight) {
+      return {}
+    }
+
+    const section = sections.find((entry) => entry.variant.paragraphs.some((paragraph) => paragraph.id === highlightParagraphId))
+    if (!section) {
+      return {}
+    }
+
+    const paragraphIndexMap = paragraphIndexMaps[section.chapter.id]
+    if (!paragraphIndexMap) {
+      return {}
+    }
+
+    const ranges = buildAnnotationParagraphRanges(
+      [{
+        kind: 'quote',
+        paragraphId: highlightParagraphId,
+        endParagraphId: highlightParagraphEndId || highlightParagraphId,
+        startOffset: Number(highlightStartOffset),
+        endOffset: Number(highlightEndOffset),
+        selectedText: null,
+        emoji: null,
+      }],
+      section.variant.paragraphs,
+      paragraphIndexMap,
+    )
+
+    return {
+      [section.chapter.id]: ranges,
+    }
+  }, [hasPreciseQuoteHighlight, highlightEndOffset, highlightParagraphEndId, highlightParagraphId, highlightStartOffset, paragraphIndexMaps, sections])
 
   useEffect(() => {
     if (!readerId || !bookId) return
@@ -188,9 +226,11 @@ export default function FeedReader({
         paragraphIndexMap,
       )
 
-      return ranges.filter((range) => range.paragraphId === paragraphId)
+      const quoteRanges = quoteHighlightRangesByChapter[chapterId] || []
+
+      return [...ranges, ...quoteRanges].filter((range) => range.paragraphId === paragraphId)
     },
-    [paragraphIndexMaps, sections, selectionHighlights],
+    [paragraphIndexMaps, quoteHighlightRangesByChapter, sections, selectionHighlights],
   )
 
   const resolveSectionProgress = useCallback((chapterId: string): number => {
@@ -353,17 +393,19 @@ export default function FeedReader({
       const target = findQuoteParagraphElement(scrollRef.current, highlightParagraphId)
       if (!target) return
 
-      const frames = collectParagraphRangeElements(
-        scrollRef.current,
-        highlightParagraphId,
-        highlightParagraphEndId,
-      )
+      if (!hasPreciseQuoteHighlight) {
+        const frames = collectParagraphRangeElements(
+          scrollRef.current,
+          highlightParagraphId,
+          highlightParagraphEndId,
+        )
 
-      for (const node of frames) {
-        node.classList.add('bookstream-quote-frame')
+        for (const node of frames) {
+          node.classList.add('bookstream-quote-frame')
+        }
+
+        quoteHighlightNodesRef.current = frames
       }
-
-      quoteHighlightNodesRef.current = frames
 
       scrollQuoteTargetIntoView(scrollRef.current, target)
       updateActiveChapter(false)
@@ -378,7 +420,7 @@ export default function FeedReader({
 
       quoteHighlightNodesRef.current = []
     }
-  }, [highlightParagraphEndId, highlightParagraphId, sections, updateActiveChapter])
+  }, [hasPreciseQuoteHighlight, highlightParagraphEndId, highlightParagraphId, sections, updateActiveChapter])
 
   useEffect(() => {
     if (!restoreRequest || highlightParagraphId || !scrollRef.current) return
@@ -539,7 +581,7 @@ export default function FeedReader({
                   }}
                 >
                   {section.variant.paragraphs.map((paragraph) => {
-                    const isQuoteTarget = highlightParagraphId === paragraph.id
+                    const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
                     const ranges = getTextRangesForParagraph(section.chapter.id, paragraph.id)
                     const hasSelectionHighlight = ranges.length > 0
                     const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
