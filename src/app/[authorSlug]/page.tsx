@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { BookOpen, ArrowLeft } from 'lucide-react'
 
 interface Author {
@@ -23,23 +24,6 @@ interface Book {
   createdAt: string
   author: { slug: string; name: string }
   _count: { chapters: number; comments: number }
-}
-
-const GRADIENT_COLORS = [
-  'from-emerald-500 to-teal-600',
-  'from-amber-500 to-orange-600',
-  'from-rose-500 to-pink-600',
-  'from-violet-500 to-purple-600',
-  'from-sky-500 to-cyan-600',
-  'from-lime-500 to-green-600',
-]
-
-function getGradient(slug: string): string {
-  let hash = 0
-  for (let i = 0; i < slug.length; i++) {
-    hash = slug.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return GRADIENT_COLORS[Math.abs(hash) % GRADIENT_COLORS.length]
 }
 
 export default function AuthorProfilePage() {
@@ -139,14 +123,13 @@ export default function AuthorProfilePage() {
             {books.map((book) => (
               <Link key={book.id} href={`/${author.slug}/${book.slug}`}>
                 <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer h-full">
-                  {/* Cover placeholder */}
-                  <div
-                    className={`h-40 bg-gradient-to-br ${getGradient(book.slug)} flex items-center justify-center p-4`}
-                  >
-                    <h3 className="text-white font-bold text-lg text-center leading-tight">
-                      {book.title}
-                    </h3>
-                  </div>
+                  <BookCoverArtwork
+                    title={book.title}
+                    slug={book.slug}
+                    coverUrl={book.coverUrl}
+                    className="h-40 p-4"
+                    titleClassName="text-lg"
+                  />
                   <CardContent className="p-4">
                     <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
                       {book.description || 'Описание отсутствует'}

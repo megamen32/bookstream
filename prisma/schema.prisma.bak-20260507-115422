@@ -104,17 +104,6 @@ model CommentQuote {
   createdAt    DateTime  @default(now())
   paragraph    Paragraph @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
   comment      Comment   @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  upvotes      QuoteUpvote[]
-}
-
-model QuoteUpvote {
-  id             String       @id @default(cuid())
-  commentQuoteId String
-  readerId       String
-  createdAt      DateTime     @default(now())
-  commentQuote   CommentQuote @relation(fields: [commentQuoteId], references: [id], onDelete: Cascade)
-
-  @@unique([commentQuoteId, readerId])
 }
 
 model Reaction {

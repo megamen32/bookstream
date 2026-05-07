@@ -80,3 +80,28 @@ export async function GET(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const { title } = body as { title?: string }
+
+    if (!title || !title.trim()) {
+      return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    }
+
+    const chapter = await db.chapter.update({
+      where: { id },
+      data: { title: title.trim() },
+    })
+
+    return NextResponse.json(chapter)
+  } catch (error) {
+    console.error('Error updating chapter:', error)
+    return NextResponse.json({ error: 'Ошибка обновления главы' }, { status: 500 })
+  }
+}

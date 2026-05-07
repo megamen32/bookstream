@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import BookQuotesPanel from '@/components/book/BookQuotesPanel'
+import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
 
 interface Author {
@@ -31,23 +33,6 @@ interface Book {
   author: Author
   chapters: Chapter[]
   _count: { comments: number }
-}
-
-const GRADIENT_COLORS = [
-  'from-emerald-500 to-teal-600',
-  'from-amber-500 to-orange-600',
-  'from-rose-500 to-pink-600',
-  'from-violet-500 to-purple-600',
-  'from-sky-500 to-cyan-600',
-  'from-lime-500 to-green-600',
-]
-
-function getGradient(slug: string): string {
-  let hash = 0
-  for (let i = 0; i < slug.length; i++) {
-    hash = slug.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return GRADIENT_COLORS[Math.abs(hash) % GRADIENT_COLORS.length]
 }
 
 export default function BookCoverPage() {
@@ -117,13 +102,13 @@ export default function BookCoverPage() {
         </Link>
 
         {/* Book cover */}
-        <div
-          className={`h-64 sm:h-80 rounded-2xl bg-gradient-to-br ${getGradient(book.slug)} flex items-center justify-center p-6 mb-6 shadow-lg`}
-        >
-          <h1 className="text-white font-bold text-3xl sm:text-4xl text-center leading-tight">
-            {book.title}
-          </h1>
-        </div>
+        <BookCoverArtwork
+          title={book.title}
+          slug={book.slug}
+          coverUrl={book.coverUrl}
+          className="h-64 sm:h-80 rounded-2xl p-6 mb-6 shadow-lg"
+          titleClassName="text-3xl sm:text-4xl"
+        />
 
         {/* Book info */}
         <div className="mb-8">
@@ -163,6 +148,12 @@ export default function BookCoverPage() {
             Читать
           </Button>
         </Link>
+
+        <BookQuotesPanel
+          authorSlug={authorSlug}
+          bookSlug={bookSlug}
+          bookId={book.id}
+        />
 
         {/* Chapter list */}
         {book.chapters.length > 0 && (

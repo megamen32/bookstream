@@ -238,6 +238,10 @@ export default function ReaderPage() {
         if (urlChapter) {
           targetChapterId = urlChapter
         }
+        const urlVariant = searchParams.get('variant')
+        if (urlVariant) {
+          targetVariant = urlVariant
+        }
 
         setChapterId(targetChapterId!)
         setVariantType(targetVariant)

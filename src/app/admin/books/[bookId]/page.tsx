@@ -49,6 +49,7 @@ interface BookData {
   title: string
   slug: string
   description: string | null
+  coverUrl: string | null
   isPublic: boolean
   readingModeDefault: string
   chapters: Chapter[]
@@ -78,6 +79,7 @@ export default function BookEditorPage() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null)
   const [activeVariant, setActiveVariant] = useState('original')
   const [editContent, setEditContent] = useState('')
+  const [editChapterTitle, setEditChapterTitle] = useState('')
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [editMode, setEditMode] = useState<'info' | 'content'>('content')
@@ -124,15 +126,31 @@ export default function BookEditorPage() {
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       setEditContent(currentVariant?.contentHtml ?? '')
+      setEditChapterTitle(selectedChapter?.title ?? '')
     })
     return () => window.cancelAnimationFrame(frameId)
-  }, [currentVariant])
+  }, [currentVariant, selectedChapter])
 
-  const handleSaveVariant = async () => {
+  const handleSaveChapter = async () => {
     if (!selectedChapterId) return
     setSaving(true)
     try {
-      const res = await fetch(
+      if (!editChapterTitle.trim()) {
+        throw new Error('Название главы не может быть пустым')
+      }
+
+      const chapterRes = await fetch(`/api/chapters/${selectedChapterId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editChapterTitle }),
+      })
+
+      if (!chapterRes.ok) {
+        const payload = await chapterRes.json()
+        throw new Error(payload.error || 'Не удалось сохранить название главы')
+      }
+
+      const variantRes = await fetch(
         `/api/chapters/${selectedChapterId}/variants/${activeVariant}`,
         {
           method: 'PUT',
@@ -140,12 +158,20 @@ export default function BookEditorPage() {
           body: JSON.stringify({ contentHtml: editContent }),
         }
       )
-      if (res.ok) {
-        toast({ title: 'Сохранено', description: 'Вариант главы обновлён' })
-        fetchBook()
+
+      if (!variantRes.ok) {
+        const payload = await variantRes.json()
+        throw new Error(payload.error || 'Не удалось сохранить вариант главы')
       }
-    } catch {
-      toast({ title: 'Ошибка сохранения', variant: 'destructive' })
+
+      toast({ title: 'Сохранено', description: 'Название и текст главы обновлены' })
+      fetchBook()
+    } catch (error) {
+      toast({
+        title: 'Ошибка сохранения',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
     } finally {
       setSaving(false)
     }
@@ -340,6 +366,15 @@ export default function BookEditorPage() {
             <CardContent>
               {editMode === 'info' ? (
                 <div className="space-y-4">
+                  {book.coverUrl && (
+                    <div className="overflow-hidden rounded-xl border">
+                      <img
+                        src={book.coverUrl}
+                        alt={`Обложка книги «${book.title}»`}
+                        className="h-56 w-full object-cover"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="edit-title">Название</Label>
                     <Input
@@ -377,10 +412,13 @@ export default function BookEditorPage() {
                 </div>
               ) : (
                 <div className="flex items-start justify-between gap-4">
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="font-semibold">{book.title}</h3>
                     {book.description && (
                       <p className="text-sm text-muted-foreground mt-1">{book.description}</p>
+                    )}
+                    {book.coverUrl && (
+                      <p className="mt-2 text-xs text-emerald-700">Обложка прикреплена</p>
                     )}
                   </div>
                   <Badge variant={book.isPublic ? 'default' : 'secondary'} className="shrink-0">
@@ -416,8 +454,8 @@ export default function BookEditorPage() {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={handleSaveVariant}
-                      disabled={saving || !editContent}
+                      onClick={handleSaveChapter}
+                      disabled={saving || !editContent || !editChapterTitle.trim()}
                       className="bg-amber-600 hover:bg-amber-700 text-white"
                     >
                       {saving ? (
@@ -431,6 +469,15 @@ export default function BookEditorPage() {
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="mb-4 space-y-2">
+                  <Label htmlFor="chapter-title">Название главы</Label>
+                  <Input
+                    id="chapter-title"
+                    value={editChapterTitle}
+                    onChange={(e) => setEditChapterTitle(e.target.value)}
+                    placeholder="Название главы..."
+                  />
+                </div>
                 <Tabs value={activeVariant} onValueChange={setActiveVariant}>
                   <TabsList className="mb-4">
                     {variantTabs.map((tab) => {
