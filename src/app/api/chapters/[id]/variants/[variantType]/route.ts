@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
 import { db } from '@/lib/db'
 
 export async function GET(
@@ -45,6 +46,8 @@ export async function PUT(
         editedByAuthor: true,
       },
     })
+
+    await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
 
     return NextResponse.json(variant)
   } catch (error) {

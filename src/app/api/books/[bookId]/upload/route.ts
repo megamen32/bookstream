@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
 import {
   persistImportedBookCover,
   readImportedBookFile,
@@ -46,13 +47,15 @@ export async function POST(
         },
       })
 
-      await db.chapterVariant.create({
+      const variant = await db.chapterVariant.create({
         data: {
           chapterId: chapter.id,
           variantType: 'original',
           contentHtml: chapterParts[index].content,
         },
       })
+
+      await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
     }
 
     const coverUrl = await persistImportedBookCover({

@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ensureVariantParagraphs, syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
 import { db } from '@/lib/db'
-import ZAI from 'z-ai-web-dev-sdk'
+import { createChatCompletion } from '@/lib/llm'
 
 async function callLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-  const zai = await ZAI.create()
-  const completion = await zai.chat.completions.create({
+  return createChatCompletion({
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.3,
-    max_tokens: 4000,
+    maxTokens: 4000,
   })
-  return completion.choices[0]?.message?.content || ''
 }
 
 async function upsertVariant(
@@ -37,22 +36,9 @@ async function upsertVariant(
     create: { chapterId, variantType, contentHtml },
   })
 
-  await db.paragraph.deleteMany({
-    where: { chapterVariantId: variant.id },
-  })
+  const syncedParagraphs = await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    await db.paragraph.create({
-      data: {
-        chapterVariantId: variant.id,
-        stableKey: `p-${i}`,
-        position: i,
-        text: paragraphs[i],
-      },
-    })
-  }
-
-  return { variantId: variant.id, paragraphCount: paragraphs.length }
+  return { variantId: variant.id, paragraphCount: syncedParagraphs.length }
 }
 
 /**
@@ -91,7 +77,8 @@ export async function POST(
       )
     }
 
-    const plainText = original.paragraphs.map((p) => p.text).join('\n\n')
+    const originalParagraphs = await ensureVariantParagraphs(db, original.id, original.contentHtml)
+    const plainText = originalParagraphs.map((paragraph) => paragraph.text).join('\n\n')
     const wordCount = plainText.split(/\s+/).length
 
     if (plainText.length < 50) {

@@ -33,6 +33,7 @@ import {
   Underline as UnderlineIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { EditorToolbar } from './EditorToolbar'
 import { sanitizeEditorHtml, textToParagraphHtml } from './editor-utils'
@@ -42,10 +43,13 @@ import type { BookTextEditorProps } from './editor-types'
 
 export function BookTextEditor({
   value,
+  title,
   placeholder = 'Начните писать…',
+  titlePlaceholder = 'Название главы',
   saving,
   saveStatus,
   onChange,
+  onTitleChange,
   onSave,
   onImageUpload,
   className,
@@ -351,6 +355,26 @@ export function BookTextEditor({
       </FloatingMenu>
 
       <div className="mx-auto w-full max-w-[780px] px-5 py-8 md:px-10 md:py-12">
+        {onTitleChange ? (
+          <Input
+            value={title ?? ''}
+            onChange={(event) => onTitleChange(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                event.preventDefault()
+                void onSave?.()
+              }
+            }}
+            placeholder={titlePlaceholder}
+            aria-label={titlePlaceholder}
+            className={cn(
+              'mb-6 h-auto border-0 bg-transparent px-0 py-0 text-4xl font-black tracking-[-0.06em]',
+              'text-foreground shadow-none md:text-5xl',
+              'placeholder:text-muted-foreground/55 focus-visible:border-0 focus-visible:ring-0'
+            )}
+          />
+        ) : null}
+
         <EditorContent editor={editor} />
       </div>
 

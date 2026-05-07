@@ -153,6 +153,11 @@ export default function BookEditorPage() {
     setSaveStatus('dirty')
   }
 
+  const handleChapterTitleChange = (title: string): void => {
+    setEditChapterTitle(title)
+    setSaveStatus('dirty')
+  }
+
   const handleSaveChapter = async (): Promise<void> => {
     if (!selectedChapterId) {
       return
@@ -529,17 +534,6 @@ export default function BookEditorPage() {
               </CardHeader>
 
               <CardContent>
-                <div className="mb-5 space-y-2">
-                  <Label htmlFor="chapter-title">Название главы</Label>
-                  <Input
-                    id="chapter-title"
-                    value={editChapterTitle}
-                    onChange={(event) => setEditChapterTitle(event.target.value)}
-                    placeholder="Название главы..."
-                    className="rounded-2xl"
-                  />
-                </div>
-
                 <Tabs value={activeVariant} onValueChange={setActiveVariant}>
                   <TabsList className="mb-4 rounded-full">
                     {variantTabs.map((tab) => {
@@ -564,7 +558,10 @@ export default function BookEditorPage() {
                     <TabsContent key={tab.value} value={tab.value} className="mt-0">
                       <BookTextEditor
                         value={activeVariant === tab.value ? editContent : ''}
+                        title={editChapterTitle}
                         onChange={handleEditorChange}
+                        onTitleChange={handleChapterTitleChange}
+                        titlePlaceholder="Название главы"
                         placeholder={activeTab?.placeholder || tab.placeholder}
                         onSave={handleSaveChapter}
                         saving={saving}

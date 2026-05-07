@@ -57,3 +57,4 @@ workspace-*.tar
 download/*.tar.gz
 # Skills directory
 /skills/
+bookstream-tiptap-editor-v2.zip

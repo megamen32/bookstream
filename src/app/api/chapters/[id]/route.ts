@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ensureVariantParagraphs } from '@/lib/chapter-variants'
 import { db } from '@/lib/db'
 
 export async function GET(
@@ -57,6 +58,16 @@ export async function GET(
       },
     })
 
+    if (!variantWithParagraphs) {
+      return NextResponse.json({ error: 'Variant not found' }, { status: 404 })
+    }
+
+    const paragraphs = await ensureVariantParagraphs(
+      db,
+      variantWithParagraphs.id,
+      variantWithParagraphs.contentHtml
+    )
+
     // Fetch all variant presets for UI (they define available generation options)
     const presets = await db.variantPreset.findMany({
       orderBy: { position: 'asc' },
@@ -66,10 +77,10 @@ export async function GET(
     return NextResponse.json({
       chapter,
       variant: {
-        id: variantWithParagraphs!.id,
-        variantType: variantWithParagraphs!.variantType,
-        contentHtml: variantWithParagraphs!.contentHtml,
-        paragraphs: variantWithParagraphs!.paragraphs,
+        id: variantWithParagraphs.id,
+        variantType: variantWithParagraphs.variantType,
+        contentHtml: variantWithParagraphs.contentHtml,
+        paragraphs,
       },
       variantPresets: presetMap,
       prevChapter: chapter.book.chapters.find(c => c.position === chapter.position - 1) || null,

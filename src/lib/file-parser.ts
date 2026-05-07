@@ -217,7 +217,7 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
 
     if (divMatches.length > 0) {
       for (let i = 0; i < divMatches.length; i++) {
-        const text = divMatches[i][1].trim();
+        const text = htmlBlockToText(divMatches[i][1]);
         if (text) {
           paragraphs.push({
             text,
@@ -229,7 +229,7 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
       // Split by double <br> or treat as single paragraph
       const parts = html.split(/<br\s*\/?>\s*<br\s*\/?>/i);
       for (let i = 0; i < parts.length; i++) {
-        const text = parts[i].trim();
+        const text = htmlBlockToText(parts[i]);
         if (text) {
           paragraphs.push({
             text,
@@ -240,9 +240,10 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
     }
 
     if (paragraphs.length === 0 && html.trim()) {
+      const text = htmlBlockToText(html);
       paragraphs.push({
-        text: html.trim(),
-        stableKey: generateStableKey(0, html.trim()),
+        text,
+        stableKey: generateStableKey(0, text),
       });
     }
 
@@ -250,7 +251,7 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
   }
 
   for (let i = 0; i < matches.length; i++) {
-    const text = matches[i][1].trim();
+    const text = htmlBlockToText(matches[i][1]);
     if (text) {
       paragraphs.push({
         text,
@@ -282,6 +283,29 @@ function simpleHash(str: string): string {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, '').trim();
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+function htmlBlockToText(html: string): string {
+  const withLineBreaks = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|blockquote|h[1-6])>/gi, '\n');
+
+  return collapseWhitespace(decodeHtmlEntities(stripHtml(withLineBreaks)));
 }
 
 function escapeHtml(str: string): string {

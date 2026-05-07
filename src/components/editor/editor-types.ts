@@ -4,10 +4,13 @@ export type EditorSaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 export interface BookTextEditorProps {
   value: string
+  title?: string
   placeholder?: string
+  titlePlaceholder?: string
   saving?: boolean
   saveStatus?: EditorSaveStatus
   onChange: (html: string) => void
+  onTitleChange?: (title: string) => void
   onSave?: () => void | Promise<void>
   onImageUpload?: (file: File) => Promise<string>
   className?: string
