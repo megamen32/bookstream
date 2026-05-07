@@ -15,6 +15,11 @@ import {
   type AnnotationParagraphRange,
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
+import {
+  getBookReaderPageStorageKey,
+  resolveBookReaderPage,
+  setBookReaderPage,
+} from '@/lib/book-reader-progress'
 
 interface Paragraph {
   id: string
@@ -35,7 +40,6 @@ interface BookReaderProps {
   onPrevChapter: () => void
   chapterTitle: string
   onSendComment: CommentSubmitHandler
-  commentCount: number
   onProgress?: (percent: number) => void
   bookmarkedKey?: string | null
   onToggleBookmark?: (stableKey: string) => void
@@ -58,7 +62,6 @@ export default function BookReader({
   onPrevChapter,
   chapterTitle,
   onSendComment,
-  commentCount,
   onProgress,
   setContentNode,
   authorSlug,
@@ -351,13 +354,9 @@ export default function BookReader({
 
     setPages(result.length > 0 ? result : [[]])
 
-    const savedPage = localStorage.getItem(`bookstream-page-${chapterId}`)
-    const page = savedPage ? parseInt(savedPage, 10) : 1
+    const savedPage = localStorage.getItem(getBookReaderPageStorageKey(chapterId))
 
-    setCurrentPage(() => {
-      if (Number.isNaN(page)) return 1
-      return Math.max(1, Math.min(page, Math.max(1, result.length)))
-    })
+    setCurrentPage(() => resolveBookReaderPage(savedPage, result.length))
   }, [paragraphs, pageSize.width, pageSize.height, fontSize, lineHeight, chapterId, chapterTitle])
 
   useEffect(() => {
@@ -391,7 +390,7 @@ export default function BookReader({
     (page: number) => {
       if (!bookId || !chapterId || !readerId) return
 
-      localStorage.setItem(`bookstream-page-${chapterId}`, String(page))
+      setBookReaderPage(localStorage, chapterId, page)
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
@@ -728,12 +727,6 @@ export default function BookReader({
           title="Комментарии"
         >
           <MessageSquare size={20} strokeWidth={2.2} />
-
-          {commentCount > 0 && (
-            <span className="book-reader-comment-badge">
-              {commentCount > 99 ? '99+' : commentCount}
-            </span>
-          )}
         </button>
       )}
 

@@ -27,6 +27,7 @@ import SearchPanel from '@/components/reader/SearchPanel'
 import CommentsSection from '@/components/reader/CommentsSection'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import type { FeedSectionData, ReaderChapterListItem } from '@/components/reader/feed-types'
+import { setBookReaderPage } from '@/lib/book-reader-progress'
 
 interface BookData {
   id: string
@@ -73,18 +74,6 @@ function loadBookmarks(): Record<string, string> {
 function saveBookmarks(bookmarks: Record<string, string>): void {
   if (typeof window === 'undefined') return
   localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks))
-}
-
-function countVisibleComments(
-  comments: ReaderComment[],
-  readerId: string,
-  showCommunityAnnotations: boolean,
-): number {
-  if (showCommunityAnnotations) {
-    return comments.length
-  }
-
-  return comments.filter((comment) => comment.readerId === readerId).length
 }
 
 function mergeSections(current: FeedSectionData[], incoming: FeedSectionData[]): FeedSectionData[] {
@@ -146,7 +135,6 @@ export default function ReaderPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [showDesktopComments, setShowDesktopComments] = useState(false)
-  const [commentCount, setCommentCount] = useState(0)
   const [scrollProgress, setScrollProgress] = useState(0)
   const [bookmarksByChapter, setBookmarksByChapter] = useState<Record<string, string>>({})
   const [quoteTargetParagraphId, setQuoteTargetParagraphId] = useState<string | null>(null)
@@ -247,28 +235,6 @@ export default function ReaderPage() {
       }
     }
   }, [theme, accentTheme])
-
-  const loadChapterCommentCount = useCallback(async (targetChapterId: string): Promise<void> => {
-    if (!targetChapterId || !readerId) {
-      setCommentCount(0)
-      return
-    }
-
-    try {
-      const params = new URLSearchParams()
-      if (readerId) {
-        params.set('readerId', readerId)
-      }
-      const commentsRes = await fetch(`/api/chapters/${targetChapterId}/comments?${params.toString()}`)
-      if (!commentsRes.ok) return
-
-      const commentsData = await commentsRes.json() as { comments?: ReaderComment[] }
-      const loadedComments = Array.isArray(commentsData.comments) ? commentsData.comments : []
-      setCommentCount(countVisibleComments(loadedComments, readerId, showCommunityAnnotations))
-    } catch (error) {
-      console.error('Failed to fetch chapter comments:', error)
-    }
-  }, [readerId, showCommunityAnnotations])
 
   const fetchFeedWindow = useCallback(async (
     targetBookId: string,
@@ -619,7 +585,6 @@ export default function ReaderPage() {
           }
         }
 
-        void loadChapterCommentCount(targetChapterId)
       } catch (error) {
         console.error('Init failed:', error)
       } finally {
@@ -636,7 +601,6 @@ export default function ReaderPage() {
     cacheBookSections,
     fetchFeedWindow,
     fetchSingleChapter,
-    loadChapterCommentCount,
     readerId,
     setBookId,
     setChapterId,
@@ -742,15 +706,13 @@ export default function ReaderPage() {
       setQuoteTargetParagraphEndId(null)
     }
 
-    void loadChapterCommentCount(nextChapterId)
-
     if (activeChapterRef.current !== nextChapterId) {
       const activeFeedSection = feedSections.find((section) => section.chapter.id === nextChapterId)
       if (activeFeedSection) {
         setAvailableVariants(activeFeedSection.chapter.variants.map((variant) => variant.variantType))
       }
     }
-  }, [feedSections, loadChapterCommentCount, saveReadingProgress, setChapterId])
+  }, [feedSections, saveReadingProgress, setChapterId])
 
   const loadMoreNext = useCallback(async (): Promise<void> => {
     if (!bookId || !feedHasMoreNext || feedLoadingNext || feedSections.length === 0) return
@@ -855,7 +817,6 @@ export default function ReaderPage() {
       setActiveChapterId(newChapterId)
       setChapterId(newChapterId)
       setScrollProgress(0)
-      void loadChapterCommentCount(newChapterId)
       await replaceFeedSections(newChapterId, variantType, 1, 1, 0, true)
     } else {
       const section = await fetchSingleChapter(newChapterId, variantType)
@@ -865,23 +826,26 @@ export default function ReaderPage() {
         setActiveChapterId(newChapterId)
         setChapterId(newChapterId)
         setScrollProgress(0)
-        void loadChapterCommentCount(newChapterId)
       }
     }
-  }, [fetchSingleChapter, loadChapterCommentCount, readingMode, replaceFeedSections, setChapterId, variantType])
+  }, [fetchSingleChapter, readingMode, replaceFeedSections, setChapterId, variantType])
 
   const goToNextChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
     const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
     if (currentIndex < 0 || currentIndex >= bookData.chapters.length - 1) return
-    void handleChapterChange(bookData.chapters[currentIndex + 1].id)
+    const nextChapterId = bookData.chapters[currentIndex + 1].id
+    setBookReaderPage(localStorage, nextChapterId, 1)
+    void handleChapterChange(nextChapterId)
   }, [activeChapterId, bookData, handleChapterChange])
 
   const goToPrevChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
     const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
     if (currentIndex <= 0) return
-    void handleChapterChange(bookData.chapters[currentIndex - 1].id)
+    const prevChapterId = bookData.chapters[currentIndex - 1].id
+    setBookReaderPage(localStorage, prevChapterId, 1)
+    void handleChapterChange(prevChapterId)
   }, [activeChapterId, bookData, handleChapterChange])
 
   const buildChapterHref = useCallback((targetChapterId: string): string => {
@@ -978,13 +942,12 @@ export default function ReaderPage() {
             }
           : section
       )))
-      void loadChapterCommentCount(activeChapterId)
       return data.comment
     } catch (error) {
       console.error('Failed to send comment:', error)
       return null
     }
-  }, [activeChapterId, bookId, loadChapterCommentCount, readerId, replyingTo, setReplyingTo, username])
+  }, [activeChapterId, bookId, readerId, replyingTo, setReplyingTo, username])
 
   const handleToggleBookmark = useCallback((targetChapterId: string, stableKey: string) => {
     setBookmarksByChapter((current) => {
@@ -1155,27 +1118,6 @@ export default function ReaderPage() {
           title="Панель комментариев"
         >
           <MessageSquare size={20} />
-          {commentCount > 0 && (
-            <span
-              style={{
-                position: 'absolute',
-                top: '0.125rem',
-                right: '0.125rem',
-                backgroundColor: 'var(--r-accent)',
-                color: 'var(--r-accent-foreground)',
-                fontSize: '0.625rem',
-                fontWeight: 700,
-                width: '1.125rem',
-                height: '1.125rem',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {commentCount > 99 ? '99+' : commentCount}
-            </span>
-          )}
         </button>
 
         <Link
@@ -1245,7 +1187,6 @@ export default function ReaderPage() {
               prefetchPrevChapter={prefetchPrevChapter}
               chapterTitle={bookModeSection.chapter.title}
               onSendComment={handleSendComment}
-              commentCount={commentCount}
               onProgress={(progress) => {
                 setScrollProgress(progress)
                 if (activeChapterId) {

@@ -53,7 +53,6 @@ interface CommentListProps {
   chapterId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  commentCount?: number
   authorSlug?: string
   bookSlug?: string
 }
@@ -62,7 +61,6 @@ export default function CommentList({
   chapterId,
   open,
   onOpenChange,
-  commentCount,
   authorSlug,
   bookSlug,
 }: CommentListProps) {
@@ -172,27 +170,6 @@ export default function CommentList({
         title="Комментарии"
       >
         <MessageSquare size={20} />
-        {commentCount !== undefined && commentCount > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: '0.125rem',
-              right: '0.125rem',
-              backgroundColor: 'var(--r-accent)',
-              color: 'var(--r-accent-foreground)',
-              fontSize: '0.625rem',
-              fontWeight: 700,
-              width: '1.125rem',
-              height: '1.125rem',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {commentCount > 99 ? '99+' : commentCount}
-          </span>
-        )}
       </button>
 
       <Sheet open={open} onOpenChange={onOpenChange}>
