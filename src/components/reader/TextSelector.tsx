@@ -6,10 +6,24 @@ import { useReaderStore } from '@/lib/store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
+import type { AnnotationKind } from '@/lib/annotations'
+
+export interface SelectionAnnotationRange {
+  id?: string
+  kind: AnnotationKind
+  paragraphId: string
+  endParagraphId: string
+  startOffset: number
+  endOffset: number
+  selectedText: string
+  emoji?: string | null
+  body?: string | null
+}
 
 interface TextSelectorProps {
   containerRef: React.RefObject<HTMLDivElement | null>
   variantId: string
+  onSelectionAnnotation?: (range: SelectionAnnotationRange, active: boolean) => void
 }
 
 interface ToolbarPosition {
@@ -85,7 +99,7 @@ function ToolbarButton({ label, onClick, children }: ToolbarButtonProps): React.
   )
 }
 
-export default function TextSelector({ containerRef, variantId }: TextSelectorProps) {
+export default function TextSelector({ containerRef, variantId, onSelectionAnnotation }: TextSelectorProps) {
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null)
   const [copied, setCopied] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
@@ -93,7 +107,7 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
   const [reactionBurst, setReactionBurst] = useState<ReactionBurst | null>(null)
   const activeSelectionNodesRef = useRef<HTMLElement[]>([])
   const preserveSelectionFrameRef = useRef(false)
-  const { setReplyingTo, readerId, bookId } = useReaderStore()
+  const { setReplyingTo, readerId, bookId, chapterId, username, variantType } = useReaderStore()
 
   const clearSelectionHighlight = useCallback(() => {
     for (const node of activeSelectionNodesRef.current) {
@@ -245,9 +259,12 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
     if (!toolbar) return
     setReplyingTo({
       text: toolbar.selectedText,
-      variantType: useReaderStore.getState().variantType,
+      variantType,
       paragraphId: toolbar.paragraphId,
       endParagraphId: toolbar.endParagraphId,
+      startOffset: toolbar.startOffset,
+      endOffset: toolbar.endOffset,
+      selectedText: toolbar.selectedText,
     })
     preserveSelectionFrameRef.current = true
     setToolbar(null)
@@ -279,17 +296,22 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
     }
   }
 
-  const handleReact = async (emoji: string) => {
-    if (!toolbar || !readerId || !bookId) return
+  const handleAnnotationToggle = async (kind: AnnotationKind, emoji?: string | null) => {
+    if (!toolbar || !readerId || !bookId || !chapterId || !username) return
+
     try {
-      const res = await fetch('/api/comments/reactions', {
+      const res = await fetch('/api/annotations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paragraphId: toolbar.paragraphId,
+          kind,
+          bookId,
+          chapterId,
           chapterVariantId: variantId,
+          variantType,
           readerId,
-          emoji,
+          username,
+          emoji: emoji || null,
           selection: {
             paragraphId: toolbar.paragraphId,
             endParagraphId: toolbar.endParagraphId,
@@ -299,27 +321,80 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
           },
         }),
       })
-      if (res.ok) {
-        preserveSelectionFrameRef.current = true
+
+      if (!res.ok) {
+        return
+      }
+
+      const payload = (await res.json()) as {
+        action?: string
+        annotation?: {
+          id: string
+          kind: AnnotationKind
+          emoji?: string | null
+          paragraphId: string
+          endParagraphId: string | null
+          startOffset: number
+          endOffset: number
+          selectedText: string | null
+          body?: string | null
+        }
+      }
+
+      const isActive = payload.action !== 'removed'
+      preserveSelectionFrameRef.current = isActive
+
+      if (kind === 'reaction' && isActive && emoji) {
         setReactionBurst({
           emoji,
           top: Math.max(8, toolbar.top - 56),
           left: toolbar.left + TOOLBAR_WIDTH / 2 - 16,
         })
-        window.dispatchEvent(
-          new CustomEvent('bookstream:reaction-updated', {
-            detail: {
-              paragraphId: toolbar.paragraphId,
-              endParagraphId: toolbar.endParagraphId,
-              chapterVariantId: variantId,
-            },
-          }),
-        )
-        setToolbar(null)
-        window.getSelection()?.removeAllRanges()
       }
+
+      onSelectionAnnotation?.(
+        {
+          id: payload.annotation?.id,
+          kind,
+          paragraphId: toolbar.paragraphId,
+          endParagraphId: toolbar.endParagraphId,
+          startOffset: toolbar.startOffset,
+          endOffset: toolbar.endOffset,
+          selectedText: toolbar.selectedText,
+          emoji: emoji || payload.annotation?.emoji || null,
+          body: payload.annotation?.body || null,
+        },
+        isActive,
+      )
+
+      if (!isActive) {
+        setActiveParagraphIds([])
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('bookstream:annotation-updated', {
+          detail: {
+            kind,
+            paragraphId: toolbar.paragraphId,
+            endParagraphId: toolbar.endParagraphId,
+            chapterVariantId: variantId,
+          },
+        }),
+      )
+      window.dispatchEvent(
+        new CustomEvent('bookstream:reaction-updated', {
+          detail: {
+            paragraphId: toolbar.paragraphId,
+            endParagraphId: toolbar.endParagraphId,
+            chapterVariantId: variantId,
+          },
+        }),
+      )
+
+      setToolbar(null)
+      window.getSelection()?.removeAllRanges()
     } catch (e) {
-      console.error('Failed to react:', e)
+      console.error('Failed to create annotation:', e)
     }
     setEmojiPickerOpen(false)
   }
@@ -353,10 +428,10 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
           <ToolbarButton label={copied ? 'Скопировано' : 'Копировать'} onClick={handleCopy}>
             <Copy size={16} />
           </ToolbarButton>
-          <ToolbarButton label="В цитаты" onClick={() => handleReact('⭐')}>
+          <ToolbarButton label="В цитаты" onClick={() => void handleAnnotationToggle('quote')}>
             <Quote size={16} />
           </ToolbarButton>
-          <ToolbarButton label="Огонь" onClick={() => handleReact('🔥')}>
+          <ToolbarButton label="Огонь" onClick={() => void handleAnnotationToggle('reaction', '🔥')}>
             <Flame size={16} />
           </ToolbarButton>
           <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
@@ -393,7 +468,7 @@ export default function TextSelector({ containerRef, variantId }: TextSelectorPr
                             aria-label={`Поставить реакцию ${emoji}`}
                             title={emoji}
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => void handleReact(emoji)}
+                            onClick={() => void handleAnnotationToggle('reaction', emoji)}
                           >
                             {emoji}
                           </button>

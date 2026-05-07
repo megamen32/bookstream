@@ -31,6 +31,7 @@ model Book {
   author             Author            @relation(fields: [authorId], references: [id])
   chapters           Chapter[]
   comments           Comment[]
+  annotations        Annotation[]
   readingProgress    ReadingProgress[]
 
   @@unique([authorId, slug])
@@ -46,6 +47,7 @@ model Chapter {
   book      Book             @relation(fields: [bookId], references: [id])
   variants  ChapterVariant[]
   comments  Comment[]
+  annotations Annotation[]
 
   @@unique([bookId, position])
 }
@@ -61,6 +63,7 @@ model ChapterVariant {
   chapter        Chapter     @relation(fields: [chapterId], references: [id])
   paragraphs     Paragraph[]
   reactions      Reaction[]
+  annotations    Annotation[]
 
   @@unique([chapterId, variantType])
 }
@@ -126,11 +129,53 @@ model Reaction {
   emoji            String
   selectedText     String?
   endParagraphId   String?
+  startOffset      Int            @default(0)
+  endOffset        Int            @default(0)
   createdAt        DateTime       @default(now())
   chapterVariant   ChapterVariant @relation(fields: [chapterVariantId], references: [id])
   paragraph        Paragraph      @relation(fields: [paragraphId], references: [id])
 
   @@unique([paragraphId, readerId, emoji])
+}
+
+model Annotation {
+  id               String           @id @default(cuid())
+  bookId           String
+  chapterId        String
+  chapterVariantId String?
+  variantType      String           @default("original")
+  readerId         String
+  username         String
+  kind             String
+  status           String           @default("active")
+  body             String?
+  emoji            String?
+  selectedText     String?
+  paragraphId      String?
+  endParagraphId   String?
+  startOffset      Int              @default(0)
+  endOffset        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  book             Book             @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter          Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapterVariant   ChapterVariant?  @relation(fields: [chapterVariantId], references: [id], onDelete: Cascade)
+  votes            AnnotationVote[]
+
+  @@index([bookId, kind])
+  @@index([chapterId, kind])
+  @@index([readerId, kind])
+  @@index([chapterVariantId])
+}
+
+model AnnotationVote {
+  id            String      @id @default(cuid())
+  annotationId  String
+  readerId      String
+  createdAt     DateTime    @default(now())
+  annotation    Annotation  @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+
+  @@unique([annotationId, readerId])
 }
 
 model Reader {

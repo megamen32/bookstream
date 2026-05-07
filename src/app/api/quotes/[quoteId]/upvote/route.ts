@@ -18,7 +18,51 @@ export async function POST(
       return NextResponse.json({ error: 'readerId is required' }, { status: 400 })
     }
 
-    const existing = await db.quoteUpvote.findUnique({
+    const annotation = await db.annotation.findUnique({
+      where: { id: quoteId },
+      select: {
+        id: true,
+        kind: true,
+      },
+    })
+
+    if (annotation?.kind === 'quote') {
+      const existing = await db.annotationVote.findUnique({
+        where: {
+          annotationId_readerId: {
+            annotationId: quoteId,
+            readerId,
+          },
+        },
+      })
+
+      if (existing) {
+        await db.annotationVote.delete({
+          where: { id: existing.id },
+        })
+      } else {
+        await db.annotationVote.create({
+          data: {
+            annotationId: quoteId,
+            readerId,
+          },
+        })
+      }
+
+      const upvoteCount = await db.annotationVote.count({
+        where: {
+          annotationId: quoteId,
+        },
+      })
+
+      return NextResponse.json({
+        action: existing ? 'removed' : 'added',
+        upvoteCount,
+        reacted: !existing,
+      })
+    }
+
+    const existingLegacy = await db.quoteUpvote.findUnique({
       where: {
         commentQuoteId_readerId: {
           commentQuoteId: quoteId,
@@ -27,9 +71,9 @@ export async function POST(
       },
     })
 
-    if (existing) {
+    if (existingLegacy) {
       await db.quoteUpvote.delete({
-        where: { id: existing.id },
+        where: { id: existingLegacy.id },
       })
     } else {
       await db.quoteUpvote.create({
@@ -47,9 +91,9 @@ export async function POST(
     })
 
     return NextResponse.json({
-      action: existing ? 'removed' : 'added',
+      action: existingLegacy ? 'removed' : 'added',
       upvoteCount,
-      reacted: !existing,
+      reacted: !existingLegacy,
     })
   } catch (error) {
     console.error('Error toggling quote upvote:', error)

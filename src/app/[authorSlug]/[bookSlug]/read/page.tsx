@@ -340,7 +340,9 @@ export default function ReaderPage() {
             variantType: replyingTo.variantType,
             paragraphId: replyingTo.paragraphId,
             endParagraphId: replyingTo.endParagraphId,
-            selectedText: replyingTo.text,
+            selectedText: replyingTo.selectedText || replyingTo.text,
+            startOffset: replyingTo.startOffset || 0,
+            endOffset: replyingTo.endOffset || 0,
           }]
         : undefined
       const res = await fetch(`/api/chapters/${chapterId}/comments`, {

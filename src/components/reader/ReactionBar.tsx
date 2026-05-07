@@ -8,6 +8,7 @@ const DEFAULT_EMOJIS = ['👍', '🔥', '💡', '😂', '⭐'] as const
 interface ReactionBarProps {
   paragraphId: string
   variantId: string
+  onUserReactionChange?: (paragraphId: string, hasReaction: boolean, emoji: string | null) => void
 }
 
 interface ReactionEntry {
@@ -23,8 +24,12 @@ function createEmptyReactions(): ReactionsMap {
   ) as ReactionsMap
 }
 
-export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps) {
+export default function ReactionBar({ paragraphId, variantId, onUserReactionChange }: ReactionBarProps) {
   const readerId = useReaderStore((s) => s.readerId)
+  const username = useReaderStore((s) => s.username)
+  const bookId = useReaderStore((s) => s.bookId)
+  const chapterId = useReaderStore((s) => s.chapterId)
+  const variantType = useReaderStore((s) => s.variantType)
   const [reactions, setReactions] = useState<ReactionsMap>(createEmptyReactions())
   const [toggling, setToggling] = useState<string | null>(null)
   const [pulsingEmoji, setPulsingEmoji] = useState<string | null>(null)
@@ -125,6 +130,10 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
             chapterVariantId: variantId,
             readerId,
             emoji,
+            username,
+            bookId,
+            chapterId,
+            variantType,
           }),
         })
 
@@ -169,6 +178,11 @@ export default function ReactionBar({ paragraphId, variantId }: ReactionBarProps
 
   // Don't render if no reactions and still loading (avoid flash)
   const displayedEmojis = Array.from(new Set([...DEFAULT_EMOJIS, ...Object.keys(reactions)]))
+
+  useEffect(() => {
+    const activeEmoji = displayedEmojis.find((emoji) => reactions[emoji]?.reacted) || null
+    onUserReactionChange?.(paragraphId, Boolean(activeEmoji), activeEmoji)
+  }, [displayedEmojis, onUserReactionChange, paragraphId, reactions])
 
   return (
     <div

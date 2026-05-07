@@ -1,12 +1,15 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
+import type { SelectionAnnotationRange } from './TextSelector'
 import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
+import { splitTextByRanges } from '@/lib/text-highlighting'
+import { buildAnnotationParagraphRanges, type UnifiedAnnotationItem } from '@/lib/annotations'
 
 interface Paragraph {
   id: string
@@ -47,6 +50,14 @@ interface FeedReaderProps {
   highlightParagraphEndId?: string | null
 }
 
+interface ParagraphTextRange {
+  start: number
+  end: number
+  kind: 'reaction' | 'quote' | 'comment'
+  badgeLabel: string
+  emoji: string | null
+}
+
 export default function FeedReader({
   paragraphs,
   variantId,
@@ -69,12 +80,60 @@ export default function FeedReader({
   const restoredRef = useRef(false)
   const quoteFocusAppliedRef = useRef(false)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
+  const [selectionHighlights, setSelectionHighlights] = useState<SelectionAnnotationRange[]>([])
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showNextLoader, setShowNextLoader] = useState(false)
+  const paragraphIndexMap = useMemo(() => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])), [paragraphs])
 
   useEffect(() => {
     quoteFocusAppliedRef.current = false
   }, [highlightParagraphId, highlightParagraphEndId])
+
+  useEffect(() => {
+    if (!readerId || !bookId || !chapterId) return
+
+    const controller = new AbortController()
+
+    const loadSelectionHighlights = async (): Promise<void> => {
+      try {
+        const params = new URLSearchParams({
+          readerId,
+          bookId,
+        })
+        const response = await fetch(`/api/annotations?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) return
+
+        const data = await response.json() as {
+          annotations?: UnifiedAnnotationItem[]
+        }
+
+        const loaded = (Array.isArray(data.annotations) ? data.annotations : [])
+          .filter((annotation) => annotation.chapterId === chapterId)
+          .map<SelectionAnnotationRange>((annotation) => ({
+            id: annotation.id,
+            kind: annotation.kind,
+            paragraphId: annotation.paragraphId || '',
+            endParagraphId: annotation.endParagraphId || annotation.paragraphId || '',
+            startOffset: Number.isFinite(annotation.startOffset) ? annotation.startOffset : 0,
+            endOffset: Number.isFinite(annotation.endOffset) ? annotation.endOffset : 0,
+            selectedText: annotation.selectedText || '',
+            emoji: annotation.emoji,
+            body: annotation.body,
+          }))
+
+        setSelectionHighlights(loaded)
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Failed to load selection highlights:', error)
+        }
+      }
+    }
+
+    void loadSelectionHighlights()
+    return () => controller.abort()
+  }, [readerId, bookId, chapterId])
 
   useEffect(() => {
     for (const node of quoteHighlightNodesRef.current) {
@@ -112,6 +171,54 @@ export default function FeedReader({
       quoteHighlightNodesRef.current = []
     }
   }, [highlightParagraphId, highlightParagraphEndId, paragraphs])
+
+  const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
+    setSelectionHighlights((current) => {
+      if (!active) {
+        return current.filter(
+          (entry) =>
+            !(
+              entry.kind === range.kind &&
+              entry.paragraphId === range.paragraphId &&
+              entry.endParagraphId === range.endParagraphId &&
+              entry.startOffset === range.startOffset &&
+              entry.endOffset === range.endOffset &&
+              entry.emoji === range.emoji &&
+              entry.body === range.body
+            ),
+        )
+      }
+
+      return current.some(
+        (entry) =>
+          entry.kind === range.kind &&
+          entry.paragraphId === range.paragraphId &&
+          entry.endParagraphId === range.endParagraphId &&
+          entry.startOffset === range.startOffset &&
+          entry.endOffset === range.endOffset &&
+          entry.emoji === range.emoji &&
+          entry.body === range.body,
+      )
+        ? current
+        : [...current, range]
+    })
+  }, [])
+
+  const getTextRangesForParagraph = useCallback(
+    (paragraphId: string): ParagraphTextRange[] => {
+      const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
+      return ranges
+        .filter((range) => range.paragraphId === paragraphId)
+        .map((range) => ({
+          start: range.startOffset,
+          end: range.endOffset,
+          kind: range.kind,
+          badgeLabel: range.badgeLabel,
+          emoji: range.emoji ?? null,
+        }))
+    },
+    [paragraphIndexMap, paragraphs, selectionHighlights],
+  )
 
   // Restore scroll position
   useEffect(() => {
@@ -201,7 +308,7 @@ export default function FeedReader({
       style={{ overflowY: 'auto', height: '100%', padding: '1.5rem 1rem' }}
     >
       <div style={{ position: 'relative' }}>
-        <TextSelector containerRef={scrollRef} variantId={variantId} />
+        <TextSelector containerRef={scrollRef} variantId={variantId} onSelectionAnnotation={handleSelectionAnnotation} />
         <div
           className="reader-content"
           data-line-width={lineWidth}
@@ -214,6 +321,17 @@ export default function FeedReader({
         >
           {paragraphs.map((p) => {
             const isQuoteTarget = highlightParagraphId === p.id
+            const ranges = getTextRangesForParagraph(p.id)
+            const hasSelectionHighlight = ranges.length > 0
+            const textSegments = splitTextByRanges(p.text, ranges.map((range) => ({ start: range.start, end: range.end })))
+            const annotationBadges = Array.from(
+              new Map(
+                ranges.map((range) => [
+                  `${range.kind}:${range.emoji || range.badgeLabel}`,
+                  range,
+                ]),
+              ).values(),
+            )
 
             return (
               <div
@@ -223,11 +341,45 @@ export default function FeedReader({
                   position: 'relative',
                   marginBottom: '0.25rem',
                   borderRadius: isQuoteTarget ? '0.95rem' : undefined,
-                  boxShadow: isQuoteTarget ? '0 0 0 1px var(--r-accent), 0 18px 40px rgba(0, 0, 0, 0.12)' : 'none',
-                  backgroundColor: isQuoteTarget ? 'rgba(245, 158, 11, 0.10)' : 'transparent',
+                  boxShadow: hasSelectionHighlight
+                    ? '0 0 0 1px color-mix(in srgb, var(--r-accent) 45%, transparent), 0 14px 32px rgba(0, 0, 0, 0.12)'
+                    : isQuoteTarget
+                      ? '0 0 0 1px var(--r-accent), 0 18px 40px rgba(0, 0, 0, 0.12)'
+                      : 'none',
+                  backgroundColor: hasSelectionHighlight
+                    ? 'color-mix(in srgb, var(--r-accent) 6%, transparent)'
+                    : isQuoteTarget
+                      ? 'rgba(245, 158, 11, 0.10)'
+                      : 'transparent',
                   transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
                 }}
               >
+                {annotationBadges.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '-0.6rem',
+                      right: '0.5rem',
+                      zIndex: 2,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      justifyContent: 'flex-end',
+                      gap: '0.25rem',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {annotationBadges.map((range) => (
+                      <span
+                        key={`${p.id}-${range.kind}-${range.emoji || range.badgeLabel}`}
+                        className="bookstream-annotation-badge"
+                        data-kind={range.kind}
+                        title={range.kind === 'reaction' ? 'Вы поставили реакцию' : range.kind === 'quote' ? 'Вы вынесли цитату' : 'Вы оставили комментарий'}
+                      >
+                        {range.kind === 'reaction' ? `${range.emoji || '•'} вы` : range.badgeLabel}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {isQuoteTarget && (
                   <span
                     style={{
@@ -282,7 +434,17 @@ export default function FeedReader({
                 >
                   {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
                 </button>
-                <p style={{ margin: 0 }}>{p.text}</p>
+                <p style={{ margin: 0 }}>
+                  {textSegments.map((segment, index) =>
+                    segment.highlighted ? (
+                      <span key={`${p.id}-hl-${index}`} className="bookstream-word-highlight">
+                        {segment.text}
+                      </span>
+                    ) : (
+                      <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
+                    ),
+                  )}
+                </p>
                 </article>
                 {/* Reactions bar */}
                 <ReactionBar paragraphId={p.id} variantId={variantId} />

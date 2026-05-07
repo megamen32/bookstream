@@ -39,7 +39,40 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const readerId = searchParams.get('readerId') ?? ''
 
-    const [quotes, presets] = await Promise.all([
+    const [annotations, legacyQuotes, presets] = await Promise.all([
+      db.annotation.findMany({
+        where: {
+          bookId,
+          kind: 'quote',
+          status: 'active',
+          selectedText: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          selectedText: true,
+          variantType: true,
+          paragraphId: true,
+          endParagraphId: true,
+          createdAt: true,
+          readerId: true,
+          username: true,
+          votes: {
+            select: {
+              readerId: true,
+            },
+          },
+          chapter: {
+            select: {
+              id: true,
+              title: true,
+              position: true,
+            },
+          },
+        },
+        take: 200,
+      }),
       db.commentQuote.findMany({
         where: {
           comment: {
@@ -57,6 +90,7 @@ export async function GET(
           comment: {
             select: {
               username: true,
+              readerId: true,
               chapter: {
                 select: {
                   id: true,
@@ -86,7 +120,27 @@ export async function GET(
       presets.map((preset) => [preset.slug, preset.label]),
     ) as Record<string, string>
 
-    const payload: QuotePayload[] = quotes
+    const annotationQuotes: QuotePayload[] = annotations
+      .filter((quote) => (quote.selectedText || '').trim().length > 0)
+      .map((quote) => ({
+        id: quote.id,
+        text: quote.selectedText || '',
+        variantType: quote.variantType,
+        variantLabel: formatVariantLabel(quote.variantType, presetLabels),
+        chapterId: quote.chapter.id,
+        paragraphId: quote.paragraphId || '',
+        paragraphEndId: quote.endParagraphId,
+        chapterTitle: quote.chapter.title,
+        chapterPosition: quote.chapter.position,
+        username: quote.username,
+        createdAt: quote.createdAt.toISOString(),
+        upvoteCount: quote.votes.length,
+        reacted: readerId
+          ? quote.votes.some((upvote) => upvote.readerId === readerId)
+          : false,
+      }))
+
+    const legacyQuotePayload: QuotePayload[] = legacyQuotes
       .filter((quote) => quote.selectedText.trim().length > 0)
       .map((quote) => ({
         id: quote.id,
@@ -105,6 +159,8 @@ export async function GET(
           ? quote.upvotes.some((upvote) => upvote.readerId === readerId)
           : false,
       }))
+
+    const payload: QuotePayload[] = [...annotationQuotes, ...legacyQuotePayload]
       .sort((a, b) => {
         if (b.upvoteCount !== a.upvoteCount) return b.upvoteCount - a.upvoteCount
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

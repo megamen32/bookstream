@@ -11,6 +11,9 @@ interface ReplyQuote {
   variantType: string
   paragraphId: string
   endParagraphId?: string | null
+  startOffset?: number
+  endOffset?: number
+  selectedText?: string
 }
 
 interface ReaderState {

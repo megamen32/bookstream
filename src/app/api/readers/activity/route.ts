@@ -37,6 +37,8 @@ interface ActivityReaction {
   chapterPosition: number
   paragraphId: string
   endParagraphId: string | null
+  startOffset: number
+  endOffset: number
   selectedText: string | null
   emoji: string
   variantType: string
@@ -100,6 +102,8 @@ export async function GET(request: NextRequest) {
           emoji: true,
           paragraphId: true,
           endParagraphId: true,
+          startOffset: true,
+          endOffset: true,
           selectedText: true,
           chapterVariant: {
             select: {
@@ -189,6 +193,8 @@ export async function GET(request: NextRequest) {
       chapterPosition: reaction.chapterVariant.chapter.position,
       paragraphId: reaction.paragraphId,
       endParagraphId: reaction.endParagraphId,
+      startOffset: reaction.startOffset,
+      endOffset: reaction.endOffset,
       selectedText: reaction.selectedText,
       emoji: reaction.emoji,
       variantType: reaction.chapterVariant.variantType,

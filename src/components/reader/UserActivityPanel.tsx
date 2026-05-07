@@ -8,94 +8,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import {
+  annotationKindLabel,
+  type AnnotationKind,
+  type UnifiedAnnotationItem,
+} from '@/lib/annotations'
 
 type ActivityKind = 'all' | 'quotes' | 'comments' | 'reactions'
-
-interface ActivityQuoteItem {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  commentId: string
-  commentBody: string
-  variantType: string
-  paragraphId: string
-  endParagraphId: string | null
-  selectedText: string
-}
-
-interface ActivityCommentItem {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  body: string
-  quoteCount: number
-  quoteText: string | null
-  quoteParagraphId: string | null
-  quoteEndParagraphId: string | null
-  quoteVariantType: string | null
-}
-
-interface ActivityReactionItem {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  paragraphId: string
-  endParagraphId: string | null
-  selectedText: string | null
-  emoji: string
-  variantType: string
-}
-
-interface ReaderActivityPayload {
-  quotes: ActivityQuoteItem[]
-  comments: ActivityCommentItem[]
-  reactions: ActivityReactionItem[]
-}
-
-interface ActivityBase {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  kind: Exclude<ActivityKind, 'all'>
-}
-
-interface QuoteActivity extends ActivityBase {
-  kind: 'quotes'
-  commentBody: string
-  variantType: string
-  paragraphId: string
-  endParagraphId: string | null
-  selectedText: string
-}
-
-interface CommentActivity extends ActivityBase {
-  kind: 'comments'
-  body: string
-  quoteText: string | null
-  quoteParagraphId: string | null
-  quoteEndParagraphId: string | null
-  quoteCount: number
-  quoteVariantType: string | null
-}
-
-interface ReactionActivity extends ActivityBase {
-  kind: 'reactions'
-  paragraphId: string
-  endParagraphId: string | null
-  selectedText: string | null
-  emoji: string
-  variantType: string
-}
-
-type ActivityItem = QuoteActivity | CommentActivity | ReactionActivity
 
 interface UserActivityPanelProps {
   open: boolean
@@ -131,36 +50,36 @@ function formatVariantLabel(variantType: string): string {
   return VARIANT_LABELS[variantType] || variantType.charAt(0).toUpperCase() + variantType.slice(1)
 }
 
-function scopeLabel(paragraphId: string, endParagraphId: string | null): string {
-  if (!endParagraphId || endParagraphId === paragraphId) {
-    return '1 абзац'
-  }
-  return 'несколько абзацев'
-}
-
 function truncate(text: string, maxLength: number): string {
   const normalized = text.trim().replace(/\s+/g, ' ')
-  if (normalized.length <= maxLength) {
-    return normalized
-  }
+  if (normalized.length <= maxLength) return normalized
   return `${normalized.slice(0, maxLength - 1)}…`
 }
 
-function sortByDate(items: ActivityItem[]): ActivityItem[] {
+function sortByDate(items: UnifiedAnnotationItem[]): UnifiedAnnotationItem[] {
   return [...items].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
-function renderQuoteLink(
+function kindToTab(kind: AnnotationKind): Exclude<ActivityKind, 'all'> {
+  if (kind === 'quote') return 'quotes'
+  if (kind === 'comment') return 'comments'
+  return 'reactions'
+}
+
+function renderAnnotationLink(
   authorSlug: string,
   bookSlug: string,
-  item: {
-    chapterId: string
-    paragraphId: string
-    endParagraphId: string | null
-    variantType: string
-  },
+  item: UnifiedAnnotationItem,
   children: React.ReactNode,
 ) {
+  if (!item.chapterId || !item.paragraphId) {
+    return (
+      <div className="rounded-2xl border border-[color:var(--r-border)] bg-[color:var(--r-bg-secondary)] p-3">
+        {children}
+      </div>
+    )
+  }
+
   return (
     <Link
       href={buildQuoteReadHref(authorSlug, bookSlug, {
@@ -176,110 +95,90 @@ function renderQuoteLink(
   )
 }
 
-function ActivityCard({
+function AnnotationCard({
   item,
   authorSlug,
   bookSlug,
 }: {
-  item: ActivityItem
+  item: UnifiedAnnotationItem
   authorSlug: string
   bookSlug: string
 }): React.ReactElement {
   const headerMeta = `${item.chapterPosition}. ${item.chapterTitle}`
 
-  if (item.kind === 'quotes') {
-    return renderQuoteLink(authorSlug, bookSlug, item, (
+  if (item.kind === 'quote') {
+    return renderAnnotationLink(authorSlug, bookSlug, item, (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
             {formatVariantLabel(item.variantType)}
           </span>
           <span>{headerMeta}</span>
-          <span className="ml-auto text-[color:var(--r-accent)]">{scopeLabel(item.paragraphId, item.endParagraphId)}</span>
+          <span className="ml-auto text-[color:var(--r-accent)]">цитата</span>
         </div>
-        <p className="text-sm leading-6 text-foreground">«{item.selectedText}»</p>
+        <p className="text-sm leading-6 text-foreground">«{item.selectedText || ''}»</p>
+        {item.body && (
+          <p className="text-xs text-muted-foreground">
+            {truncate(item.body, 120)}
+          </p>
+        )}
         <div className="text-xs text-muted-foreground">
-          Вы добавили цитату в комментарий · {timeAgo(item.createdAt)}
+          Вы вынесли цитату · {timeAgo(item.createdAt)}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Комментарий: {truncate(item.commentBody, 120)}
-        </p>
       </div>
     ))
   }
 
-  if (item.kind === 'comments') {
+  if (item.kind === 'comment') {
     const content = (
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center rounded-full bg-[color:color-mix(in_srgb,var(--r-accent)_12%,transparent)] px-2 py-0.5 font-medium text-[color:var(--r-accent)]">
-            Комментарий
+            {annotationKindLabel('comment')}
           </span>
           <span>{headerMeta}</span>
           <span className="ml-auto">{timeAgo(item.createdAt)}</span>
         </div>
-        <p className="text-sm leading-6 text-foreground">{item.body}</p>
-        {item.quoteText && (
+        <p className="text-sm leading-6 text-foreground">{item.body || ''}</p>
+        {item.selectedText && (
           <div className="rounded-xl border border-[color:var(--r-border)] bg-[color:var(--r-bg)] px-3 py-2 text-sm text-[color:var(--r-text-secondary)]">
             <span className="mr-2 inline-flex items-center rounded-full bg-[color:color-mix(in_srgb,var(--r-accent)_12%,transparent)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--r-accent)]">
               Цитата
             </span>
-            {truncate(item.quoteText, 160)}
+            {truncate(item.selectedText, 160)}
           </div>
         )}
       </div>
     )
 
-    if (item.quoteParagraphId) {
-      return renderQuoteLink(
-        authorSlug,
-        bookSlug,
-        {
-          chapterId: item.chapterId,
-          paragraphId: item.quoteParagraphId,
-          endParagraphId: item.quoteEndParagraphId,
-          variantType: item.quoteVariantType || 'original',
-        },
-        content,
-      )
-    }
-
-    return (
-      <div className="rounded-2xl border border-[color:var(--r-border)] bg-[color:var(--r-bg-secondary)] p-3">
-        {content}
-      </div>
-    )
+    return item.paragraphId
+      ? renderAnnotationLink(authorSlug, bookSlug, item, content)
+      : (
+          <div className="rounded-2xl border border-[color:var(--r-border)] bg-[color:var(--r-bg-secondary)] p-3">
+            {content}
+          </div>
+        )
   }
 
   const reactionContent = (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center rounded-full bg-[color:color-mix(in_srgb,var(--r-accent)_12%,transparent)] px-2 py-0.5 text-base leading-none">
-          {item.emoji}
+          {item.emoji || '•'}
         </span>
-        <span>Реакция</span>
+        <span>{annotationKindLabel('reaction')}</span>
         <span>{headerMeta}</span>
         <span className="ml-auto">{timeAgo(item.createdAt)}</span>
       </div>
       {item.selectedText ? (
         <p className="text-sm leading-6 text-foreground">«{truncate(item.selectedText, 180)}»</p>
       ) : (
-        <p className="text-sm leading-6 text-foreground">Реакция на {scopeLabel(item.paragraphId, item.endParagraphId)}</p>
+        <p className="text-sm leading-6 text-foreground">Реакция на фрагмент текста</p>
       )}
     </div>
   )
 
-  return renderQuoteLink(
-    authorSlug,
-    bookSlug,
-    {
-      chapterId: item.chapterId,
-      paragraphId: item.paragraphId,
-      endParagraphId: item.endParagraphId,
-      variantType: item.variantType,
-    },
-    reactionContent,
-  )
+  return renderAnnotationLink(authorSlug, bookSlug, item, reactionContent)
 }
 
 export default function UserActivityPanel({
@@ -291,7 +190,7 @@ export default function UserActivityPanel({
   bookSlug,
 }: UserActivityPanelProps) {
   const { readerId, loadFromStorage } = useReaderStore()
-  const [payload, setPayload] = useState<ReaderActivityPayload>({ quotes: [], comments: [], reactions: [] })
+  const [items, setItems] = useState<UnifiedAnnotationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<ActivityKind>('all')
@@ -318,7 +217,7 @@ export default function UserActivityPanel({
           readerId,
           bookId,
         })
-        const response = await fetch(`/api/readers/activity?${params.toString()}`, {
+        const response = await fetch(`/api/annotations?${params.toString()}`, {
           signal: controller.signal,
         })
 
@@ -326,12 +225,8 @@ export default function UserActivityPanel({
           throw new Error('request_failed')
         }
 
-        const data = (await response.json()) as ReaderActivityPayload
-        setPayload({
-          quotes: Array.isArray(data.quotes) ? data.quotes : [],
-          comments: Array.isArray(data.comments) ? data.comments : [],
-          reactions: Array.isArray(data.reactions) ? data.reactions : [],
-        })
+        const data = await response.json() as { annotations?: UnifiedAnnotationItem[] }
+        setItems(sortByDate(Array.isArray(data.annotations) ? data.annotations : []))
       } catch (fetchError) {
         if (controller.signal.aborted) return
         console.error('Failed to fetch reader activity:', fetchError)
@@ -347,34 +242,17 @@ export default function UserActivityPanel({
     return () => controller.abort()
   }, [open, readerId, bookId])
 
-  const allItems = useMemo<ActivityItem[]>(() => {
-    const quotes = payload.quotes.map<QuoteActivity>((quote) => ({
-      ...quote,
-      kind: 'quotes',
-    }))
-    const comments = payload.comments.map<CommentActivity>((comment) => ({
-      ...comment,
-      kind: 'comments',
-    }))
-    const reactions = payload.reactions.map<ReactionActivity>((reaction) => ({
-      ...reaction,
-      kind: 'reactions',
-    }))
-
-    return sortByDate([...quotes, ...comments, ...reactions])
-  }, [payload])
-
-  const counts = {
-    all: allItems.length,
-    quotes: payload.quotes.length,
-    comments: payload.comments.length,
-    reactions: payload.reactions.length,
-  }
+  const counts = useMemo(() => ({
+    all: items.length,
+    quotes: items.filter((item) => item.kind === 'quote').length,
+    comments: items.filter((item) => item.kind === 'comment').length,
+    reactions: items.filter((item) => item.kind === 'reaction').length,
+  }), [items])
 
   const visibleItems = useMemo(() => {
-    if (tab === 'all') return allItems
-    return allItems.filter((item) => item.kind === tab)
-  }, [allItems, tab])
+    if (tab === 'all') return items
+    return items.filter((item) => kindToTab(item.kind) === tab)
+  }, [items, tab])
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -423,14 +301,14 @@ export default function UserActivityPanel({
                     {error}
                   </div>
                 ) : visibleItems.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[color:var(--r-border)] bg-[color:var(--r-bg-secondary)] p-5 text-sm text-[color:var(--r-text-secondary)]">
-                    Здесь пока пусто. Выделите текст, поставьте реакцию или напишите комментарий, и запись появится здесь.
+                  <div className="rounded-2xl border border-dashed border-[color:var(--r-border)] bg-[color:var(--r-bg-secondary)] p-4 text-sm text-[color:var(--r-text-secondary)]">
+                    Пока здесь пусто
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-3 py-2">
                     {visibleItems.map((item) => (
-                      <ActivityCard
-                        key={`${item.kind}-${item.id}`}
+                      <AnnotationCard
+                        key={item.id}
                         item={item}
                         authorSlug={authorSlug}
                         bookSlug={bookSlug}
