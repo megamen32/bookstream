@@ -1,11 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { useReaderStore } from '@/lib/store'
-import { themes, themeList } from '@/lib/themes'
+import { accentThemeList, themeList } from '@/lib/themes'
 import type { ReaderTheme, LineWidth } from '@/lib/store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Slider } from '@/components/ui/slider'
-import { Settings, Sun, Moon, BookOpen, Monitor, Sparkles } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Settings, Sun, Moon, BookOpen, Monitor, Sparkles, UserRound } from 'lucide-react'
 
 interface SettingsPanelProps {
   open: boolean
@@ -31,10 +33,15 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
     lineHeight,
     lineWidth,
     theme,
+    accentTheme,
+    username,
+    showCommunityAnnotations,
+    showMobileReactionBar,
     setFontSize,
     setLineHeight,
     setLineWidth,
     setTheme,
+    setShowMobileReactionBar,
   } = useReaderStore()
 
   return (
@@ -163,6 +170,29 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
             </div>
           </div>
 
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.875rem 1rem',
+              borderRadius: '0.75rem',
+              border: '1px solid var(--r-border)',
+              backgroundColor: 'var(--r-bg-secondary)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                Панель реакций на мобильном
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--r-text-secondary)', marginTop: '0.125rem' }}>
+                Показывать кнопки реакций под абзацами
+              </div>
+            </div>
+            <Switch checked={showMobileReactionBar} onCheckedChange={setShowMobileReactionBar} />
+          </div>
+
           {/* Very large quick button */}
           <button
             onClick={() => {
@@ -187,6 +217,46 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
             <Sparkles size={16} />
             Очень крупный шрифт
           </button>
+
+          <Link
+            href="/me/settings"
+            onClick={() => onOpenChange(false)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              padding: '0.875rem 1rem',
+              borderRadius: '0.75rem',
+              border: '1px solid var(--r-border)',
+              backgroundColor: 'var(--r-bg-secondary)',
+              color: 'var(--r-text)',
+              textDecoration: 'none',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+              <UserRound size={18} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                  Профиль и видимость аннотаций
+                </div>
+                <div
+                  style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--r-text-secondary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {username} · {accentThemeList.find((item) => item.name === accentTheme)?.label || 'Голубой свет'}
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--r-text-secondary)', flexShrink: 0 }}>
+              Открыть
+            </span>
+          </Link>
         </div>
       </SheetContent>
     </Sheet>

@@ -7,6 +7,36 @@ import {
   splitImportedHtmlIntoChaptersWithFallbackTitle,
 } from '@/lib/book-import'
 
+const COVER_ACCEPTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif'] as const
+const COVER_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
+
+/**
+ * Returns a normalized file extension including the leading dot.
+ *
+ * @param fileName Original uploaded filename.
+ * @returns Lowercased extension or an empty string when the file has none.
+ */
+function getFileExtension(fileName: string): string {
+  const extension = fileName.split('.').pop()?.toLowerCase()
+  return extension ? `.${extension}` : ''
+}
+
+/**
+ * Checks whether the uploaded file can be treated as a book cover image.
+ *
+ * @param file Uploaded file from multipart form data.
+ * @returns `true` when the MIME type or extension matches allowed image formats.
+ */
+function isAcceptedCoverFile(file: File): boolean {
+  if (COVER_ACCEPTED_MIME_TYPES.includes(file.type as typeof COVER_ACCEPTED_MIME_TYPES[number])) {
+    return true
+  }
+
+  return COVER_ACCEPTED_EXTENSIONS.includes(
+    getFileExtension(file.name) as typeof COVER_ACCEPTED_EXTENSIONS[number]
+  )
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bookId: string }> }
@@ -20,6 +50,13 @@ export async function POST(
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'Файл не найден' }, { status: 400 })
+    }
+
+    if (cover instanceof File && !isAcceptedCoverFile(cover)) {
+      return NextResponse.json(
+        { error: 'Поддерживаются только обложки JPG, PNG, WEBP и AVIF' },
+        { status: 400 }
+      )
     }
 
     const book = await db.book.findUnique({
@@ -48,6 +85,7 @@ export async function POST(
           bookId,
           title: chapterTitle,
           position: index,
+          level: chapterParts[index].level,
         },
       })
 

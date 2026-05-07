@@ -6,6 +6,7 @@ import { List, X } from 'lucide-react'
 interface Chapter {
   id: string
   title: string
+  level?: number
   position: number
 }
 
@@ -142,6 +143,7 @@ export default function TableOfContents({
                       textAlign: 'left',
                       minHeight: '48px',
                       fontWeight: isCurrent ? 600 : 400,
+                      paddingInlineStart: `${0.75 + Math.max(0, (chapter.level ?? 1) - 1) * 1.25}rem`,
                     }}
                   >
                     <span

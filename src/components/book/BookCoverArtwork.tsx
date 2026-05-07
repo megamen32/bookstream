@@ -9,6 +9,9 @@ interface BookCoverArtworkProps {
   coverUrl?: string | null
   className?: string
   titleClassName?: string
+  imageClassName?: string
+  imagePosition?: string
+  fit?: 'contain' | 'cover'
 }
 
 const GRADIENT_COLORS = [
@@ -33,6 +36,9 @@ export default function BookCoverArtwork({
   coverUrl,
   className,
   titleClassName,
+  imageClassName,
+  imagePosition,
+  fit = 'contain',
 }: BookCoverArtworkProps) {
   if (coverUrl) {
     return (
@@ -44,6 +50,9 @@ export default function BookCoverArtwork({
         title={title}
         slug={slug}
         titleClassName={titleClassName}
+        imageClassName={imageClassName}
+        imagePosition={imagePosition}
+        fit={fit}
       />
     )
   }
@@ -58,9 +67,22 @@ interface CoverImageProps {
   title: string
   slug: string
   titleClassName?: string
+  imageClassName?: string
+  imagePosition?: string
+  fit: 'contain' | 'cover'
 }
 
-function CoverImage({ src, alt, className, title, slug, titleClassName }: CoverImageProps) {
+function CoverImage({
+  src,
+  alt,
+  className,
+  title,
+  slug,
+  titleClassName,
+  imageClassName,
+  imagePosition,
+  fit,
+}: CoverImageProps) {
   const [failed, setFailed] = useState(false)
 
   if (failed) {
@@ -72,8 +94,13 @@ function CoverImage({ src, alt, className, title, slug, titleClassName }: CoverI
       <img
         src={src}
         alt={alt}
-        className="h-full w-full object-cover"
+        className={cn(
+          'h-full w-full bg-muted',
+          fit === 'cover' ? 'object-cover' : 'object-contain',
+          imageClassName
+        )}
         loading="lazy"
+        style={imagePosition ? { objectPosition: imagePosition } : undefined}
         onError={() => setFailed(true)}
       />
     </div>

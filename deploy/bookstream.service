@@ -8,12 +8,12 @@ Type=simple
 User=roomhacker
 Group=roomhacker
 WorkingDirectory=/home/roomhacker/PycharmProjects/bookstream
-Environment=NODE_ENV=production
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=HOSTNAME=0.0.0.0
 Environment=PORT=3000
 Environment=DATABASE_URL=file:/home/roomhacker/PycharmProjects/bookstream/db/custom.db
-ExecStart=/usr/bin/node /home/roomhacker/PycharmProjects/bookstream/.next/standalone/server.js
+Environment=BOOKSTREAM_MODE_FILE=/home/roomhacker/PycharmProjects/bookstream/.zscripts/service.mode
+ExecStart=/home/roomhacker/PycharmProjects/bookstream/deploy/bookstream-run.sh
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

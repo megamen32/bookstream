@@ -2,12 +2,16 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useReaderStore } from '@/lib/store'
+import { cn } from '@/lib/utils'
 
 const DEFAULT_EMOJIS = ['👍', '🔥', '💡', '😂', '⭐'] as const
 
 interface ReactionBarProps {
   paragraphId: string
   variantId: string
+  chapterId?: string
+  variantType?: string
+  showOnMobile?: boolean
   onUserReactionChange?: (paragraphId: string, hasReaction: boolean, emoji: string | null) => void
 }
 
@@ -24,12 +28,22 @@ function createEmptyReactions(): ReactionsMap {
   ) as ReactionsMap
 }
 
-export default function ReactionBar({ paragraphId, variantId, onUserReactionChange }: ReactionBarProps) {
+export default function ReactionBar({
+  paragraphId,
+  variantId,
+  chapterId: chapterIdProp,
+  variantType: variantTypeProp,
+  showOnMobile = false,
+  onUserReactionChange,
+}: ReactionBarProps) {
   const readerId = useReaderStore((s) => s.readerId)
   const username = useReaderStore((s) => s.username)
   const bookId = useReaderStore((s) => s.bookId)
-  const chapterId = useReaderStore((s) => s.chapterId)
-  const variantType = useReaderStore((s) => s.variantType)
+  const chapterIdFromStore = useReaderStore((s) => s.chapterId)
+  const variantTypeFromStore = useReaderStore((s) => s.variantType)
+  const showCommunityAnnotations = useReaderStore((s) => s.showCommunityAnnotations)
+  const chapterId = chapterIdProp ?? chapterIdFromStore
+  const variantType = variantTypeProp ?? variantTypeFromStore
   const [reactions, setReactions] = useState<ReactionsMap>(createEmptyReactions())
   const [toggling, setToggling] = useState<string | null>(null)
   const [pulsingEmoji, setPulsingEmoji] = useState<string | null>(null)
@@ -54,9 +68,13 @@ export default function ReactionBar({ paragraphId, variantId, onUserReactionChan
 
         const merged: ReactionsMap = createEmptyReactions()
         for (const entry of incoming) {
+          const readerIds = Array.isArray(entry.readerIds) ? entry.readerIds : []
+          const reacted = readerIds.includes(readerId)
           merged[entry.emoji] = {
-            count: entry.count ?? 0,
-            reacted: Array.isArray(entry.readerIds) ? entry.readerIds.includes(readerId) : false,
+            count: showCommunityAnnotations
+              ? entry.count ?? 0
+              : reacted ? 1 : 0,
+            reacted,
           }
         }
 
@@ -70,7 +88,7 @@ export default function ReactionBar({ paragraphId, variantId, onUserReactionChan
         // silently ignore — bar stays empty
       }
     },
-    [paragraphId, variantId, readerId],
+    [paragraphId, variantId, readerId, showCommunityAnnotations],
   )
 
   // Fetch existing reactions on mount / when paragraph or variant changes
@@ -165,7 +183,7 @@ export default function ReactionBar({ paragraphId, variantId, onUserReactionChan
         setToggling(null)
       }
     },
-    [readerId, toggling, reactions, paragraphId, variantId],
+    [bookId, chapterId, paragraphId, readerId, reactions, toggling, username, variantId, variantType],
   )
 
   useEffect(() => {
@@ -186,15 +204,12 @@ export default function ReactionBar({ paragraphId, variantId, onUserReactionChan
 
   return (
     <div
-      className="
-        reaction-bar
-        flex items-center gap-1 pt-1
-        opacity-100
-        md:opacity-0 md:group-hover:opacity-100
-        transition-opacity duration-200 ease-in-out
-      "
       role="group"
       aria-label="Реакции"
+      className={cn(
+        'reaction-bar items-center gap-1 pt-1 transition-opacity duration-200 ease-in-out md:flex md:opacity-0 md:group-hover:opacity-100',
+        showOnMobile ? 'flex opacity-100' : 'hidden md:flex',
+      )}
       style={{ color: 'var(--r-text-secondary)' }}
     >
       {displayedEmojis.map((emoji) => {

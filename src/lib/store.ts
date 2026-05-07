@@ -5,6 +5,7 @@ export type VariantType = string
 export type ReadingMode = 'feed' | 'book'
 export type LineWidth = 'narrow' | 'medium' | 'wide'
 export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'oled'
+export type AccentTheme = 'sky' | 'forest' | 'sunset'
 
 interface ReplyQuote {
   text: string
@@ -28,10 +29,13 @@ interface ReaderState {
   lineHeight: number
   lineWidth: LineWidth
   theme: ReaderTheme
+  accentTheme: AccentTheme
+  showMobileReactionBar: boolean
 
   // Reader identity
   readerId: string
   username: string
+  showCommunityAnnotations: boolean
 
   // Comment composer
   replyingTo: ReplyQuote | null
@@ -45,8 +49,11 @@ interface ReaderState {
   setLineHeight: (height: number) => void
   setLineWidth: (width: LineWidth) => void
   setTheme: (theme: ReaderTheme) => void
+  setAccentTheme: (theme: AccentTheme) => void
+  setShowMobileReactionBar: (show: boolean) => void
   setReaderId: (id: string) => void
   setUsername: (name: string) => void
+  setShowCommunityAnnotations: (value: boolean) => void
   setReplyingTo: (quote: ReplyQuote | null) => void
 
   // Persistence
@@ -68,11 +75,14 @@ const STORAGE_KEY = 'bookstream-reader-state'
 interface StoredState {
   readerId?: string
   username?: string
+  showCommunityAnnotations?: boolean
+  accentTheme?: AccentTheme
   fontSize?: number
   lineHeight?: number
   lineWidth?: LineWidth
   theme?: ReaderTheme
   readingMode?: ReadingMode
+  showMobileReactionBar?: boolean
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -87,10 +97,13 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   lineHeight: 1.6,
   lineWidth: 'medium',
   theme: 'light',
+  accentTheme: 'sky',
+  showMobileReactionBar: false,
 
   // Reader identity
   readerId: '',
   username: '',
+  showCommunityAnnotations: true,
 
   // Comment composer
   replyingTo: null,
@@ -116,12 +129,24 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     set({ theme: theme })
     get().saveToStorage()
   },
+  setAccentTheme: (accentTheme: AccentTheme) => {
+    set({ accentTheme })
+    get().saveToStorage()
+  },
+  setShowMobileReactionBar: (showMobileReactionBar: boolean) => {
+    set({ showMobileReactionBar })
+    get().saveToStorage()
+  },
   setReaderId: (id: string) => {
     set({ readerId: id })
     get().saveToStorage()
   },
   setUsername: (name: string) => {
     set({ username: name })
+    get().saveToStorage()
+  },
+  setShowCommunityAnnotations: (value: boolean) => {
+    set({ showCommunityAnnotations: value })
     get().saveToStorage()
   },
   setReplyingTo: (quote: ReplyQuote | null) => set({ replyingTo: quote }),
@@ -135,18 +160,21 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         const readerId = generateReaderId()
         const username = generateRussianUsername()
         set({ readerId, username })
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerId, username }))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerId, username, accentTheme: 'sky' }))
         return
       }
       const stored: StoredState = JSON.parse(raw)
       set({
         readerId: stored.readerId || generateReaderId(),
         username: stored.username || generateRussianUsername(),
+        showCommunityAnnotations: stored.showCommunityAnnotations ?? true,
+        accentTheme: stored.accentTheme || 'sky',
         fontSize: stored.fontSize || 18,
         lineHeight: stored.lineHeight || 1.6,
         lineWidth: stored.lineWidth || 'medium',
         theme: stored.theme || 'light',
         readingMode: stored.readingMode || 'feed',
+        showMobileReactionBar: stored.showMobileReactionBar || false,
       })
     } catch {
       const readerId = generateReaderId()
@@ -162,11 +190,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       const toStore: StoredState = {
         readerId: state.readerId,
         username: state.username,
+        showCommunityAnnotations: state.showCommunityAnnotations,
+        accentTheme: state.accentTheme,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
         lineWidth: state.lineWidth,
         theme: state.theme,
         readingMode: state.readingMode,
+        showMobileReactionBar: state.showMobileReactionBar,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
     } catch {

@@ -5,7 +5,10 @@ import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import CommentsSection from './CommentsSection'
+import FeedCommentsPreview from './FeedCommentsPreview'
 import ReactionBar from './ReactionBar'
+import type { CommentSubmitHandler } from './comment-types'
+import type { FeedSectionData } from './feed-types'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import {
@@ -15,80 +18,95 @@ import {
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
 
-interface Paragraph {
-  id: string
-  stableKey: string
-  position: number
-  text: string
-}
-
-interface ChapterItem {
-  id: string
-  title: string
-  position: number
-}
-
 interface FeedReaderProps {
-  paragraphs: Paragraph[]
-  variantId: string
-  chapterTitle: string
-  nextChapter?: ChapterItem | null
-  onNextChapter: () => void
-  /** Callback when reader requests scroll-to-comments (from toolbar button) */
+  sections: FeedSectionData[]
+  activeChapterId: string | null
+  hasMorePrev: boolean
+  hasMoreNext: boolean
+  loadingPrev: boolean
+  loadingNext: boolean
+  onLoadPrev: () => void
+  onLoadNext: () => void
+  onActiveChapterChange: (chapterId: string, scrollPercent: number, fromScroll: boolean) => void
   commentsSectionRef?: React.RefObject<HTMLDivElement | null>
-  onSendComment: (body: string) => void
-  commentCount: number
-  /** Callback used to expose the scroll container for search */
+  onSendComment: CommentSubmitHandler
   setContentNode?: (node: HTMLDivElement | null) => void
-  /** Callback with scroll percent (0-1) for progress bar */
-  onScrollProgress?: (percent: number) => void
-  /** Currently bookmarked paragraph stableKey */
-  bookmarkedKey?: string | null
-  /** Callback to toggle bookmark on a paragraph */
-  onToggleBookmark?: (stableKey: string) => void
-  /** Book route slugs used for quote links in comments */
+  bookmarkedKeys: Record<string, string | undefined>
+  onToggleBookmark?: (chapterId: string, stableKey: string) => void
   authorSlug: string
   bookSlug: string
-  /** Database paragraph id requested via quote navigation */
   highlightParagraphId?: string | null
-  /** Optional end paragraph id for a multi-paragraph quote range */
   highlightParagraphEndId?: string | null
+  restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
+  scrollToChapterId?: string | null
+  onScrollToChapterHandled?: () => void
+}
+
+interface StoredSelectionAnnotationRange extends SelectionAnnotationRange {
+  chapterId?: string
+}
+
+interface ScrollSnapshot {
+  firstChapterId: string
+  scrollTop: number
+  scrollHeight: number
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 export default function FeedReader({
-  paragraphs,
-  variantId,
-  chapterTitle,
-  nextChapter,
-  onNextChapter,
+  sections,
+  activeChapterId,
+  hasMorePrev,
+  hasMoreNext,
+  loadingPrev,
+  loadingNext,
+  onLoadPrev,
+  onLoadNext,
+  onActiveChapterChange,
   commentsSectionRef,
   onSendComment,
-  commentCount,
   setContentNode,
-  onScrollProgress,
-  bookmarkedKey,
+  bookmarkedKeys,
   onToggleBookmark,
   authorSlug,
   bookSlug,
   highlightParagraphId,
   highlightParagraphEndId,
+  restoreRequest,
+  scrollToChapterId,
+  onScrollToChapterHandled,
 }: FeedReaderProps) {
-  const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
+  const { fontSize, lineHeight, lineWidth, theme, bookId, readerId, showMobileReactionBar } = useReaderStore()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const restoredRef = useRef(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const topSentinelRef = useRef<HTMLDivElement>(null)
+  const bottomSentinelRef = useRef<HTMLDivElement>(null)
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const quoteFocusAppliedRef = useRef(false)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
-  const [selectionHighlights, setSelectionHighlights] = useState<SelectionAnnotationRange[]>([])
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [showNextLoader, setShowNextLoader] = useState(false)
-  const paragraphIndexMap = useMemo(() => new Map(paragraphs.map((paragraph, index) => [paragraph.id, index])), [paragraphs])
+  const restoreAppliedTokenRef = useRef<number | null>(null)
+  const prependSnapshotRef = useRef<ScrollSnapshot | null>(null)
+  const tickingRef = useRef(false)
+  const [selectionHighlights, setSelectionHighlights] = useState<StoredSelectionAnnotationRange[]>([])
+
+  const paragraphIndexMaps = useMemo(() => (
+    Object.fromEntries(
+      sections.map((section) => [
+        section.chapter.id,
+        new Map(section.variant.paragraphs.map((paragraph, index) => [paragraph.id, index])),
+      ]),
+    ) as Record<string, Map<string, number>>
+  ), [sections])
 
   useEffect(() => {
     quoteFocusAppliedRef.current = false
   }, [highlightParagraphId, highlightParagraphEndId])
 
   useEffect(() => {
-    if (!readerId || !bookId || !chapterId) return
+    if (!readerId || !bookId) return
 
     const controller = new AbortController()
 
@@ -106,20 +124,18 @@ export default function FeedReader({
         const data = await response.json() as {
           annotations?: UnifiedAnnotationItem[]
         }
-
-        const loaded = (Array.isArray(data.annotations) ? data.annotations : [])
-          .filter((annotation) => annotation.chapterId === chapterId)
-          .map<SelectionAnnotationRange>((annotation) => ({
-            id: annotation.id,
-            kind: annotation.kind,
-            paragraphId: annotation.paragraphId || '',
-            endParagraphId: annotation.endParagraphId || annotation.paragraphId || '',
-            startOffset: Number.isFinite(annotation.startOffset) ? annotation.startOffset : 0,
-            endOffset: Number.isFinite(annotation.endOffset) ? annotation.endOffset : 0,
-            selectedText: annotation.selectedText || '',
-            emoji: annotation.emoji,
-            body: annotation.body,
-          }))
+        const loaded = (Array.isArray(data.annotations) ? data.annotations : []).map<StoredSelectionAnnotationRange>((annotation) => ({
+          id: annotation.id,
+          kind: annotation.kind,
+          chapterId: annotation.chapterId,
+          paragraphId: annotation.paragraphId || '',
+          endParagraphId: annotation.endParagraphId || annotation.paragraphId || '',
+          startOffset: Number.isFinite(annotation.startOffset) ? annotation.startOffset : 0,
+          endOffset: Number.isFinite(annotation.endOffset) ? annotation.endOffset : 0,
+          selectedText: annotation.selectedText || '',
+          emoji: annotation.emoji,
+          body: annotation.body,
+        }))
 
         setSelectionHighlights(loaded)
       } catch (error) {
@@ -131,7 +147,184 @@ export default function FeedReader({
 
     void loadSelectionHighlights()
     return () => controller.abort()
-  }, [readerId, bookId, chapterId])
+  }, [readerId, bookId])
+
+  const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
+    const candidate: StoredSelectionAnnotationRange = {
+      ...range,
+      chapterId: range.chapterId,
+    }
+
+    setSelectionHighlights((current) => {
+      if (!active) {
+        return current.filter(
+          (entry) =>
+            !(
+              entry.kind === candidate.kind &&
+              entry.chapterId === candidate.chapterId &&
+              entry.paragraphId === candidate.paragraphId &&
+              entry.endParagraphId === candidate.endParagraphId &&
+              entry.startOffset === candidate.startOffset &&
+              entry.endOffset === candidate.endOffset &&
+              entry.emoji === candidate.emoji &&
+              entry.body === candidate.body
+            ),
+        )
+      }
+
+      return current.some(
+        (entry) =>
+          entry.kind === candidate.kind &&
+          entry.chapterId === candidate.chapterId &&
+          entry.paragraphId === candidate.paragraphId &&
+          entry.endParagraphId === candidate.endParagraphId &&
+          entry.startOffset === candidate.startOffset &&
+          entry.endOffset === candidate.endOffset &&
+          entry.emoji === candidate.emoji &&
+          entry.body === candidate.body,
+      )
+        ? current
+        : [...current, candidate]
+    })
+  }, [])
+
+  const getTextRangesForParagraph = useCallback(
+    (chapterId: string, paragraphId: string): AnnotationParagraphRange[] => {
+      const section = sections.find((entry) => entry.chapter.id === chapterId)
+      const paragraphIndexMap = paragraphIndexMaps[chapterId]
+      if (!section || !paragraphIndexMap) return []
+
+      const ranges = buildAnnotationParagraphRanges(
+        selectionHighlights.filter((annotation) => annotation.chapterId === chapterId),
+        section.variant.paragraphs,
+        paragraphIndexMap,
+      )
+      return ranges.filter((range) => range.paragraphId === paragraphId)
+    },
+    [paragraphIndexMaps, sections, selectionHighlights],
+  )
+
+  const resolveSectionProgress = useCallback((chapterId: string): number => {
+    const container = scrollRef.current
+    if (!container) return 0
+
+    const currentNode = sectionRefs.current[chapterId]
+    if (!currentNode) return 0
+
+    const sectionIndex = sections.findIndex((section) => section.chapter.id === chapterId)
+    const nextNode = sectionIndex >= 0
+      ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
+      : null
+
+    const sectionTop = currentNode.offsetTop
+    const sectionBottom = nextNode
+      ? nextNode.offsetTop
+      : Math.max(currentNode.offsetTop + currentNode.offsetHeight, container.scrollHeight)
+    const sectionHeight = Math.max(1, sectionBottom - sectionTop - container.clientHeight * 0.2)
+    return clamp((container.scrollTop - sectionTop) / sectionHeight, 0, 1)
+  }, [sections])
+
+  const updateActiveChapter = useCallback((fromScroll: boolean) => {
+    const container = scrollRef.current
+    if (!container || sections.length === 0) return
+
+    const threshold = container.scrollTop + container.clientHeight * 0.22
+    let nextActiveId = sections[0].chapter.id
+
+    for (const section of sections) {
+      const node = sectionRefs.current[section.chapter.id]
+      if (!node) continue
+      if (node.offsetTop <= threshold) {
+        nextActiveId = section.chapter.id
+      } else {
+        break
+      }
+    }
+
+    onActiveChapterChange(nextActiveId, resolveSectionProgress(nextActiveId), fromScroll)
+  }, [onActiveChapterChange, resolveSectionProgress, sections])
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return
+
+    const container = scrollRef.current
+    const topDistance = container.scrollTop
+    const bottomDistance = container.scrollHeight - container.scrollTop - container.clientHeight
+
+    if (hasMorePrev && !loadingPrev && topDistance < 240 && sections.length > 0) {
+      prependSnapshotRef.current = {
+        firstChapterId: sections[0].chapter.id,
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+      }
+      onLoadPrev()
+    }
+
+    if (hasMoreNext && !loadingNext && bottomDistance < 420) {
+      onLoadNext()
+    }
+
+    if (tickingRef.current) return
+    tickingRef.current = true
+    window.requestAnimationFrame(() => {
+      updateActiveChapter(true)
+      tickingRef.current = false
+    })
+  }, [hasMoreNext, hasMorePrev, loadingNext, loadingPrev, onLoadNext, onLoadPrev, sections, updateActiveChapter])
+
+  useEffect(() => {
+    const container = scrollRef.current
+    const topSentinel = topSentinelRef.current
+    const bottomSentinel = bottomSentinelRef.current
+    if (!container || !topSentinel || !bottomSentinel) return
+
+    const topObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMorePrev && !loadingPrev && sections.length > 0) {
+          prependSnapshotRef.current = {
+            firstChapterId: sections[0].chapter.id,
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+          }
+          onLoadPrev()
+        }
+      },
+      { root: container, threshold: 0.1 },
+    )
+
+    const bottomObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMoreNext && !loadingNext) {
+          onLoadNext()
+        }
+      },
+      { root: container, threshold: 0.1 },
+    )
+
+    topObserver.observe(topSentinel)
+    bottomObserver.observe(bottomSentinel)
+
+    return () => {
+      topObserver.disconnect()
+      bottomObserver.disconnect()
+    }
+  }, [hasMoreNext, hasMorePrev, loadingNext, loadingPrev, onLoadNext, onLoadPrev, sections])
+
+  useEffect(() => {
+    const snapshot = prependSnapshotRef.current
+    const container = scrollRef.current
+    if (!snapshot || !container || loadingPrev) return
+
+    const currentFirstId = sections[0]?.chapter.id
+    if (!currentFirstId || currentFirstId === snapshot.firstChapterId) {
+      prependSnapshotRef.current = null
+      return
+    }
+
+    const delta = container.scrollHeight - snapshot.scrollHeight
+    container.scrollTop = snapshot.scrollTop + delta
+    prependSnapshotRef.current = null
+  }, [loadingPrev, sections])
 
   useEffect(() => {
     for (const node of quoteHighlightNodesRef.current) {
@@ -158,7 +351,7 @@ export default function FeedReader({
 
       scrollQuoteTargetIntoView(scrollRef.current, target)
       quoteFocusAppliedRef.current = true
-      restoredRef.current = true
+      updateActiveChapter(false)
     })
 
     return () => {
@@ -168,121 +361,58 @@ export default function FeedReader({
       }
       quoteHighlightNodesRef.current = []
     }
-  }, [highlightParagraphId, highlightParagraphEndId, paragraphs])
+  }, [highlightParagraphEndId, highlightParagraphId, sections, updateActiveChapter])
 
-  const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
-    setSelectionHighlights((current) => {
-      if (!active) {
-        return current.filter(
-          (entry) =>
-            !(
-              entry.kind === range.kind &&
-              entry.paragraphId === range.paragraphId &&
-              entry.endParagraphId === range.endParagraphId &&
-              entry.startOffset === range.startOffset &&
-              entry.endOffset === range.endOffset &&
-              entry.emoji === range.emoji &&
-              entry.body === range.body
-            ),
-        )
-      }
-
-      return current.some(
-        (entry) =>
-          entry.kind === range.kind &&
-          entry.paragraphId === range.paragraphId &&
-          entry.endParagraphId === range.endParagraphId &&
-          entry.startOffset === range.startOffset &&
-          entry.endOffset === range.endOffset &&
-          entry.emoji === range.emoji &&
-          entry.body === range.body,
-      )
-        ? current
-        : [...current, range]
-    })
-  }, [])
-
-  const getTextRangesForParagraph = useCallback(
-    (paragraphId: string): AnnotationParagraphRange[] => {
-      const ranges = buildAnnotationParagraphRanges(selectionHighlights, paragraphs, paragraphIndexMap)
-      return ranges.filter((range) => range.paragraphId === paragraphId)
-    },
-    [paragraphIndexMap, paragraphs, selectionHighlights],
-  )
-
-  // Restore scroll position
   useEffect(() => {
-    if (restoredRef.current || !scrollRef.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
-    restoredRef.current = true
+    if (!restoreRequest || highlightParagraphId || !scrollRef.current) return
+    if (restoreAppliedTokenRef.current === restoreRequest.token) return
 
-    const savedScroll = localStorage.getItem(`bookstream-scroll-${chapterId}`)
-    if (savedScroll) {
-      const pos = parseFloat(savedScroll)
-      scrollRef.current.scrollTop = pos
-    }
-  }, [chapterId])
+    const targetNode = sectionRefs.current[restoreRequest.chapterId]
+    if (!targetNode) return
 
-  const saveProgress = useCallback((scrollPercent: number) => {
-    if (!bookId || !chapterId || !readerId) return
+    const frameId = window.requestAnimationFrame(() => {
+      const container = scrollRef.current
+      const currentTarget = sectionRefs.current[restoreRequest.chapterId]
+      if (!container || !currentTarget) return
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
+      const sectionIndex = sections.findIndex((section) => section.chapter.id === restoreRequest.chapterId)
+      const nextNode = sectionIndex >= 0
+        ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
+        : null
+      const sectionBottom = nextNode
+        ? nextNode.offsetTop
+        : Math.max(currentTarget.offsetTop + currentTarget.offsetHeight, container.scrollHeight)
+      const travel = Math.max(0, sectionBottom - currentTarget.offsetTop - container.clientHeight * 0.2)
+      container.scrollTop = currentTarget.offsetTop + travel * restoreRequest.scrollPercent
+      restoreAppliedTokenRef.current = restoreRequest.token
+      updateActiveChapter(false)
+    })
 
-    localStorage.setItem(`bookstream-scroll-${chapterId}`, String(scrollRef.current?.scrollTop || 0))
+    return () => window.cancelAnimationFrame(frameId)
+  }, [highlightParagraphId, restoreRequest, sections, updateActiveChapter])
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await fetch('/api/progress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            readerId,
-            bookId,
-            chapterId,
-            variantType: useReaderStore.getState().variantType,
-            scrollPercent,
-            fontSize,
-            lineHeight,
-            theme,
-            readingMode,
-          }),
-        })
-      } catch (e) {
-        console.error('Failed to save progress:', e)
-      }
-    }, 2000)
-  }, [bookId, chapterId, readerId, fontSize, lineHeight, theme, readingMode])
+  useEffect(() => {
+    if (!scrollToChapterId || !scrollRef.current) return
 
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) return
-    const el = scrollRef.current
-    const scrollPercent = el.scrollHeight > el.clientHeight
-      ? el.scrollTop / (el.scrollHeight - el.clientHeight)
-      : 0
-    saveProgress(scrollPercent)
-    onScrollProgress?.(scrollPercent)
+    const targetNode = sectionRefs.current[scrollToChapterId]
+    if (!targetNode) return
 
-    // Show loader when near bottom and there's a next chapter
-    if (nextChapter) {
-      const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (distanceToBottom < 200) {
-        setShowNextLoader(true)
-      } else {
-        setShowNextLoader(false)
-      }
-    }
-  }, [saveProgress, nextChapter, onScrollProgress])
+    const frameId = window.requestAnimationFrame(() => {
+      targetNode.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      updateActiveChapter(false)
+      onScrollToChapterHandled?.()
+    })
 
-  const handleLoadNextChapter = useCallback(() => {
-    if (showNextLoader && nextChapter) {
-      onNextChapter()
-    }
-  }, [showNextLoader, nextChapter, onNextChapter])
+    return () => window.cancelAnimationFrame(frameId)
+  }, [onScrollToChapterHandled, scrollToChapterId, sections, updateActiveChapter])
 
-  const handleBookmarkClick = useCallback((e: React.MouseEvent, stableKey: string) => {
-    e.stopPropagation()
-    onToggleBookmark?.(stableKey)
+  useEffect(() => {
+    updateActiveChapter(false)
+  }, [activeChapterId, sections, updateActiveChapter])
+
+  const handleBookmarkClick = useCallback((event: React.MouseEvent, chapterId: string, stableKey: string) => {
+    event.stopPropagation()
+    onToggleBookmark?.(chapterId, stableKey)
   }, [onToggleBookmark])
 
   const contentMaxWidth = lineWidth === 'narrow' ? '36rem' : lineWidth === 'medium' ? '48rem' : '64rem'
@@ -297,281 +427,254 @@ export default function FeedReader({
       onScroll={handleScroll}
       style={{ overflowY: 'auto', height: '100%', padding: '1.5rem 1rem' }}
     >
-      <div style={{ position: 'relative' }}>
-        <div
-          style={{
-            maxWidth: contentMaxWidth,
-            margin: '0 auto 1.75rem',
-            padding: '0 0 0.75rem',
-            textAlign: 'center',
-          }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              color: 'var(--r-text)',
-              fontSize: 'clamp(1.4rem, 2.8vw, 2.2rem)',
-              lineHeight: 1.08,
-              fontWeight: 780,
-              letterSpacing: '-0.05em',
-            }}
-          >
-            {chapterTitle}
-          </h1>
-        </div>
-        <TextSelector containerRef={scrollRef} variantId={variantId} onSelectionAnnotation={handleSelectionAnnotation} />
-        <div
-          className="reader-content"
-          data-line-width={lineWidth}
-          style={{
-            fontSize: `${fontSize}px`,
-            lineHeight: `${lineHeight}`,
-            maxWidth: contentMaxWidth,
-            margin: '0 auto',
-          }}
-        >
-          {paragraphs.map((p) => {
-            const isQuoteTarget = highlightParagraphId === p.id
-            const ranges = getTextRangesForParagraph(p.id)
-            const hasSelectionHighlight = ranges.length > 0
-            const textSegments = splitTextByAnnotationRanges(p.text, ranges)
+      <TextSelector containerRef={scrollRef} variantId={sections[0]?.variant.id || ''} onSelectionAnnotation={handleSelectionAnnotation} />
+      <div ref={topSentinelRef} style={{ height: '1px' }} />
+      <div ref={contentRef} style={{ position: 'relative' }}>
+        {sections.map((section, sectionIndex) => {
+          const isActiveSection = section.chapter.id === activeChapterId
+          const bookmarkedKey = bookmarkedKeys[section.chapter.id] || null
 
-            return (
-              <div
-                key={p.stableKey || p.id}
-                className="group"
-                style={{
-                  position: 'relative',
-                  marginBottom: '0.25rem',
-                  backgroundColor: hasSelectionHighlight
-                    ? 'color-mix(in srgb, var(--r-accent) 6%, transparent)'
-                    : isQuoteTarget
-                      ? 'rgba(245, 158, 11, 0.10)'
-                      : 'transparent',
-                  transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
-                }}
-              >
-                {isQuoteTarget && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '-0.6rem',
-                      right: '0.75rem',
-                      zIndex: 2,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.2rem 0.55rem',
-                      borderRadius: '9999px',
-                      backgroundColor: 'var(--r-accent)',
-                      color: 'var(--r-accent-foreground)',
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    Цитата
-                  </span>
-                )}
-                <article
-                  data-paragraph-id={p.id}
-                  data-stable-key={p.stableKey}
-                  style={{ marginBottom: '0.5rem' }}
-                >
-                  {/* Bookmark button — left side, visible on hover */}
-                  <button
-                    onClick={(e) => handleBookmarkClick(e, p.stableKey)}
-                    title={bookmarkedKey === p.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
-                    style={{
-                      position: 'absolute',
-                      left: '-2rem',
-                      top: '0',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '1rem',
-                      opacity: bookmarkedKey === p.stableKey ? 1 : 0,
-                      transition: 'opacity 0.2s ease, transform 0.2s ease',
-                      transform: bookmarkedKey === p.stableKey ? 'scale(1.1)' : 'scale(1)',
-                      color: bookmarkedKey === p.stableKey ? 'var(--r-accent)' : 'var(--r-text-secondary)',
-                      padding: '0.25rem',
-                      lineHeight: 1,
-                      pointerEvents: 'auto',
-                    }}
-                    className="bookmark-btn"
-                  >
-                    {bookmarkedKey === p.stableKey ? '🔖' : '📑'}
-                  </button>
-                  <p style={{ margin: 0 }}>
-                    {textSegments.map((segment, index) =>
-                      segment.highlighted ? (
-                        <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
-                          <span className="bookstream-word-highlight">{segment.text}</span>
-                          {segment.badges.map((badge, badgeIndex) => (
-                            <span
-                              key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
-                              className="bookstream-inline-annotation-badge"
-                              data-kind={badge.kind}
-                              title={
-                                badge.kind === 'reaction'
-                                  ? 'Вы поставили реакцию'
-                                  : badge.kind === 'quote'
-                                    ? 'Вы вынесли цитату'
-                                    : 'Вы оставили комментарий'
-                              }
-                            >
-                              {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
-                      ),
-                    )}
-                  </p>
-                </article>
-                {/* Reactions bar */}
-                <ReactionBar paragraphId={p.id} variantId={variantId} />
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Telegram-style chapter separator at the end */}
-        {nextChapter && (
-          <div style={{ maxWidth: contentMaxWidth, margin: '1.5rem auto 2rem' }}>
-            <div style={{ textAlign: 'center', margin: '1.5rem 0 1rem' }}>
-              <span
-                style={{
-                  display: 'inline-block',
-                  backgroundColor: 'var(--r-bg-secondary)',
-                  color: 'var(--r-text-secondary)',
-                  padding: '0.25rem 0.75rem',
-                  borderRadius: '9999px',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                }}
-              >
-                Конец главы
-              </span>
-            </div>
-
-            <button
-              onClick={handleLoadNextChapter}
+          return (
+            <section
+              key={`${section.chapter.id}-${section.variant.variantType}`}
+              ref={(node) => {
+                sectionRefs.current[section.chapter.id] = node
+              }}
+              data-chapter-id={section.chapter.id}
+              data-variant-id={section.variant.id}
+              data-variant-type={section.variant.variantType}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                width: '100%',
-                padding: '1rem',
-                borderRadius: '0.75rem',
-                border: '1px solid var(--r-border)',
-                backgroundColor: 'var(--r-bg-secondary)',
-                color: 'var(--r-text)',
-                cursor: 'pointer',
-                fontSize: '0.9375rem',
-                textAlign: 'left',
-                minHeight: '56px',
-                transition: 'background-color 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--r-border)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--r-bg-secondary)'
+                maxWidth: contentMaxWidth,
+                margin: sectionIndex === 0 ? '0 auto 2rem' : '0 auto 2.5rem',
               }}
             >
               <div
                 style={{
-                  width: '2.5rem',
-                  height: '2.5rem',
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--r-accent)',
-                  color: 'var(--r-accent-foreground)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.8125rem',
-                  fontWeight: 700,
-                  flexShrink: 0,
+                  marginBottom: '1.25rem',
+                  paddingBottom: '0.75rem',
+                  textAlign: 'center',
+                  borderBottom: sectionIndex > 0 ? '1px solid var(--r-border)' : 'none',
                 }}
               >
-                {nextChapter.position + 1}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '0.6rem',
+                    borderRadius: '9999px',
+                    backgroundColor: 'var(--r-bg-secondary)',
+                    padding: '0.35rem 0.8rem',
+                    color: 'var(--r-text-secondary)',
+                    fontSize: '0.75rem',
                     fontWeight: 600,
-                    fontSize: '0.9375rem',
-                    marginBottom: '0.125rem',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {nextChapter.title}
+                  Глава {section.chapter.position + 1}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--r-text-secondary)' }}>
-                  Следующая глава
-                </div>
+                <h1
+                  style={{
+                    margin: 0,
+                    color: 'var(--r-text)',
+                    fontSize: 'clamp(1.4rem, 2.8vw, 2.2rem)',
+                    lineHeight: 1.08,
+                    fontWeight: 780,
+                    letterSpacing: '-0.05em',
+                  }}
+                >
+                  {section.chapter.title}
+                </h1>
               </div>
-              <div style={{ color: 'var(--r-text-secondary)', fontSize: '1.25rem', flexShrink: 0 }}>
-                &rarr;
-              </div>
-            </button>
 
-            {showNextLoader && (
               <div
+                className="reader-content"
+                data-line-width={lineWidth}
                 style={{
-                  textAlign: 'center',
-                  padding: '0.75rem',
-                  color: 'var(--r-text-secondary)',
-                  fontSize: '0.8125rem',
+                  fontSize: `${fontSize}px`,
+                  lineHeight: `${lineHeight}`,
+                  margin: '0 auto',
                 }}
               >
-                <span style={{ color: 'var(--r-accent)' }}>&darr;</span>
-                {' '}Нажмите, чтобы продолжить
+                {section.variant.paragraphs.map((paragraph) => {
+                  const isQuoteTarget = highlightParagraphId === paragraph.id
+                  const ranges = getTextRangesForParagraph(section.chapter.id, paragraph.id)
+                  const hasSelectionHighlight = ranges.length > 0
+                  const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
+                  const canRenderRichParagraph = !hasSelectionHighlight && Boolean(paragraph.html)
+
+                  return (
+                    <div
+                      key={paragraph.stableKey || paragraph.id}
+                      className="group"
+                      style={{
+                        position: 'relative',
+                        marginBottom: '0.25rem',
+                        backgroundColor: hasSelectionHighlight
+                          ? 'color-mix(in srgb, var(--r-accent) 6%, transparent)'
+                          : isQuoteTarget
+                            ? 'rgba(245, 158, 11, 0.10)'
+                            : 'transparent',
+                        transition: 'box-shadow 0.25s ease, background-color 0.25s ease, transform 0.25s ease',
+                      }}
+                    >
+                      {isQuoteTarget && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            top: '-0.6rem',
+                            right: '0.75rem',
+                            zIndex: 2,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '9999px',
+                            backgroundColor: 'var(--r-accent)',
+                            color: 'var(--r-accent-foreground)',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            boxShadow: '0 8px 20px rgba(0, 0, 0, 0.14)',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          Цитата
+                        </span>
+                      )}
+                      <article
+                        data-paragraph-id={paragraph.id}
+                        data-stable-key={paragraph.stableKey}
+                        style={{ marginBottom: '0.5rem' }}
+                      >
+                        <button
+                          onClick={(event) => handleBookmarkClick(event, section.chapter.id, paragraph.stableKey)}
+                          title={bookmarkedKey === paragraph.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
+                          style={{
+                            position: 'absolute',
+                            left: '-2rem',
+                            top: '0',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            opacity: bookmarkedKey === paragraph.stableKey ? 1 : 0,
+                            transition: 'opacity 0.2s ease, transform 0.2s ease',
+                            transform: bookmarkedKey === paragraph.stableKey ? 'scale(1.1)' : 'scale(1)',
+                            color: bookmarkedKey === paragraph.stableKey ? 'var(--r-accent)' : 'var(--r-text-secondary)',
+                            padding: '0.25rem',
+                            lineHeight: 1,
+                            pointerEvents: 'auto',
+                          }}
+                          className="bookmark-btn"
+                        >
+                          {bookmarkedKey === paragraph.stableKey ? '🔖' : '📑'}
+                        </button>
+                        {canRenderRichParagraph ? (
+                          <p
+                            style={{
+                              margin: 0,
+                              textAlign: paragraph.textAlign ?? undefined,
+                              paddingInlineStart: paragraph.indentPx ? `${Math.min(paragraph.indentPx, 160)}px` : undefined,
+                            }}
+                            dangerouslySetInnerHTML={{ __html: paragraph.html || '' }}
+                          />
+                        ) : (
+                          <p
+                            style={{
+                              margin: 0,
+                              textAlign: paragraph.textAlign ?? undefined,
+                              paddingInlineStart: paragraph.indentPx ? `${Math.min(paragraph.indentPx, 160)}px` : undefined,
+                            }}
+                          >
+                            {textSegments.map((segment, index) => (
+                              segment.highlighted ? (
+                                <span key={`${paragraph.id}-hl-${index}`} className="bookstream-inline-annotation">
+                                  <span className="bookstream-word-highlight">{segment.text}</span>
+                                  {segment.badges.map((badge, badgeIndex) => (
+                                    <span
+                                      key={`${paragraph.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                                      className="bookstream-inline-annotation-badge"
+                                      data-kind={badge.kind}
+                                      title={
+                                        badge.kind === 'reaction'
+                                          ? 'Вы поставили реакцию'
+                                          : badge.kind === 'quote'
+                                            ? 'Вы вынесли цитату'
+                                            : 'Вы оставили комментарий'
+                                      }
+                                    >
+                                      {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                <span key={`${paragraph.id}-txt-${index}`}>{segment.text}</span>
+                              )
+                            ))}
+                          </p>
+                        )}
+                      </article>
+                      <ReactionBar
+                        paragraphId={paragraph.id}
+                        variantId={section.variant.id}
+                        chapterId={section.chapter.id}
+                        variantType={section.variant.variantType}
+                        showOnMobile={showMobileReactionBar}
+                      />
+                    </div>
+                  )
+                })}
               </div>
-            )}
+
+              <FeedCommentsPreview
+                chapterId={section.chapter.id}
+                chapterTitle={section.chapter.title}
+                authorSlug={authorSlug}
+                bookSlug={bookSlug}
+                comments={section.commentsPreview}
+                totalCount={section.commentCount}
+              />
+
+              {isActiveSection && (
+                <div style={{ marginTop: '1.5rem' }}>
+                  <CommentsSection
+                    chapterId={section.chapter.id}
+                    onSendComment={onSendComment}
+                    sectionRef={commentsSectionRef}
+                    authorSlug={authorSlug}
+                    bookSlug={bookSlug}
+                  />
+                </div>
+              )}
+
+              <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    backgroundColor: 'var(--r-bg-secondary)',
+                    color: 'var(--r-text-secondary)',
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                  }}
+                >
+                  {section.nextChapterId ? 'Следующая глава ниже' : 'Конец книги'}
+                </span>
+              </div>
+            </section>
+          )
+        })}
+
+        {(loadingNext || hasMoreNext) && (
+          <div style={{ textAlign: 'center', padding: '0.5rem 0 1.5rem', color: 'var(--r-text-secondary)', fontSize: '0.8125rem' }}>
+            {loadingNext ? 'Подгружаем следующую главу...' : 'Прокрутите ниже для продолжения'}
           </div>
         )}
-
-        {/* Book finished */}
-        {!nextChapter && paragraphs.length > 0 && (
-          <div style={{ textAlign: 'center', padding: '1rem 1rem 0', maxWidth: contentMaxWidth, margin: '0 auto' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                backgroundColor: 'var(--r-bg-secondary)',
-                color: 'var(--r-text-secondary)',
-                padding: '0.25rem 0.75rem',
-                borderRadius: '9999px',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-              }}
-            >
-              Книга прочитана
-            </span>
-          </div>
-        )}
-
-        {/* Comments section — inline at the bottom of the scroll */}
-        <div style={{ maxWidth: contentMaxWidth, margin: '1.5rem auto 0' }}>
-          <CommentsSection
-            chapterId={chapterId || ''}
-            onSendComment={onSendComment}
-            sectionRef={commentsSectionRef}
-            authorSlug={authorSlug}
-            bookSlug={bookSlug}
-          />
-        </div>
-
-        {/* Bottom spacer so last comment is not cut off */}
-        <div style={{ height: '2rem' }} />
       </div>
+      <div ref={bottomSentinelRef} style={{ height: '1px' }} />
+      <div style={{ height: '2rem' }} />
     </div>
   )
 }

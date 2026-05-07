@@ -7,6 +7,9 @@ export interface SyncedParagraphInput {
   stableKey: string
   position: number
   text: string
+  html: string
+  textAlign: 'left' | 'center' | 'right' | 'justify' | null
+  indentPx: number
 }
 
 /**
@@ -21,6 +24,9 @@ export function buildParagraphInputsFromHtml(contentHtml: string): SyncedParagra
       stableKey: paragraph.stableKey || `p-${index}`,
       position: index,
       text: paragraph.text.trim(),
+      html: paragraph.html,
+      textAlign: paragraph.textAlign,
+      indentPx: paragraph.indentPx,
     }))
     .filter((paragraph) => paragraph.text.length > 0)
 }

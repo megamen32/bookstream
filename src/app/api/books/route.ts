@@ -1,23 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
+
+function canViewDrafts(request: NextRequest): boolean {
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get('includeDrafts') === '1') {
+    return true;
+  }
+
+  const referer = request.headers.get('referer');
+  if (!referer) {
+    return false;
+  }
+
+  try {
+    return new URL(referer).pathname.startsWith('/admin');
+  } catch {
+    return false;
+  }
+}
 
 // GET /api/books — List books (with author info). Query params: authorSlug
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const authorSlug = searchParams.get('authorSlug');
+    const includeDrafts = canViewDrafts(request);
+    const where: Prisma.BookWhereInput = {
+      ...(authorSlug ? { author: { slug: authorSlug } } : {}),
+      ...(includeDrafts ? {} : { isPublic: true }),
+    };
 
     const books = await db.book.findMany({
-      where: authorSlug
-        ? { author: { slug: authorSlug } }
-        : undefined,
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         author: {
           select: { id: true, slug: true, name: true },
         },
         _count: {
-          select: { chapters: true },
+          select: { chapters: true, comments: true },
         },
       },
     });

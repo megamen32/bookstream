@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useReaderStore } from '@/lib/store'
 import { MessageSquare } from 'lucide-react'
@@ -8,6 +8,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ArrowUpRight } from 'lucide-react'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import type { CommentSubmitHandler, ReaderComment } from './comment-types'
 
 const VARIANT_LABELS: Record<string, string> = {
   original: 'Оригинал',
@@ -44,28 +45,28 @@ function stringToColor(str: string): string {
   return `hsl(${hue}, 60%, 45%)`
 }
 
-interface Comment {
-  id: string
-  readerId: string
-  username: string
-  body: string
-  createdAt: string
-  quotes: Array<{
-    id: string
-    variantType: string
-    selectedText: string
-    paragraphId: string
-    endParagraphId?: string | null
-  }>
+const COMMENT_CREATED_EVENT = 'bookstream:comment-created'
+
+interface CommentCreatedDetail {
+  chapterId: string
+  comment: ReaderComment
 }
 
 interface CommentsSectionProps {
   chapterId: string
-  onSendComment: (body: string) => void
+  onSendComment: CommentSubmitHandler
   /** Ref to the section so parent can scroll to it */
   sectionRef?: React.RefObject<HTMLDivElement | null>
   authorSlug?: string
   bookSlug?: string
+}
+
+function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment): ReaderComment[] {
+  if (comments.some((item) => item.id === comment.id)) {
+    return comments
+  }
+
+  return [comment, ...comments]
 }
 
 export default function CommentsSection({
@@ -75,32 +76,70 @@ export default function CommentsSection({
   authorSlug,
   bookSlug,
 }: CommentsSectionProps) {
-  const { replyingTo, setReplyingTo, username, setUsername } = useReaderStore()
-  const [comments, setComments] = useState<Comment[]>([])
+  const {
+    replyingTo,
+    setReplyingTo,
+    username,
+    setUsername,
+    readerId,
+    showCommunityAnnotations,
+  } = useReaderStore()
+  const [comments, setComments] = useState<ReaderComment[]>([])
   const [text, setText] = useState('')
   const [isEditingName, setIsEditingName] = useState(false)
+  const [isSending, setIsSending] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const lastFetchedChapterRef = useRef('')
 
   // Fetch comments when chapterId changes
   useEffect(() => {
-    if (!chapterId || chapterId === lastFetchedChapterRef.current) return
-    lastFetchedChapterRef.current = chapterId
+    if (!chapterId) {
+      return
+    }
 
-    ;(async () => {
+    let isCancelled = false
+
+    const loadComments = async (): Promise<void> => {
       try {
         const res = await fetch(`/api/chapters/${chapterId}/comments`)
-        if (res.ok) {
-          const data = await res.json()
-          setComments(data.comments || [])
+        if (!res.ok) {
+          return
         }
-      } catch (e) {
-        console.error('Failed to fetch comments:', e)
+
+        const data = await res.json() as { comments?: ReaderComment[] }
+        if (!isCancelled) {
+          setComments(Array.isArray(data.comments) ? data.comments : [])
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Failed to fetch comments:', error)
+        }
       }
-    })()
+    }
+
+    void loadComments()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [chapterId])
+
+  useEffect(() => {
+    const handleCommentCreated = (event: Event): void => {
+      const customEvent = event as CustomEvent<CommentCreatedDetail>
+      if (customEvent.detail.chapterId !== chapterId) {
+        return
+      }
+
+      setComments((prev) => prependUniqueComment(prev, customEvent.detail.comment))
+    }
+
+    window.addEventListener(COMMENT_CREATED_EVENT, handleCommentCreated)
+    return () => {
+      window.removeEventListener(COMMENT_CREATED_EVENT, handleCommentCreated)
+    }
   }, [chapterId])
 
   // Auto-focus when replying
@@ -128,26 +167,48 @@ export default function CommentsSection({
     }
   }, [cooldown])
 
-  const handleSend = () => {
-    if (!text.trim() || cooldown > 0) return
-    onSendComment(text.trim())
-    setText('')
-    setReplyingTo(null)
-    setCooldown(15)
-    // Re-fetch comments after sending
-    lastFetchedChapterRef.current = ''
+  const handleSend = async (): Promise<void> => {
+    if (!text.trim() || cooldown > 0 || isSending) return
+
+    setIsSending(true)
+    try {
+      const createdComment = await onSendComment(text.trim())
+      if (!createdComment) {
+        return
+      }
+
+      setComments((prev) => prependUniqueComment(prev, createdComment))
+      window.dispatchEvent(new CustomEvent<CommentCreatedDetail>(COMMENT_CREATED_EVENT, {
+        detail: {
+          chapterId,
+          comment: createdComment,
+        },
+      }))
+      setText('')
+      setReplyingTo(null)
+      setCooldown(15)
+    } finally {
+      setIsSending(false)
+    }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }
 
   const handleNameSubmit = () => {
     setIsEditingName(false)
   }
+
+  const visibleComments = showCommunityAnnotations
+    ? comments
+    : comments.filter((comment) => comment.readerId === readerId)
+  const emptyStateText = showCommunityAnnotations
+    ? 'Пока нет комментариев. Будьте первым!'
+    : 'Пока нет ваших комментариев в этой главе.'
 
   return (
     <div
@@ -171,12 +232,27 @@ export default function CommentsSection({
           Комментарии
         </span>
         <span style={{ fontSize: '0.75rem', color: 'var(--r-text-secondary)' }}>
-          ({comments.length})
+          ({visibleComments.length})
         </span>
       </div>
 
+      {!showCommunityAnnotations && (
+        <div
+          style={{
+            marginBottom: '0.75rem',
+            borderRadius: '0.5rem',
+            backgroundColor: 'var(--r-bg-secondary)',
+            padding: '0.625rem 0.75rem',
+            color: 'var(--r-text-secondary)',
+            fontSize: '0.75rem',
+          }}
+        >
+          Показаны только ваши комментарии.
+        </div>
+      )}
+
       {/* Comments list */}
-      {comments.length === 0 ? (
+      {visibleComments.length === 0 ? (
         <div
           style={{
             textAlign: 'center',
@@ -185,11 +261,11 @@ export default function CommentsSection({
             fontSize: '0.8125rem',
           }}
         >
-          Пока нет комментариев. Будьте первым!
+          {emptyStateText}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1rem' }}>
-          {comments.map((comment) => (
+          {visibleComments.map((comment) => (
             <div
               key={comment.id}
               style={{
@@ -410,7 +486,7 @@ export default function CommentsSection({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Написать комментарий..."
-          disabled={cooldown > 0}
+          disabled={cooldown > 0 || isSending}
           style={{
             flex: 1,
             background: 'var(--r-bg-secondary)',
@@ -424,8 +500,8 @@ export default function CommentsSection({
           }}
         />
         <Button
-          onClick={handleSend}
-          disabled={!text.trim() || cooldown > 0}
+          onClick={() => void handleSend()}
+          disabled={!text.trim() || cooldown > 0 || isSending}
           size="sm"
           style={{
             borderRadius: '50%',
@@ -437,7 +513,7 @@ export default function CommentsSection({
             color: 'var(--r-accent-foreground)',
           }}
         >
-          {cooldown > 0 ? `${cooldown}` : '→'}
+          {cooldown > 0 ? `${cooldown}` : isSending ? '…' : '→'}
         </Button>
       </div>
     </div>

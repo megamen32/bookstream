@@ -41,6 +41,14 @@ import { FormulaBlock } from './extensions/FormulaBlock'
 import { TelegramQuote } from './extensions/TelegramQuote'
 import type { BookTextEditorProps } from './editor-types'
 
+interface ShortcutEvent {
+  ctrlKey: boolean
+  metaKey: boolean
+  key: string
+  preventDefault: () => void
+  stopPropagation: () => void
+}
+
 export function BookTextEditor({
   value,
   title,
@@ -56,6 +64,30 @@ export function BookTextEditor({
   className,
 }: BookTextEditorProps) {
   const [focusMode, setFocusMode] = useState(false)
+
+  const handleShortcut = (event: ShortcutEvent): boolean => {
+    if (!event.ctrlKey && !event.metaKey) {
+      return false
+    }
+
+    const normalizedKey = event.key.toLowerCase()
+
+    if (normalizedKey === 's') {
+      event.preventDefault()
+      event.stopPropagation()
+      void onSave?.()
+      return true
+    }
+
+    if (normalizedKey === 'b') {
+      event.preventDefault()
+      event.stopPropagation()
+      editor?.chain().focus().toggleBold().run()
+      return true
+    }
+
+    return false
+  }
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -83,13 +115,7 @@ export function BookTextEditor({
         return true
       },
       handleKeyDown(_view, event) {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-          event.preventDefault()
-          void onSave?.()
-          return true
-        }
-
-        return false
+        return handleShortcut(event)
       },
     },
     extensions: [
@@ -362,10 +388,7 @@ export function BookTextEditor({
             value={title ?? ''}
             onChange={(event) => onTitleChange(event.target.value)}
             onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-                event.preventDefault()
-                void onSave?.()
-              }
+              handleShortcut(event)
             }}
             placeholder={titlePlaceholder}
             aria-label={titlePlaceholder}

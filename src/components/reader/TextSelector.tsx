@@ -11,6 +11,7 @@ import type { AnnotationKind } from '@/lib/annotations'
 export interface SelectionAnnotationRange {
   id?: string
   kind: AnnotationKind
+  chapterId?: string
   paragraphId: string
   endParagraphId: string
   startOffset: number
@@ -30,6 +31,9 @@ interface ToolbarPosition {
   top: number
   left: number
   selectedText: string
+  chapterId: string
+  variantId: string
+  variantType: string
   paragraphId: string
   endParagraphId: string
   startOffset: number
@@ -107,7 +111,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
   const [reactionBurst, setReactionBurst] = useState<ReactionBurst | null>(null)
   const activeSelectionNodesRef = useRef<HTMLElement[]>([])
   const preserveSelectionFrameRef = useRef(false)
-  const { setReplyingTo, readerId, bookId, chapterId, username, variantType } = useReaderStore()
+  const { setReplyingTo, readerId, bookId, username } = useReaderStore()
 
   const clearSelectionHighlight = useCallback(() => {
     for (const node of activeSelectionNodesRef.current) {
@@ -195,6 +199,12 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
       return
     }
 
+    const chapterContainer = startArticle.closest<HTMLElement>('[data-chapter-id][data-variant-id][data-variant-type]')
+    const chapterId = chapterContainer?.dataset.chapterId || ''
+    const selectedVariantId = chapterContainer?.dataset.variantId || variantId
+    const selectedVariantType = chapterContainer?.dataset.variantType || 'original'
+    if (!chapterId || !selectedVariantId) return
+
     const rect = range.getBoundingClientRect()
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
@@ -214,6 +224,9 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
       top,
       left,
       selectedText,
+      chapterId,
+      variantId: selectedVariantId,
+      variantType: selectedVariantType,
       paragraphId: selectedParagraphIds[0],
       endParagraphId: selectedParagraphIds[selectedParagraphIds.length - 1],
       startOffset: range.startOffset,
@@ -259,7 +272,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
     if (!toolbar) return
     setReplyingTo({
       text: toolbar.selectedText,
-      variantType,
+      variantType: toolbar.variantType,
       paragraphId: toolbar.paragraphId,
       endParagraphId: toolbar.endParagraphId,
       startOffset: toolbar.startOffset,
@@ -297,7 +310,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
   }
 
   const handleAnnotationToggle = async (kind: AnnotationKind, emoji?: string | null) => {
-    if (!toolbar || !readerId || !bookId || !chapterId || !username) return
+    if (!toolbar || !readerId || !bookId || !toolbar.chapterId || !username) return
 
     try {
       const res = await fetch('/api/annotations', {
@@ -306,9 +319,9 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
         body: JSON.stringify({
           kind,
           bookId,
-          chapterId,
-          chapterVariantId: variantId,
-          variantType,
+          chapterId: toolbar.chapterId,
+          chapterVariantId: toolbar.variantId,
+          variantType: toolbar.variantType,
           readerId,
           username,
           emoji: emoji || null,
@@ -356,6 +369,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
         {
           id: payload.annotation?.id,
           kind,
+          chapterId: toolbar.chapterId,
           paragraphId: toolbar.paragraphId,
           endParagraphId: toolbar.endParagraphId,
           startOffset: toolbar.startOffset,
@@ -377,7 +391,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
             kind,
             paragraphId: toolbar.paragraphId,
             endParagraphId: toolbar.endParagraphId,
-            chapterVariantId: variantId,
+            chapterVariantId: toolbar.variantId,
           },
         }),
       )
@@ -386,7 +400,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
           detail: {
             paragraphId: toolbar.paragraphId,
             endParagraphId: toolbar.endParagraphId,
-            chapterVariantId: variantId,
+            chapterVariantId: toolbar.variantId,
           },
         }),
       )

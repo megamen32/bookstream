@@ -6,6 +6,7 @@ import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import CommentsSection from './CommentsSection'
 import ReactionBar from './ReactionBar'
+import type { CommentSubmitHandler } from './comment-types'
 import { MessageSquare, X } from 'lucide-react'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
@@ -21,6 +22,9 @@ interface Paragraph {
   stableKey: string
   position: number
   text: string
+  html?: string
+  textAlign?: 'left' | 'center' | 'right' | 'justify' | null
+  indentPx?: number
 }
 
 interface BookReaderProps {
@@ -31,7 +35,7 @@ interface BookReaderProps {
   onNextChapter: () => void
   onPrevChapter: () => void
   chapterTitle: string
-  onSendComment: (body: string) => void
+  onSendComment: CommentSubmitHandler
   commentCount: number
   /** Callback with progress (0-1) for progress bar */
   onProgress?: (percent: number) => void
@@ -72,7 +76,7 @@ export default function BookReader({
   highlightParagraphId,
   highlightParagraphEndId,
 }: BookReaderProps) {
-  const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode } = useReaderStore()
+  const { fontSize, lineHeight, lineWidth, theme, bookId, chapterId, readerId, readingMode, showMobileReactionBar } = useReaderStore()
   const innerRef = useRef<HTMLDivElement>(null)
   const contentRefInternal = useRef<HTMLDivElement>(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -222,9 +226,9 @@ export default function BookReader({
     const el = contentRefInternal.current
     if (!el) return
     const observer = new ResizeObserver(() => {
-      const totalHeight = el.scrollHeight
-      const pageHeight = el.clientHeight
-      const pages = Math.max(1, Math.ceil(totalHeight / pageHeight))
+      const totalWidth = el.scrollWidth
+      const pageWidth = el.clientWidth
+      const pages = pageWidth > 0 ? Math.max(1, Math.ceil(totalWidth / pageWidth)) : 1
       setTotalPages(pages)
       if (currentPage > pages) setCurrentPage(Math.max(1, pages))
     })
@@ -248,8 +252,8 @@ export default function BookReader({
   // Scroll to current page
   useEffect(() => {
     if (!contentRefInternal.current || !restoredRef.current || (highlightParagraphId && !quoteFocusAppliedRef.current)) return
-    const pageHeight = contentRefInternal.current.clientHeight
-    contentRefInternal.current.scrollTop = (currentPage - 1) * pageHeight
+    const pageWidth = contentRefInternal.current.clientWidth
+    contentRefInternal.current.scrollLeft = (currentPage - 1) * pageWidth
   }, [currentPage, highlightParagraphId])
 
   // Report progress
@@ -430,6 +434,7 @@ export default function BookReader({
             const ranges = getTextRangesForParagraph(p.id)
             const hasSelectionHighlight = ranges.length > 0
             const textSegments = splitTextByAnnotationRanges(p.text, ranges)
+            const canRenderRichParagraph = !hasSelectionHighlight && Boolean(p.html)
 
             return (
               <div
@@ -473,37 +478,49 @@ export default function BookReader({
                 <article
                   data-paragraph-id={p.id}
                   data-stable-key={p.stableKey}
-                  style={{ breakInside: 'avoid', marginBottom: '0.5em', textAlign: 'justify', hyphens: 'auto', color: 'var(--r-text)', fontFamily: 'Georgia, "Times New Roman", Times, serif' }}
+                  style={{
+                    breakInside: 'avoid',
+                    marginBottom: '0.5em',
+                    textAlign: p.textAlign ?? 'justify',
+                    hyphens: 'auto',
+                    color: 'var(--r-text)',
+                    fontFamily: 'Georgia, "Times New Roman", Times, serif',
+                    paddingInlineStart: p.indentPx ? `${Math.min(p.indentPx, 160)}px` : undefined,
+                  }}
                 >
-                  <p style={{ margin: 0 }}>
-                    {textSegments.map((segment, index) =>
-                      segment.highlighted ? (
-                        <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
-                          <span className="bookstream-word-highlight">{segment.text}</span>
-                          {segment.badges.map((badge, badgeIndex) => (
-                            <span
-                              key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
-                              className="bookstream-inline-annotation-badge"
-                              data-kind={badge.kind}
-                              title={
-                                badge.kind === 'reaction'
-                                  ? 'Вы поставили реакцию'
-                                  : badge.kind === 'quote'
-                                    ? 'Вы вынесли цитату'
-                                    : 'Вы оставили комментарий'
-                              }
-                            >
-                              {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
-                      ),
-                    )}
-                  </p>
+                  {canRenderRichParagraph ? (
+                    <p style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: p.html || '' }} />
+                  ) : (
+                    <p style={{ margin: 0 }}>
+                      {textSegments.map((segment, index) =>
+                        segment.highlighted ? (
+                          <span key={`${p.id}-hl-${index}`} className="bookstream-inline-annotation">
+                            <span className="bookstream-word-highlight">{segment.text}</span>
+                            {segment.badges.map((badge, badgeIndex) => (
+                              <span
+                                key={`${p.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                                className="bookstream-inline-annotation-badge"
+                                data-kind={badge.kind}
+                                title={
+                                  badge.kind === 'reaction'
+                                    ? 'Вы поставили реакцию'
+                                    : badge.kind === 'quote'
+                                      ? 'Вы вынесли цитату'
+                                      : 'Вы оставили комментарий'
+                                }
+                              >
+                                {badge.kind === 'reaction' ? badge.emoji || '•' : badge.kind === 'quote' ? '»' : '✎'}
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span key={`${p.id}-txt-${index}`}>{segment.text}</span>
+                        ),
+                      )}
+                    </p>
+                  )}
                 </article>
-                <ReactionBar paragraphId={p.id} variantId={variantId} />
+                <ReactionBar paragraphId={p.id} variantId={variantId} showOnMobile={showMobileReactionBar} />
               </div>
             )
           })}

@@ -41,6 +41,7 @@ model Chapter {
   id        String           @id @default(cuid())
   bookId    String
   title     String
+  level     Int              @default(1)
   position  Int
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt

@@ -107,7 +107,7 @@ export default function AdminVariantsPage() {
       const res = await fetch('/api/variant-presets')
       if (res.ok) {
         const data = await res.json()
-        setPresets(Array.isArray(data) ? data : [])
+        setPresets(Array.isArray(data) ? data : Array.isArray(data.presets) ? data.presets : [])
       }
     } catch (error) {
       console.error('Error fetching presets:', error)

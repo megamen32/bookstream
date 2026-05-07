@@ -434,6 +434,21 @@ function LoadingStack({ count }: { count: number }) {
   )
 }
 
+function getInitialActiveSection({
+  commentCount,
+  quoteCount,
+  chapterCount,
+}: {
+  commentCount: number
+  quoteCount: number
+  chapterCount: number
+}): SectionKey | null {
+  if (commentCount > 0) return 'comments'
+  if (quoteCount > 0) return 'quotes'
+  if (chapterCount > 0) return 'toc'
+  return null
+}
+
 export default function BookHighlightsPanel({
   authorSlug,
   bookSlug,
@@ -447,7 +462,8 @@ export default function BookHighlightsPanel({
   const [quotesLoading, setQuotesLoading] = useState(true)
   const [commentsError, setCommentsError] = useState<string | null>(null)
   const [quotesError, setQuotesError] = useState<string | null>(null)
-  const [activeSection, setActiveSection] = useState<SectionKey | null>('comments')
+  const [manualActiveSection, setManualActiveSection] = useState<SectionKey | null>(null)
+  const [hasManualSectionChoice, setHasManualSectionChoice] = useState(false)
   const [togglingQuoteId, setTogglingQuoteId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -526,9 +542,20 @@ export default function BookHighlightsPanel({
   const chapterCountLabel = contentCount === 1 ? 'глава' : 'глав'
   const commentCount = comments.length
   const quoteCount = quotes.length
+  const preferredActiveSection = useMemo(
+    () =>
+      getInitialActiveSection({
+        commentCount,
+        quoteCount,
+        chapterCount: contentCount,
+      }),
+    [commentCount, quoteCount, contentCount],
+  )
+  const activeSection = hasManualSectionChoice ? manualActiveSection : preferredActiveSection
 
   const handleSectionToggle = (section: SectionKey) => {
-    setActiveSection((current) => (current === section ? null : section))
+    setHasManualSectionChoice(true)
+    setManualActiveSection((current) => (current === section ? null : section))
   }
 
   const handleToggleUpvote = async (quoteId: string): Promise<void> => {
@@ -607,16 +634,32 @@ export default function BookHighlightsPanel({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200/70 dark:bg-emerald-950/35 dark:text-emerald-200 dark:ring-emerald-900/50">
-              1. Комментарии
-            </span>
-            <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200/70 dark:bg-amber-950/25 dark:text-amber-200 dark:ring-amber-900/50">
-              2. Цитаты
-            </span>
-            <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200/80 dark:bg-slate-900/65 dark:text-slate-200 dark:ring-slate-700/60">
-              3. Содержание
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+            {(['comments', 'quotes', 'toc'] as const).map((sectionKey) => {
+              const config = SECTION_CONFIGS[sectionKey]
+              const isActive = activeSection === sectionKey
+              const count =
+                sectionKey === 'comments' ? commentCount : sectionKey === 'quotes' ? quoteCount : contentCount
+
+              return (
+                <Button
+                  key={sectionKey}
+                  type="button"
+                  size="sm"
+                  variant={isActive ? 'default' : 'outline'}
+                  onClick={() => handleSectionToggle(sectionKey)}
+                  className={cn(
+                    'rounded-full px-3 shadow-none',
+                    isActive ? config.tone.buttonActive : config.tone.button,
+                  )}
+                >
+                  {config.title}
+                  <span className="ml-2 rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold text-current dark:bg-white/10">
+                    {count}
+                  </span>
+                </Button>
+              )
+            })}
           </div>
         </div>
 
@@ -635,26 +678,28 @@ export default function BookHighlightsPanel({
               active={activeSection === 'comments'}
               onToggle={() => handleSectionToggle('comments')}
             />
-            <div className="px-4 py-4 sm:px-5">
-              {commentsLoading ? (
-                <LoadingStack count={3} />
-              ) : commentsError ? (
-                <EmptyState text={commentsError} />
-              ) : commentCount === 0 ? (
-                <EmptyState text="Пока нет активных комментариев для этой книги." />
-              ) : (
-                <div className="space-y-3">
-                  {visibleComments.map((comment) => (
-                    <CommentCard
-                      key={comment.id}
-                      comment={comment}
-                      chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`}
-                      expanded={activeSection === 'comments'}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            {(activeSection === 'comments' || commentsLoading || commentsError || commentCount > 0) && (
+              <div className="px-4 py-4 sm:px-5">
+                {commentsLoading ? (
+                  <LoadingStack count={3} />
+                ) : commentsError ? (
+                  <EmptyState text={commentsError} />
+                ) : commentCount === 0 ? (
+                  <EmptyState text="Пока нет активных комментариев для этой книги." />
+                ) : (
+                  <div className="space-y-3">
+                    {visibleComments.map((comment) => (
+                      <CommentCard
+                        key={comment.id}
+                        comment={comment}
+                        chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`}
+                        expanded={activeSection === 'comments'}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </article>
 
           <article
@@ -671,29 +716,31 @@ export default function BookHighlightsPanel({
               active={activeSection === 'quotes'}
               onToggle={() => handleSectionToggle('quotes')}
             />
-            <div className="px-4 py-4 sm:px-5">
-              {quotesLoading ? (
-                <LoadingStack count={3} />
-              ) : quotesError ? (
-                <EmptyState text={quotesError} />
-              ) : quoteCount === 0 ? (
-                <EmptyState text="Пока никто не вынес цитаты из этой книги." />
-              ) : (
-                <div className="space-y-3">
-                  {visibleQuotes.map((quote) => (
-                    <QuoteCard
-                      key={quote.id}
-                      quote={quote}
-                      active={activeSection === 'quotes'}
-                      toggling={togglingQuoteId === quote.id}
-                      onToggleUpvote={() => void handleToggleUpvote(quote.id)}
-                      authorSlug={authorSlug}
-                      bookSlug={bookSlug}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            {(activeSection === 'quotes' || quotesLoading || quotesError || quoteCount > 0) && (
+              <div className="px-4 py-4 sm:px-5">
+                {quotesLoading ? (
+                  <LoadingStack count={3} />
+                ) : quotesError ? (
+                  <EmptyState text={quotesError} />
+                ) : quoteCount === 0 ? (
+                  <EmptyState text="Пока никто не вынес цитаты из этой книги." />
+                ) : (
+                  <div className="space-y-3">
+                    {visibleQuotes.map((quote) => (
+                      <QuoteCard
+                        key={quote.id}
+                        quote={quote}
+                        active={activeSection === 'quotes'}
+                        toggling={togglingQuoteId === quote.id}
+                        onToggleUpvote={() => void handleToggleUpvote(quote.id)}
+                        authorSlug={authorSlug}
+                        bookSlug={bookSlug}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </article>
 
           <article

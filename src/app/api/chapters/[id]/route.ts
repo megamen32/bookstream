@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ensureVariantParagraphs } from '@/lib/chapter-variants'
+import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
 import { db } from '@/lib/db'
+
+function canViewDrafts(request: NextRequest): boolean {
+  const { searchParams } = new URL(request.url)
+  if (searchParams.get('includeDrafts') === '1') {
+    return true
+  }
+
+  const referer = request.headers.get('referer')
+  if (!referer) {
+    return false
+  }
+
+  try {
+    return new URL(referer).pathname.startsWith('/admin')
+  } catch {
+    return false
+  }
+}
+
+function hasReadableChapterContent(contentHtml: string): boolean {
+  const text = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  return text.length > 0 || /<(img|table|blockquote|hr|ul|ol|pre)\b/i.test(contentHtml)
+}
 
 export async function GET(
   request: NextRequest,
@@ -10,6 +33,7 @@ export async function GET(
     const { id } = await params
     const { searchParams } = new URL(request.url)
     const variantType = searchParams.get('variantType') || 'original'
+    const includeDrafts = canViewDrafts(request)
 
     const chapter = await db.chapter.findUnique({
       where: { id },
@@ -17,6 +41,7 @@ export async function GET(
         book: {
           select: {
             id: true,
+            isPublic: true,
             slug: true,
             title: true,
             author: {
@@ -30,7 +55,13 @@ export async function GET(
               select: {
                 id: true,
                 title: true,
+                level: true,
                 position: true,
+                variants: {
+                  where: { variantType: 'original' },
+                  select: { contentHtml: true },
+                  take: 1,
+                },
               },
             },
           },
@@ -40,6 +71,10 @@ export async function GET(
     })
 
     if (!chapter) {
+      return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
+    }
+
+    if (!includeDrafts && !chapter.book.isPublic) {
       return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
     }
 
@@ -74,17 +109,37 @@ export async function GET(
     })
     const presetMap = Object.fromEntries(presets.map(p => [p.slug, p]))
 
+    const parsedParagraphs = buildParagraphInputsFromHtml(variantWithParagraphs.contentHtml)
+    const enrichedParagraphs = paragraphs.map((paragraph, index) => ({
+      ...paragraph,
+      html: parsedParagraphs[index]?.html ?? paragraph.text,
+      textAlign: parsedParagraphs[index]?.textAlign ?? null,
+      indentPx: parsedParagraphs[index]?.indentPx ?? 0,
+    }))
+    const visibleChapters = chapter.book.chapters
+      .map(({ variants: chapterVariants, ...bookChapter }) => ({
+        ...bookChapter,
+        hasReadableContent: hasReadableChapterContent(chapterVariants[0]?.contentHtml ?? ''),
+      }))
+      .filter((bookChapter) => bookChapter.hasReadableContent)
+
     return NextResponse.json({
-      chapter,
+      chapter: {
+        ...chapter,
+        book: {
+          ...chapter.book,
+          chapters: visibleChapters,
+        },
+      },
       variant: {
         id: variantWithParagraphs.id,
         variantType: variantWithParagraphs.variantType,
         contentHtml: variantWithParagraphs.contentHtml,
-        paragraphs,
+        paragraphs: enrichedParagraphs,
       },
       variantPresets: presetMap,
-      prevChapter: chapter.book.chapters.find(c => c.position === chapter.position - 1) || null,
-      nextChapter: chapter.book.chapters.find(c => c.position === chapter.position + 1) || null,
+      prevChapter: [...visibleChapters].reverse().find((bookChapter) => bookChapter.position < chapter.position) || null,
+      nextChapter: visibleChapters.find((bookChapter) => bookChapter.position > chapter.position) || null,
     })
   } catch (error) {
     console.error('Error fetching chapter:', error)

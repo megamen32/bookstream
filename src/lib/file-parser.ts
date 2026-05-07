@@ -9,6 +9,9 @@ export interface ParsedChapter {
 export interface ParsedParagraph {
   text: string;
   stableKey: string;
+  html: string;
+  textAlign: 'left' | 'center' | 'right' | 'justify' | null;
+  indentPx: number;
 }
 
 /**
@@ -207,21 +210,26 @@ export function parseTxt(text: string): { chapters: ParsedChapter[] } {
 export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
   // Split HTML by <p> tags
   const paragraphs: ParsedParagraph[] = [];
-  const pRegex = /<p[^>]*>(.*?)<\/p>/gi;
+  const pRegex = /<p([^>]*)>([\s\S]*?)<\/p>/gi;
   const matches = [...html.matchAll(pRegex)];
 
   if (matches.length === 0) {
     // No <p> tags found — try splitting by <div>, <br>, or treat whole thing as one paragraph
-    const divRegex = /<div[^>]*>(.*?)<\/div>/gi;
+    const divRegex = /<div([^>]*)>([\s\S]*?)<\/div>/gi;
     const divMatches = [...html.matchAll(divRegex)];
 
     if (divMatches.length > 0) {
       for (let i = 0; i < divMatches.length; i++) {
-        const text = htmlBlockToText(divMatches[i][1]);
+        const innerHtml = sanitizeParagraphHtml(divMatches[i][2]);
+        const text = htmlBlockToText(innerHtml);
         if (text) {
+          const formatting = extractBlockFormatting(divMatches[i][1] || '');
           paragraphs.push({
             text,
             stableKey: generateStableKey(i, text),
+            html: innerHtml,
+            textAlign: formatting.textAlign,
+            indentPx: formatting.indentPx,
           });
         }
       }
@@ -229,21 +237,29 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
       // Split by double <br> or treat as single paragraph
       const parts = html.split(/<br\s*\/?>\s*<br\s*\/?>/i);
       for (let i = 0; i < parts.length; i++) {
-        const text = htmlBlockToText(parts[i]);
+        const innerHtml = sanitizeParagraphHtml(parts[i]);
+        const text = htmlBlockToText(innerHtml);
         if (text) {
           paragraphs.push({
             text,
             stableKey: generateStableKey(i, text),
+            html: innerHtml,
+            textAlign: null,
+            indentPx: 0,
           });
         }
       }
     }
 
     if (paragraphs.length === 0 && html.trim()) {
-      const text = htmlBlockToText(html);
+      const innerHtml = sanitizeParagraphHtml(html);
+      const text = htmlBlockToText(innerHtml);
       paragraphs.push({
         text,
         stableKey: generateStableKey(0, text),
+        html: innerHtml,
+        textAlign: null,
+        indentPx: 0,
       });
     }
 
@@ -251,11 +267,16 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
   }
 
   for (let i = 0; i < matches.length; i++) {
-    const text = htmlBlockToText(matches[i][1]);
+    const innerHtml = sanitizeParagraphHtml(matches[i][2]);
+    const text = htmlBlockToText(innerHtml);
     if (text) {
+      const formatting = extractBlockFormatting(matches[i][1] || '');
       paragraphs.push({
         text,
         stableKey: generateStableKey(i, text),
+        html: innerHtml,
+        textAlign: formatting.textAlign,
+        indentPx: formatting.indentPx,
       });
     }
   }
@@ -306,6 +327,64 @@ function htmlBlockToText(html: string): string {
     .replace(/<\/(?:p|div|li|blockquote|h[1-6])>/gi, '\n');
 
   return collapseWhitespace(decodeHtmlEntities(stripHtml(withLineBreaks)));
+}
+
+function sanitizeParagraphHtml(html: string): string {
+  return html
+    .replace(/<(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '')
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, '');
+}
+
+function extractBlockFormatting(attributes: string): {
+  textAlign: 'left' | 'center' | 'right' | 'justify' | null;
+  indentPx: number;
+} {
+  const styleMatch = attributes.match(/\sstyle=(["'])(.*?)\1/i);
+  const style = styleMatch?.[2] || '';
+  const textAlignValue = style.match(/text-align\s*:\s*(left|center|right|justify)/i)?.[1]?.toLowerCase();
+  const textAlign = (
+    textAlignValue === 'left' ||
+    textAlignValue === 'center' ||
+    textAlignValue === 'right' ||
+    textAlignValue === 'justify'
+  )
+    ? textAlignValue
+    : null;
+
+  const marginLeft = parseCssLengthToPx(style.match(/margin-left\s*:\s*([^;]+)/i)?.[1]);
+  const paddingLeft = parseCssLengthToPx(style.match(/padding-left\s*:\s*([^;]+)/i)?.[1]);
+  const textIndent = parseCssLengthToPx(style.match(/text-indent\s*:\s*([^;]+)/i)?.[1]);
+  const indentPx = Math.max(0, Math.round(marginLeft + paddingLeft + Math.max(0, textIndent)));
+
+  return {
+    textAlign,
+    indentPx,
+  };
+}
+
+function parseCssLengthToPx(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const match = value.trim().match(/^(-?\d+(?:\.\d+)?)(px|pt|pc|in|cm|mm|em|rem)?$/i);
+  if (!match) {
+    return 0;
+  }
+
+  const numericValue = Number.parseFloat(match[1]);
+  const unit = (match[2] || 'px').toLowerCase();
+
+  if (unit === 'px') return numericValue;
+  if (unit === 'pt') return numericValue * (96 / 72);
+  if (unit === 'pc') return numericValue * 16;
+  if (unit === 'in') return numericValue * 96;
+  if (unit === 'cm') return numericValue * (96 / 2.54);
+  if (unit === 'mm') return numericValue * (96 / 25.4);
+  if (unit === 'em' || unit === 'rem') return numericValue * 16;
+  return numericValue;
 }
 
 function escapeHtml(str: string): string {

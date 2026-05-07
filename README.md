@@ -1,5 +1,10 @@
 # BookStream
 
+## Product status
+
+This repository is being built as the final product surface, not as a pitch deck, demo shell, or presentation prototype.
+Product decisions in the app and docs should optimize for real reading, publishing, moderation, and long-term maintainability.
+
 **Read. Share. Comment. Think together.**
 
 BookStream is an interactive reading platform where books become living spaces for notes, quotes, comments, discussions, and multiple ways of reading.
@@ -71,6 +76,11 @@ BookStream is built for people who do not just consume books, but work with them
 [English version ↑](#bookstream)
 
 # BookStream
+
+## Статус продукта
+
+Этот репозиторий развивается как конечный продукт, а не как презентация, демо-оболочка или прототип для показа.
+Решения в приложении и документации должны быть ориентированы на реальное чтение, публикацию, модерацию и долгую поддержку.
 
 **Читайте. Делитесь. Комментируйте. Думайте вместе.**
 

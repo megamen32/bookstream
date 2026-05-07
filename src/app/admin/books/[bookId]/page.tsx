@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { BookCoverSection } from '@/components/admin/BookCoverSection'
+import { BookMetadataSection } from '@/components/admin/BookMetadataSection'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,29 +16,31 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
-import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import {
   ArrowLeft,
   BookOpen,
   Check,
-  Eye,
-  EyeOff,
   Loader2,
   MessageSquare,
-  Pencil,
   Plus,
   PanelLeft,
   PanelRight,
   Save,
+  Settings2,
   Sparkles,
   Trash2,
 } from 'lucide-react'
@@ -44,6 +48,9 @@ import { BookTextEditor } from '@/components/editor/BookTextEditor'
 import type { EditorSaveStatus } from '@/components/editor/editor-types'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+
+const COVER_ACCEPTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif'] as const
+const COVER_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
 
 interface Chapter {
   id: string
@@ -112,15 +119,29 @@ export default function BookEditorPage() {
   const [deletingChapter, setDeletingChapter] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
-  const [editMode, setEditMode] = useState<'info' | 'content'>('content')
   const [chaptersPanelVisible, setChaptersPanelVisible] = useState(true)
+  const [bookSettingsOpen, setBookSettingsOpen] = useState(false)
   const [initialChapterTitle, setInitialChapterTitle] = useState('')
   const [initialChapterContent, setInitialChapterContent] = useState('')
 
   const [editTitle, setEditTitle] = useState('')
+  const [editSlug, setEditSlug] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editIsPublic, setEditIsPublic] = useState(false)
+  const [editReadingMode, setEditReadingMode] = useState('feed')
   const [savingBook, setSavingBook] = useState(false)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
+  const [savingCover, setSavingCover] = useState(false)
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => (
+    () => {
+      if (coverPreviewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(coverPreviewUrl)
+      }
+    }
+  ), [coverPreviewUrl])
 
   const fetchBook = useCallback(async (): Promise<void> => {
     try {
@@ -136,8 +157,10 @@ export default function BookEditorPage() {
 
       setBook(data)
       setEditTitle(data.title)
+      setEditSlug(data.slug)
       setEditDescription(data.description || '')
       setEditIsPublic(data.isPublic)
+      setEditReadingMode(data.readingModeDefault)
       setSelectedChapterId(selectedExists ? selectedChapterId : data.chapters[0]?.id ?? null)
     } catch (error) {
       console.error('Error fetching book:', error)
@@ -181,8 +204,11 @@ export default function BookEditorPage() {
   const bookInfoHasChanges =
     book !== null &&
     (editTitle !== book.title ||
+      editSlug !== book.slug ||
       editDescription !== (book.description || '') ||
-      editIsPublic !== book.isPublic)
+      editIsPublic !== book.isPublic ||
+      editReadingMode !== book.readingModeDefault)
+  const effectiveCoverPreview = coverPreviewUrl || book?.coverUrl || null
 
   const handleEditorChange = (html: string): void => {
     setEditContent(html)
@@ -285,8 +311,9 @@ export default function BookEditorPage() {
         body: JSON.stringify({
           title: editTitle,
           description: editDescription,
-          slug: book?.slug,
+          slug: editSlug,
           isPublic: editIsPublic,
+          readingModeDefault: editReadingMode,
         }),
       })
 
@@ -295,6 +322,7 @@ export default function BookEditorPage() {
       }
 
       toast({ title: 'Сохранено', description: 'Информация о книге обновлена' })
+      setBookSettingsOpen(false)
       void fetchBook()
     } catch {
       toast({ title: 'Ошибка сохранения', variant: 'destructive' })
@@ -302,6 +330,101 @@ export default function BookEditorPage() {
       setSavingBook(false)
     }
   }
+
+  const replaceCoverPreview = useCallback((nextPreviewUrl: string | null): void => {
+    setCoverPreviewUrl((currentPreviewUrl) => {
+      if (currentPreviewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(currentPreviewUrl)
+      }
+
+      return nextPreviewUrl
+    })
+  }, [])
+
+  const getFileExtension = useCallback((fileName: string): string => {
+    const extension = fileName.split('.').pop()?.toLowerCase()
+    return extension ? `.${extension}` : ''
+  }, [])
+
+  const isAcceptedCoverFile = useCallback((file: File): boolean => {
+    if (COVER_ACCEPTED_MIME_TYPES.includes(file.type as typeof COVER_ACCEPTED_MIME_TYPES[number])) {
+      return true
+    }
+
+    return COVER_ACCEPTED_EXTENSIONS.includes(
+      getFileExtension(file.name) as typeof COVER_ACCEPTED_EXTENSIONS[number]
+    )
+  }, [getFileExtension])
+
+  const handleCoverFileChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    const selectedCoverFile = event.target.files?.[0]
+    event.currentTarget.value = ''
+
+    if (!selectedCoverFile) {
+      return
+    }
+
+    if (!isAcceptedCoverFile(selectedCoverFile)) {
+      toast({
+        title: 'Неподдерживаемая обложка',
+        description: 'Выберите изображение в формате JPG, PNG, WEBP или AVIF',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setCoverFile(selectedCoverFile)
+    replaceCoverPreview(URL.createObjectURL(selectedCoverFile))
+  }, [isAcceptedCoverFile, replaceCoverPreview, toast])
+
+  const clearPendingCover = useCallback((): void => {
+    setCoverFile(null)
+    replaceCoverPreview(null)
+  }, [replaceCoverPreview])
+
+  const handleSaveCover = useCallback(async (): Promise<void> => {
+    if (!book || !coverFile) {
+      return
+    }
+
+    setSavingCover(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('cover', coverFile)
+
+      const response = await fetch(`/api/books/${book.id}/cover`, {
+        method: 'PUT',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string }
+        throw new Error(payload.error || 'Не удалось обновить обложку')
+      }
+
+      const payload = (await response.json()) as { coverUrl: string }
+
+      clearPendingCover()
+      setBook((currentBook) => (
+        currentBook
+          ? {
+              ...currentBook,
+              coverUrl: payload.coverUrl,
+            }
+          : currentBook
+      ))
+      toast({ title: 'Сохранено', description: 'Обложка книги обновлена' })
+    } catch (error) {
+      toast({
+        title: 'Ошибка сохранения обложки',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
+    } finally {
+      setSavingCover(false)
+    }
+  }, [book, clearPendingCover, coverFile, toast])
 
   const openReaderInNewTab = (): void => {
     if (!book) {
@@ -335,7 +458,6 @@ export default function BookEditorPage() {
       const chapter = (await res.json()) as Chapter
 
       setActiveVariant('original')
-      setEditMode('content')
       await fetchBook()
       setSelectedChapterId(chapter.id)
 
@@ -431,6 +553,14 @@ export default function BookEditorPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20 p-4 md:p-6 lg:p-8">
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept={COVER_ACCEPTED_EXTENSIONS.join(',')}
+        className="hidden"
+        onChange={handleCoverFileChange}
+      />
+
       <div className="mb-6 flex items-center gap-3">
         <Link href="/admin">
           <Button variant="ghost" size="icon" className="-ml-2 rounded-full">
@@ -445,37 +575,170 @@ export default function BookEditorPage() {
           <p className="text-sm text-muted-foreground">
             {book.chapters.length} {book.chapters.length === 1 ? 'глава' : 'глав'}
           </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge
+              variant={book.isPublic ? 'default' : 'secondary'}
+              className="rounded-full"
+            >
+              {book.isPublic ? 'Публичная' : 'Черновик'}
+            </Badge>
+            <Badge variant="outline" className="rounded-full">
+              {book.readingModeDefault === 'book' ? 'Режим: книга' : 'Режим: лента'}
+            </Badge>
+            {book.coverUrl ? (
+              <Badge variant="outline" className="rounded-full">
+                Обложка прикреплена
+              </Badge>
+            ) : null}
+          </div>
         </div>
 
-        <Link href={`/admin/books/${bookId}/comments`}>
-          <Button variant="outline" size="sm" className="hidden rounded-full sm:flex">
-            <MessageSquare className="mr-2 h-4 w-4" />
-            Комментарии ({book._count.comments})
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Sheet open={bookSettingsOpen} onOpenChange={setBookSettingsOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-full">
+                <Settings2 className="mr-2 h-4 w-4" />
+                Настройки
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+              <SheetHeader>
+                <SheetTitle>Настройки книги</SheetTitle>
+                <SheetDescription>
+                  Те же секции, что и в upload flow: проверка обложки и правка основных метаданных.
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="space-y-4 px-4 pb-4">
+                <BookCoverSection
+                  description="Можно заменить обложку прямо здесь. После выбора файла сначала проверьте превью, потом сохраните."
+                  previewUrl={effectiveCoverPreview}
+                  emptyTitle="Обложка не прикреплена"
+                  emptyDescription="Выберите изображение, чтобы прикрепить новую обложку к книге."
+                  actions={(
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => coverInputRef.current?.click()}
+                        disabled={savingBook || savingCover}
+                      >
+                        {coverFile ? 'Заменить обложку' : 'Выбрать обложку'}
+                      </Button>
+
+                      {coverFile ? (
+                        <>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              void handleSaveCover()
+                            }}
+                            disabled={savingCover}
+                            className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          >
+                            {savingCover ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="mr-2 h-4 w-4" />
+                            )}
+                            Сохранить обложку
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={clearPendingCover}
+                            disabled={savingCover}
+                          >
+                            Отменить замену
+                          </Button>
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                  helperText={
+                    coverFile
+                      ? `Выбрана новая обложка: ${coverFile.name}`
+                      : 'Файл сохраняется отдельно от метаданных книги.'
+                  }
+                />
+
+                <BookMetadataSection
+                  description="Изменения сохраняются в карточках книги и публичной странице."
+                  idPrefix="book-settings"
+                  titleValue={editTitle}
+                  onTitleChange={setEditTitle}
+                  slugValue={editSlug}
+                  onSlugChange={setEditSlug}
+                  descriptionValue={editDescription}
+                  onDescriptionChange={setEditDescription}
+                  readingMode={editReadingMode}
+                  onReadingModeChange={setEditReadingMode}
+                  isPublic={editIsPublic}
+                  onIsPublicChange={setEditIsPublic}
+                  showVisibility
+                  disabled={savingBook}
+                />
+              </div>
+
+              <SheetFooter className="border-t bg-background/95">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setBookSettingsOpen(false)}
+                  disabled={savingBook}
+                >
+                  Закрыть
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void handleSaveBook()
+                  }}
+                  disabled={savingBook || !bookInfoHasChanges}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  {savingBook ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Сохранить
+                </Button>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
+
+          <Link href={`/admin/books/${bookId}/comments`}>
+            <Button variant="outline" size="sm" className="hidden rounded-full sm:flex">
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Комментарии ({book._count.comments})
+            </Button>
+          </Link>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openReaderInNewTab}
+            className="hidden rounded-full sm:flex"
+          >
+            Читать
           </Button>
-        </Link>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={openReaderInNewTab}
-          className="hidden rounded-full sm:flex"
-        >
-          Читать
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setChaptersPanelVisible((current) => !current)}
-          className="rounded-full"
-        >
-          {chaptersPanelVisible ? (
-            <PanelRight className="mr-2 h-4 w-4" />
-          ) : (
-            <PanelLeft className="mr-2 h-4 w-4" />
-          )}
-          {chaptersPanelVisible ? 'Скрыть главы' : 'Показать главы'}
-        </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setChaptersPanelVisible((current) => !current)}
+            className="rounded-full"
+          >
+            {chaptersPanelVisible ? (
+              <PanelRight className="mr-2 h-4 w-4" />
+            ) : (
+              <PanelLeft className="mr-2 h-4 w-4" />
+            )}
+            {chaptersPanelVisible ? 'Скрыть главы' : 'Показать главы'}
+          </Button>
+        </div>
       </div>
 
       <div
@@ -485,118 +748,6 @@ export default function BookEditorPage() {
         )}
       >
         <main className="min-w-0 space-y-4">
-          <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BookOpen className="h-4 w-4" />
-                  Информация о книге
-                </CardTitle>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => setEditMode(editMode === 'info' ? 'content' : 'info')}
-                  >
-                    <Pencil className="mr-1 h-3 w-3" />
-                    {editMode === 'info' ? 'К главам' : 'Редактировать'}
-                  </Button>
-
-                  {editMode === 'info' && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      void handleSaveBook()
-                    }}
-                    disabled={savingBook || !bookInfoHasChanges}
-                    className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                      {savingBook ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Save className="mr-1 h-3 w-3" />
-                      )}
-                      Сохранить
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent>
-              {editMode === 'info' ? (
-                <div className="space-y-4">
-                  {book.coverUrl && (
-                    <BookCoverArtwork
-                      title={book.title}
-                      slug={book.slug}
-                      coverUrl={book.coverUrl}
-                      className="h-56 rounded-3xl border"
-                      titleClassName="text-2xl"
-                    />
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-title">Название</Label>
-                    <Input
-                      id="edit-title"
-                      value={editTitle}
-                      onChange={(event) => setEditTitle(event.target.value)}
-                      className="rounded-2xl"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-desc">Описание</Label>
-                    <Textarea
-                      id="edit-desc"
-                      value={editDescription}
-                      onChange={(event) => setEditDescription(event.target.value)}
-                      rows={3}
-                      className="rounded-2xl"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Switch checked={editIsPublic} onCheckedChange={setEditIsPublic} />
-                    <Label className="text-sm">
-                      {editIsPublic ? (
-                        <span className="flex items-center gap-1.5">
-                          <Eye className="h-3.5 w-3.5" /> Публичная
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5">
-                          <EyeOff className="h-3.5 w-3.5" /> Черновик
-                        </span>
-                      )}
-                    </Label>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h3 className="font-semibold">{book.title}</h3>
-                    {book.description && (
-                      <p className="mt-1 text-sm text-muted-foreground">{book.description}</p>
-                    )}
-                    {book.coverUrl && (
-                      <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">
-                        Обложка прикреплена
-                      </p>
-                    )}
-                  </div>
-                  <Badge
-                    variant={book.isPublic ? 'default' : 'secondary'}
-                    className="shrink-0 rounded-full"
-                  >
-                    {book.isPublic ? 'Публичная' : 'Черновик'}
-                  </Badge>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {selectedChapter ? (
             <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
               <CardHeader className="pb-3">
@@ -736,7 +887,6 @@ export default function BookEditorPage() {
 
                         setActiveVariant(nextVariant)
                         setSelectedChapterId(chapter.id)
-                        setEditMode('content')
                       }}
                       className={cn(
                         'flex w-full items-center gap-2 overflow-hidden rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',

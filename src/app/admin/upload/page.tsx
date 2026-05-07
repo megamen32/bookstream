@@ -4,6 +4,8 @@ import { type DragEvent, type FormEvent, useCallback, useEffect, useRef, useStat
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2, File, FileText, FileType2, ImagePlus, Loader2, Upload, X } from 'lucide-react'
+import { BookCoverSection } from '@/components/admin/BookCoverSection'
+import { BookMetadataSection } from '@/components/admin/BookMetadataSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -16,6 +18,7 @@ import { cn } from '@/lib/utils'
 
 const BOOK_ACCEPTED_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const COVER_ACCEPTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif'] as const
+const COVER_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
 
 interface UploadAuthor {
   id: string
@@ -251,7 +254,7 @@ export default function AdminUploadPage() {
     const extension = getExtension(selectedCoverFile.name)
 
     if (
-      !selectedCoverFile.type.startsWith('image/') &&
+      !COVER_ACCEPTED_MIME_TYPES.includes(selectedCoverFile.type as typeof COVER_ACCEPTED_MIME_TYPES[number]) &&
       !COVER_ACCEPTED_EXTENSIONS.includes(extension as typeof COVER_ACCEPTED_EXTENSIONS[number])
     ) {
       toast({
@@ -553,35 +556,11 @@ export default function AdminUploadPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Обложка</CardTitle>
-            <CardDescription>
-              Можно выбрать вручную. Если не выбрать, попробуем взять первую картинку из файла.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {effectiveCoverPreview ? (
-              <div className="overflow-hidden rounded-xl border bg-muted">
-                <img
-                  src={effectiveCoverPreview}
-                  alt="Предпросмотр обложки"
-                  className="h-72 w-full object-cover"
-                />
-              </div>
-            ) : (
-              <div className="flex h-56 items-center justify-center rounded-xl border border-dashed bg-muted/30 text-center">
-                <div className="space-y-2 px-6">
-                  <ImagePlus className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="text-sm font-medium">Обложка пока не выбрана</p>
-                  <p className="text-xs text-muted-foreground">
-                    После загрузки файла здесь появится найденная картинка, если она есть
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
+        <BookCoverSection
+          description="Можно выбрать вручную. Если не выбрать, попробуем взять первую картинку из файла."
+          previewUrl={effectiveCoverPreview}
+          actions={
+            <>
               <Button
                 type="button"
                 variant="outline"
@@ -592,7 +571,7 @@ export default function AdminUploadPage() {
                 {coverFile ? 'Заменить обложку' : 'Выбрать обложку'}
               </Button>
 
-              {coverFile && (
+              {coverFile ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -602,21 +581,25 @@ export default function AdminUploadPage() {
                   <X className="mr-2 h-4 w-4" />
                   Убрать ручную обложку
                 </Button>
-              )}
-            </div>
+              ) : null}
+            </>
+          }
+          helperText="Ручная обложка имеет приоритет. Автонайденная используется только если вы сами ничего не выбрали."
+        />
 
-            <p className="text-xs text-muted-foreground">
-              Ручная обложка имеет приоритет. Автонайденная используется только если вы сами ничего не выбрали.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Информация о книге</CardTitle>
-            <CardDescription>Пустые поля мы пытаемся заполнить из загруженного файла</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <BookMetadataSection
+          description="Пустые поля мы пытаемся заполнить из загруженного файла"
+          idPrefix="upload-book"
+          titleValue={title}
+          onTitleChange={handleTitleChange}
+          slugValue={slug}
+          onSlugChange={setSlug}
+          descriptionValue={description}
+          onDescriptionChange={setDescription}
+          readingMode={readingMode}
+          onReadingModeChange={setReadingMode}
+          disabled={step !== 'form'}
+          beforeFields={
             <div className="space-y-2">
               <Label>Автор *</Label>
               <div className="flex gap-2">
@@ -703,57 +686,8 @@ export default function AdminUploadPage() {
                 </div>
               )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="title">Название *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(event) => handleTitleChange(event.target.value)}
-                placeholder="Название книги..."
-                disabled={step !== 'form'}
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="slug">Slug *</Label>
-              <Input
-                id="slug"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                placeholder="book-slug"
-                disabled={step !== 'form'}
-                className="h-11 font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Описание</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Краткое описание книги..."
-                disabled={step !== 'form'}
-                rows={4}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Режим чтения по умолчанию</Label>
-              <Select value={readingMode} onValueChange={setReadingMode} disabled={step !== 'form'}>
-                <SelectTrigger className="h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="feed">Лента (Feed)</SelectItem>
-                  <SelectItem value="book">Книга (Book)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+          }
+        />
 
         {(creating || uploading) && (
           <Card>

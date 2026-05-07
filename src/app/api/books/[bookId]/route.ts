@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+function canViewDrafts(request: NextRequest): boolean {
+  const { searchParams } = new URL(request.url)
+  if (searchParams.get('includeDrafts') === '1') {
+    return true
+  }
+
+  const referer = request.headers.get('referer')
+  if (!referer) {
+    return false
+  }
+
+  try {
+    return new URL(referer).pathname.startsWith('/admin')
+  } catch {
+    return false
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bookId: string }> }
@@ -9,6 +27,7 @@ export async function GET(
     const { bookId } = await params
     const { searchParams } = new URL(request.url)
     const authorSlug = searchParams.get('authorSlug')
+    const includeDrafts = canViewDrafts(request)
 
     let book
 
@@ -20,9 +39,11 @@ export async function GET(
       if (!author) {
         return NextResponse.json({ error: 'Author not found' }, { status: 404 })
       }
-      book = await db.book.findUnique({
+      book = await db.book.findFirst({
         where: {
-          authorId_slug: { authorId: author.id, slug: bookId },
+          authorId: author.id,
+          slug: bookId,
+          ...(includeDrafts ? {} : { isPublic: true }),
         },
         include: {
           author: true,
@@ -35,8 +56,11 @@ export async function GET(
       })
     } else {
       // Lookup by book ID
-      book = await db.book.findUnique({
-        where: { id: bookId },
+      book = await db.book.findFirst({
+        where: {
+          id: bookId,
+          ...(includeDrafts ? {} : { isPublic: true }),
+        },
         include: {
           author: true,
           chapters: {
@@ -95,7 +119,74 @@ export async function DELETE(
 ) {
   try {
     const { bookId } = await params
-    await db.book.delete({ where: { id: bookId } })
+    const book = await db.book.findUnique({
+      where: { id: bookId },
+      select: {
+        id: true,
+        chapters: {
+          select: {
+            id: true,
+            variants: {
+              select: { id: true },
+            },
+          },
+        },
+      },
+    })
+
+    if (!book) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
+    const chapterIds = book.chapters.map((chapter) => chapter.id)
+    const variantIds = book.chapters.flatMap((chapter) => chapter.variants.map((variant) => variant.id))
+
+    await db.$transaction(async (tx) => {
+      await tx.readingProgress.deleteMany({
+        where: { bookId },
+      })
+
+      await tx.annotation.deleteMany({
+        where: { bookId },
+      })
+
+      await tx.comment.deleteMany({
+        where: { bookId },
+      })
+
+      if (variantIds.length > 0) {
+        await tx.reaction.deleteMany({
+          where: {
+            chapterVariantId: { in: variantIds },
+          },
+        })
+
+        await tx.paragraph.deleteMany({
+          where: {
+            chapterVariantId: { in: variantIds },
+          },
+        })
+
+        await tx.chapterVariant.deleteMany({
+          where: {
+            id: { in: variantIds },
+          },
+        })
+      }
+
+      if (chapterIds.length > 0) {
+        await tx.chapter.deleteMany({
+          where: {
+            id: { in: chapterIds },
+          },
+        })
+      }
+
+      await tx.book.delete({
+        where: { id: bookId },
+      })
+    })
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting book:', error)

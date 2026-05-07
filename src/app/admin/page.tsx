@@ -1,12 +1,18 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Edit,
+  Eye,
+  EyeOff,
+  MessageSquare,
+  Plus,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
+import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +23,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, BookOpen, Edit, Trash2, Eye, EyeOff, MessageSquare } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 
 interface Book {
@@ -25,36 +33,25 @@ interface Book {
   title: string
   slug: string
   description: string | null
+  coverUrl: string | null
   isPublic: boolean
   readingModeDefault: string
   createdAt: string
+  author: { slug: string; name: string }
   _count: { chapters: number; comments: number }
 }
 
-const gradients = [
-  'from-amber-400 to-orange-500',
-  'from-orange-400 to-red-400',
-  'from-yellow-400 to-amber-500',
-  'from-rose-400 to-pink-500',
-  'from-amber-500 to-yellow-400',
-  'from-orange-500 to-amber-400',
-]
-
-function getGradient(id: string) {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return gradients[Math.abs(hash) % gradients.length]
-}
-
-function formatDate(dateStr: string) {
+function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   })
+}
+
+function formatChapterLabel(count: number): string {
+  return `${count} ${count === 1 ? 'глава' : 'глав'}`
 }
 
 export default function AdminLibraryPage() {
@@ -65,9 +62,9 @@ export default function AdminLibraryPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const fetchBooks = useCallback(async () => {
+  const fetchBooks = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch('/api/books')
+      const res = await fetch('/api/books?includeDrafts=1')
       if (res.ok) {
         const data = await res.json()
         setBooks(data)
@@ -80,22 +77,27 @@ export default function AdminLibraryPage() {
   }, [])
 
   useEffect(() => {
-    const run = async () => {
-      await fetchBooks()
-    }
-    void run()
+    const timeoutId = window.setTimeout(() => {
+      void fetchBooks()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
   }, [fetchBooks])
 
-  const handleDelete = async () => {
+  const handleDelete = async (): Promise<void> => {
     if (!deleteTarget) return
+
     setDeleting(true)
     try {
       const res = await fetch(`/api/books/${deleteTarget.id}`, { method: 'DELETE' })
       if (res.ok) {
         toast({ title: 'Книга удалена' })
-        setBooks((prev) => prev.filter((b) => b.id !== deleteTarget.id))
+        setBooks((prev) => prev.filter((book) => book.id !== deleteTarget.id))
+      } else {
+        toast({ title: 'Ошибка удаления', variant: 'destructive' })
       }
-    } catch {
+    } catch (error) {
+      console.error('Error deleting book:', error)
       toast({ title: 'Ошибка удаления', variant: 'destructive' })
     } finally {
       setDeleting(false)
@@ -104,130 +106,145 @@ export default function AdminLibraryPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Библиотека</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Управление вашими книгами и главами
-          </p>
-        </div>
-        <Link href="/admin/upload">
-          <Button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-md">
-            <Plus className="w-4 h-4 mr-2" />
-            Добавить книгу
-          </Button>
-        </Link>
-      </div>
+    <div className="mx-auto max-w-7xl p-4 md:p-6 lg:p-8">
+      <section className="poster-stage relative overflow-hidden rounded-[2rem] border border-slate-200/70 px-6 py-8 text-white shadow-[0_24px_90px_rgba(15,23,42,0.18)] sm:px-8">
+        <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-white/70">
+              <Sparkles size={14} className="text-amber-300" />
+              Админская витрина
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Библиотека должна показывать обложки как товар премиум-класса.
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
+              Вертикальные постеры крупные, чистые и заметные. Метаданные, статус и действия
+              остаются рядом, но больше не спорят с обложкой за внимание.
+            </p>
+          </div>
 
-      {/* Book Grid */}
+          <Link href="/admin/upload">
+            <Button className="h-12 rounded-full bg-white px-6 text-slate-950 hover:bg-white/95">
+              <Plus className="mr-2 h-4 w-4" />
+              Добавить книгу
+            </Button>
+          </Link>
+        </div>
+      </section>
+
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="overflow-hidden">
-              <Skeleton className="h-40 w-full" />
-              <CardContent className="p-4 space-y-3">
-                <Skeleton className="h-5 w-3/4" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-1/2" />
-              </CardContent>
-            </Card>
+        <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+          {[1, 2, 3, 4].map((index) => (
+            <Skeleton key={index} className="aspect-[3/4] rounded-[2rem]" />
           ))}
         </div>
       ) : books.length === 0 ? (
-        <Card className="p-12 text-center">
-          <div className="mx-auto w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mb-4">
-            <BookOpen className="w-8 h-8 text-amber-600" />
-          </div>
-          <h3 className="font-semibold text-lg mb-2">Библиотека пуста</h3>
-          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-            Загрузите первую книгу, чтобы начать работу с платформой Bookstream
+        <div className="mt-8 rounded-[2rem] border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-950">Библиотека пуста</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+            Загрузите первую книгу, и она сразу появится в витрине с нормальным вертикальным постером.
           </p>
-          <Link href="/admin/upload">
-            <Button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white">
-              <Plus className="w-4 h-4 mr-2" />
+          <Link href="/admin/upload" className="mt-6 inline-flex">
+            <Button className="rounded-full bg-amber-500 px-6 text-white hover:bg-amber-600">
+              <Plus className="mr-2 h-4 w-4" />
               Загрузить книгу
             </Button>
           </Link>
-        </Card>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {books.map((book) => (
-            <Card
-              key={book.id}
-              className="overflow-hidden group hover:shadow-lg transition-shadow border border-gray-200"
-            >
-              {/* Cover gradient placeholder */}
-              <div
-                className={`h-36 bg-gradient-to-br ${getGradient(book.id)} relative flex items-center justify-center`}
+        <section className="mt-8">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+            {books.map((book) => (
+              <article
+                key={book.id}
+                className="group relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.08)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]"
               >
-                <BookOpen className="w-12 h-12 text-white/80" />
-                <div className="absolute top-3 right-3 flex gap-1.5">
+                <div className="absolute right-5 top-5 z-20">
                   <Badge
                     variant={book.isPublic ? 'default' : 'secondary'}
                     className={book.isPublic
-                      ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'bg-white/90 text-gray-700 hover:bg-white/95'
+                      ? 'border-0 bg-emerald-500 text-white hover:bg-emerald-500'
+                      : 'border-0 bg-slate-950/85 text-white hover:bg-slate-950/85'
                     }
                   >
                     {book.isPublic ? (
-                      <><Eye className="w-3 h-3 mr-1" /> Публичная</>
+                      <>
+                        <Eye className="mr-1 h-3 w-3" />
+                        Публичная
+                      </>
                     ) : (
-                      <><EyeOff className="w-3 h-3 mr-1" /> Черновик</>
+                      <>
+                        <EyeOff className="mr-1 h-3 w-3" />
+                        Черновик
+                      </>
                     )}
                   </Badge>
                 </div>
-              </div>
 
-              <CardContent className="p-4 space-y-3">
-                <div>
-                  <h3 className="font-semibold text-base line-clamp-1">{book.title}</h3>
-                  {book.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                      {book.description}
-                    </p>
-                  )}
+                <div className="overflow-hidden rounded-[1.5rem] bg-slate-100">
+                  <BookCoverArtwork
+                    title={book.title}
+                    slug={book.slug}
+                    coverUrl={book.coverUrl}
+                    className="aspect-[3/4] w-full"
+                    titleClassName="px-6 text-2xl"
+                  />
                 </div>
 
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <BookOpen className="w-3 h-3" />
-                    {book._count.chapters} {book._count.chapters === 1 ? 'глава' : 'глав'}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3" />
-                    {book._count.comments}
-                  </span>
-                  <span>{formatDate(book.createdAt)}</span>
-                </div>
+                <div className="px-1 pb-1 pt-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                    {book.author.name}
+                  </p>
+                  <h2 className="mt-2 line-clamp-2 text-lg font-semibold leading-tight text-slate-950">
+                    {book.title}
+                  </h2>
+                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
+                    {book.description || 'Описание не задано. Сейчас карточка всё равно работает за счёт самой обложки.'}
+                  </p>
 
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 text-xs"
-                    onClick={() => router.push(`/admin/books/${book.id}`)}
-                  >
-                    <Edit className="w-3 h-3 mr-1.5" />
-                    Редактировать
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs text-destructive hover:text-destructive"
-                    onClick={() => setDeleteTarget(book)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-3 py-1">{formatChapterLabel(book._count.chapters)}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {book._count.comments}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1">{formatDate(book.createdAt)}</span>
+                  </div>
+
+                  <div className="mt-5 flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 flex-1 rounded-full"
+                      onClick={() => router.push(`/admin/books/${book.id}`)}
+                    >
+                      <Edit className="mr-2 h-4 w-4" />
+                      Редактировать
+                    </Button>
+                    {book.isPublic ? (
+                      <Button asChild variant="outline" size="sm" className="h-10 rounded-full px-4">
+                        <Link href={`/${book.author.slug}/${book.slug}`}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 rounded-full px-4 text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(book)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
-      {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

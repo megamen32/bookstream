@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
+import BookCoverArtwork from '@/components/book/BookCoverArtwork'
+import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
-import BookCoverArtwork from '@/components/book/BookCoverArtwork'
-import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
 
 interface Author {
   id: string
@@ -34,6 +34,10 @@ interface Book {
   _count: { comments: number }
 }
 
+function formatChapterLabel(count: number): string {
+  return `${count} ${count === 1 ? 'глава' : 'глав'}`
+}
+
 export default function BookCoverPage() {
   const params = useParams()
   const authorSlug = params.authorSlug as string
@@ -44,41 +48,35 @@ export default function BookCoverPage() {
   useEffect(() => {
     if (!authorSlug || !bookSlug) return
 
-    async function fetchData() {
+    async function fetchData(): Promise<void> {
       try {
         const res = await fetch(`/api/books/${bookSlug}?authorSlug=${authorSlug}`)
         if (res.ok) {
           const data = await res.json()
           setBook(data)
         }
-      } catch (e) {
-        console.error('Failed to fetch book:', e)
+      } catch (error) {
+        console.error('Failed to fetch book:', error)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
+    void fetchData()
   }, [authorSlug, bookSlug])
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto max-w-3xl px-4 py-10">
-          <Skeleton className="h-8 w-32 mb-8" />
-          <Skeleton className="h-64 rounded-2xl mb-6" />
-          <Skeleton className="h-10 w-40 mb-6" />
-          <Skeleton className="h-4 w-full mb-2" />
-          <Skeleton className="h-4 w-3/4" />
-          <div className="mt-8 space-y-3">
-            <div className="rounded-[1.75rem] border border-border/70 bg-card/80 p-4 shadow-sm">
-              <Skeleton className="h-5 w-56" />
-              <Skeleton className="mt-2 h-4 w-72" />
-              <Skeleton className="mt-4 h-10 w-36 rounded-full" />
-              <div className="mt-5 space-y-3">
-                <Skeleton className="h-24 w-full rounded-2xl" />
-                <Skeleton className="h-24 w-full rounded-2xl" />
-              </div>
+      <div className="poster-stage min-h-screen">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+          <Skeleton className="mb-8 h-8 w-32 bg-white/10" />
+          <div className="grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-center">
+            <Skeleton className="aspect-[3/4] rounded-[2.25rem] bg-white/10" />
+            <div>
+              <Skeleton className="h-14 w-4/5 bg-white/10" />
+              <Skeleton className="mt-4 h-5 w-64 bg-white/10" />
+              <Skeleton className="mt-8 h-14 w-full max-w-xs rounded-full bg-white/10" />
+              <Skeleton className="mt-6 h-24 w-full rounded-[1.5rem] bg-white/10" />
             </div>
           </div>
         </div>
@@ -88,10 +86,10 @@ export default function BookCoverPage() {
 
   if (!book) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="poster-stage flex min-h-screen items-center justify-center text-white">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Книга не найдена</h1>
-          <Link href="/" className="text-sm text-muted-foreground hover:underline">
+          <h1 className="mb-2 text-2xl font-bold">Книга не найдена</h1>
+          <Link href="/" className="text-sm text-white/60 hover:text-white">
             ← На главную
           </Link>
         </div>
@@ -100,71 +98,78 @@ export default function BookCoverPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        {/* Back link */}
+    <div className="poster-stage min-h-screen text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <Link
           href={`/${authorSlug}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
+          className="inline-flex items-center gap-2 text-sm text-white/60 transition-colors hover:text-white"
         >
           <ArrowLeft size={14} />
           {book.author.name}
         </Link>
 
-        {/* Book cover */}
-        <BookCoverArtwork
-          title={book.title}
-          slug={book.slug}
-          coverUrl={book.coverUrl}
-          className="h-64 sm:h-80 rounded-2xl p-6 mb-6 shadow-lg"
-          titleClassName="text-3xl sm:text-4xl"
-        />
+        <section className="poster-card relative mt-6 overflow-hidden rounded-[2.25rem] border border-white/10 px-6 py-8 sm:px-8 lg:px-10 lg:py-10">
+          <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative grid gap-8 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] lg:items-center">
+            <div className="mx-auto w-full max-w-sm">
+              <div className="relative overflow-hidden rounded-[2rem] border border-white/12 bg-black/25 shadow-[0_32px_90px_rgba(0,0,0,0.42)]">
+                <div className="absolute inset-x-0 bottom-0 z-10 h-28 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                <BookCoverArtwork
+                  title={book.title}
+                  slug={book.slug}
+                  coverUrl={book.coverUrl}
+                  className="aspect-[3/4] w-full"
+                  titleClassName="px-8 text-3xl"
+                />
+              </div>
+            </div>
 
-        {/* Book info */}
-        <div className="mb-8">
-          <p className="text-lg font-semibold mb-1">{book.title}</p>
-          <p className="text-sm text-muted-foreground mb-4">
-            {book.author.name} · {book.chapters.length} {book.chapters.length === 1 ? 'глава' : 'глав'}
-            {book._count.comments > 0 && (
-              <>
-                {' · '}
-                <span className="inline-flex items-center gap-1">
-                  <MessageSquare size={12} />
-                  {book._count.comments}
+            <div className="max-w-3xl">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-amber-300">Карточка книги</p>
+              <h1 className="mt-3 text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
+                {book.title}
+              </h1>
+              <p className="mt-4 text-lg text-white/70">
+                {book.author.name}
+              </p>
+
+              <div className="mt-6 flex flex-wrap gap-3 text-sm text-white/80">
+                <span className="rounded-full border border-white/10 bg-black/20 px-4 py-2">
+                  {formatChapterLabel(book.chapters.length)}
                 </span>
-              </>
-            )}
-          </p>
-          {book.description && (
-            <p className="text-muted-foreground leading-relaxed">
-              {book.description}
-            </p>
-          )}
-        </div>
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-4 py-2">
+                  <MessageSquare size={14} />
+                  {book._count.comments} комментариев
+                </span>
+              </div>
 
-        {/* Read button */}
-        <Link href={`/${authorSlug}/${bookSlug}/read`}>
-          <Button
-            size="lg"
-            className="w-full text-base font-semibold mb-8"
-            style={{
-              minHeight: '52px',
-              borderRadius: '0.75rem',
-              backgroundColor: 'var(--r-accent, #4a7c59)',
-              color: 'var(--r-accent-foreground, #fff)',
-            }}
-          >
-            <BookOpen className="mr-2" size={20} />
-            Читать
-          </Button>
-        </Link>
+              {book.description ? (
+                <div className="mt-6 max-w-2xl rounded-[1.5rem] border border-white/10 bg-black/20 p-5 text-base leading-7 text-white/70">
+                  {book.description}
+                </div>
+              ) : null}
 
-        <BookHighlightsPanel
-          authorSlug={authorSlug}
-          bookSlug={bookSlug}
-          bookId={book.id}
-          chapters={book.chapters}
-        />
+              <Link href={`/${authorSlug}/${bookSlug}/read`} className="mt-8 inline-flex w-full sm:w-auto">
+                <Button
+                  size="lg"
+                  className="h-14 min-w-[220px] rounded-full bg-white text-slate-950 shadow-[0_18px_40px_rgba(255,255,255,0.18)] hover:bg-white/95"
+                >
+                  <BookOpen className="mr-2" size={20} />
+                  Читать книгу
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-[2rem] border border-black/5 bg-white p-3 text-slate-950 shadow-[0_20px_80px_rgba(15,23,42,0.2)] sm:p-5">
+          <BookHighlightsPanel
+            authorSlug={authorSlug}
+            bookSlug={bookSlug}
+            bookId={book.id}
+            chapters={book.chapters}
+          />
+        </section>
       </div>
     </div>
   )

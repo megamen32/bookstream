@@ -1,12 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useParams } from 'next/navigation'
+import { ArrowLeft, ArrowRight, BookOpen } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
-import { BookOpen, ArrowLeft } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface Author {
   id: string
@@ -26,6 +25,10 @@ interface Book {
   _count: { chapters: number; comments: number }
 }
 
+function formatChapterLabel(count: number): string {
+  return `${count} ${count === 1 ? 'глава' : 'глав'}`
+}
+
 export default function AuthorProfilePage() {
   const params = useParams()
   const authorSlug = params.authorSlug as string
@@ -36,40 +39,44 @@ export default function AuthorProfilePage() {
   useEffect(() => {
     if (!authorSlug) return
 
-    async function fetchData() {
+    async function fetchData(): Promise<void> {
       try {
         const res = await fetch(`/api/books?authorSlug=${authorSlug}`)
         if (res.ok) {
           const data = await res.json()
-          // API returns array of books with author included
           if (Array.isArray(data) && data.length > 0) {
             const firstBook = data[0]
             if (firstBook.author) {
-              setAuthor({ id: firstBook.author.id, slug: firstBook.author.slug, name: firstBook.author.name, bio: null })
+              setAuthor({
+                id: firstBook.author.id,
+                slug: firstBook.author.slug,
+                name: firstBook.author.name,
+                bio: null,
+              })
             }
             setBooks(data)
           }
         }
-      } catch (e) {
-        console.error('Failed to fetch author:', e)
+      } catch (error) {
+        console.error('Failed to fetch author:', error)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
+    void fetchData()
   }, [authorSlug])
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-4xl mx-auto px-4 py-8">
-          <Skeleton className="h-8 w-32 mb-6" />
-          <Skeleton className="h-12 w-64 mb-3" />
-          <Skeleton className="h-4 w-96 mb-8" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => (
-              <Skeleton key={i} className="h-64 rounded-xl" />
+      <div className="poster-stage min-h-screen">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <Skeleton className="mb-6 h-8 w-32 bg-white/10" />
+          <Skeleton className="mb-3 h-12 w-80 bg-white/10" />
+          <Skeleton className="mb-8 h-5 w-[32rem] max-w-full bg-white/10" />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+            {[1, 2, 3, 4].map((index) => (
+              <Skeleton key={index} className="aspect-[3/4] rounded-[2rem] bg-white/10" />
             ))}
           </div>
         </div>
@@ -79,10 +86,10 @@ export default function AuthorProfilePage() {
 
   if (!author) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="poster-stage flex min-h-screen items-center justify-center text-white">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-2">Автор не найден</h1>
-          <Link href="/" className="text-sm text-muted-foreground hover:underline">
+          <Link href="/" className="text-sm text-white/60 hover:text-white">
             ← На главную
           </Link>
         </div>
@@ -91,65 +98,82 @@ export default function AuthorProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Back link */}
+    <div className="poster-stage min-h-screen text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
+          className="inline-flex items-center gap-2 text-sm text-white/60 transition-colors hover:text-white"
         >
           <ArrowLeft size={14} />
-          Назад
+          На главную
         </Link>
 
-        {/* Author header */}
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold mb-2">{author.name}</h1>
-          {author.bio && (
-            <p className="text-muted-foreground text-base max-w-2xl">
-              {author.bio}
-            </p>
-          )}
-        </div>
+        <section className="poster-card relative mt-6 overflow-hidden rounded-[2rem] border border-white/10 px-6 py-8 sm:px-8">
+          <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-amber-300">Авторская полка</p>
+              <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+                {author.name}
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-white/60">
+                {author.bio || 'Все книги автора собраны в одном постерном каталоге, где обложка является главным носителем настроения.'}
+              </p>
+            </div>
+            <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-5 py-4 text-sm text-white/70">
+              <div className="text-3xl font-semibold text-white">{books.length}</div>
+              <div className="mt-1">книг в подборке</div>
+            </div>
+          </div>
+        </section>
 
-        {/* Books grid */}
         {books.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <BookOpen size={48} className="mx-auto mb-4 opacity-30" />
-            <p>У автора пока нет опубликованных книг</p>
+          <div className="poster-card mt-10 rounded-[2rem] border border-white/10 px-6 py-16 text-center text-white/70">
+            <BookOpen size={48} className="mx-auto mb-4 opacity-40" />
+            <p className="text-lg text-white">У автора пока нет опубликованных книг</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {books.map((book) => (
-              <Link key={book.id} href={`/${author.slug}/${book.slug}`}>
-                <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer h-full">
-                  <BookCoverArtwork
-                    title={book.title}
-                    slug={book.slug}
-                    coverUrl={book.coverUrl}
-                    className="h-40 p-4"
-                    titleClassName="text-lg"
-                  />
-                  <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                      {book.description || 'Описание отсутствует'}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
-                        {book._count.chapters} {book._count.chapters === 1 ? 'глава' : 'глав'}
-                      </span>
-                      <span
-                        className="text-sm font-medium"
-                        style={{ color: 'var(--r-accent, #4a7c59)' }}
-                      >
-                        Читать →
-                      </span>
+          <section className="mt-10">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+              {books.map((book) => (
+                <Link
+                  key={book.id}
+                  href={`/${author.slug}/${book.slug}`}
+                  className="group block h-full"
+                >
+                  <article className="poster-card h-full rounded-[2rem] border border-white/10 p-3 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/10">
+                    <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/25">
+                      <div className="poster-sheen pointer-events-none absolute inset-0 z-10 opacity-60" />
+                      <div className="absolute inset-x-0 bottom-0 z-10 h-24 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+                      <BookCoverArtwork
+                        title={book.title}
+                        slug={book.slug}
+                        coverUrl={book.coverUrl}
+                        className="aspect-[3/4] w-full"
+                        titleClassName="px-6 text-2xl"
+                      />
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+
+                    <div className="px-1 pb-1 pt-4">
+                      <h2 className="line-clamp-2 text-lg font-semibold leading-tight text-white">
+                        {book.title}
+                      </h2>
+                      <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/60">
+                        {book.description || 'Описание намеренно уходит на второй план, чтобы сначала работала сама обложка.'}
+                      </p>
+                      <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                        <span className="text-white/48">{formatChapterLabel(book._count.chapters)}</span>
+                        <span className="inline-flex items-center gap-2 font-medium text-amber-300 transition group-hover:text-amber-200">
+                          Открыть
+                          <ArrowRight size={16} />
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>

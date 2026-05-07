@@ -7,7 +7,7 @@ import sharp from 'sharp'
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
 const MARKDOWN_FRONTMATTER_PATTERN = /^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/
-const BOOK_COVER_DIRECTORY = path.join(process.cwd(), 'public', 'uploads', 'covers')
+const BOOK_COVER_DIRECTORY = path.join(resolveProjectPublicDirectory(), 'uploads', 'covers')
 
 export interface ImportedBookContent {
   html: string
@@ -24,6 +24,7 @@ export interface ImportedBookPreview {
 export interface ImportedChapter {
   title: string
   content: string
+  level: number
 }
 
 /**
@@ -120,37 +121,47 @@ export function splitImportedHtmlIntoChaptersWithFallbackTitle(
   html: string,
   fallbackTitle = 'Глава 1'
 ): ImportedChapter[] {
-  const headingRegex = /<(h[1-3])[^>]*>(.*?)<\/\1>/gi
-  const matches: Array<{ index: number; title: string }> = []
+  const headings = extractHeadingBoundaries(html)
 
-  let match: RegExpExecArray | null
-  while ((match = headingRegex.exec(html)) !== null) {
-    const cleanTitle = collapseWhitespace(stripHtml(match[2]))
-    if (cleanTitle) {
-      matches.push({ index: match.index, title: cleanTitle })
-    }
-  }
+  if (headings.length > 0) {
+    const candidates = shouldSkipLeadingStructuralHeading(headings, html)
+      ? headings.slice(1)
+      : headings
 
-  if (matches.length > 0) {
     const chapters: ImportedChapter[] = []
+    const baseLevel = candidates.reduce(
+      (minimumLevel, heading) => Math.min(minimumLevel, heading.level),
+      candidates[0]?.level ?? 1
+    )
 
-    const leadingContent = html.slice(0, matches[0].index).trim()
-    if (leadingContent) {
+    const leadingContent = html.slice(0, candidates[0]?.index ?? html.length).trim()
+    if (hasReadableBlockContent(leadingContent)) {
       chapters.push({
         title: fallbackTitle,
         content: leadingContent,
+        level: 1,
       })
     }
 
-    for (let index = 0; index < matches.length; index += 1) {
-      const start = matches[index].index
-      const end = index + 1 < matches.length ? matches[index + 1].index : html.length
+    for (let index = 0; index < candidates.length; index += 1) {
+      const start = candidates[index].endIndex
+      const end = index + 1 < candidates.length ? candidates[index + 1].index : html.length
+      const content = html.slice(start, end).trim()
+
+      if (!hasReadableBlockContent(content)) {
+        continue
+      }
+
       chapters.push({
-        title: matches[index].title,
-        content: html.slice(start, end).trim(),
+        title: candidates[index].title,
+        content,
+        level: candidates[index].level - baseLevel + 1,
       })
     }
-    return chapters
+
+    if (chapters.length > 0) {
+      return chapters
+    }
   }
 
   const paragraphs = html.split(/<\/p>/i).filter((paragraph) => paragraph.trim())
@@ -162,10 +173,68 @@ export function splitImportedHtmlIntoChaptersWithFallbackTitle(
     chapters.push({
       title: `Глава ${chapters.length + 1}`,
       content: `${chunk.join('</p>').trim()}</p>`,
+      level: 1,
     })
   }
 
-  return chapters.length > 0 ? chapters : [{ title: fallbackTitle, content: html }]
+  return chapters.length > 0 ? chapters : [{ title: fallbackTitle, content: html, level: 1 }]
+}
+
+interface HeadingBoundary {
+  index: number
+  endIndex: number
+  level: number
+  title: string
+}
+
+function extractHeadingBoundaries(html: string): HeadingBoundary[] {
+  const headingRegex = /<(h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi
+  const headings: HeadingBoundary[] = []
+
+  let match: RegExpExecArray | null
+  while ((match = headingRegex.exec(html)) !== null) {
+    const cleanTitle = collapseWhitespace(stripHtml(match[2]))
+    if (!cleanTitle) {
+      continue
+    }
+
+    headings.push({
+      index: match.index,
+      endIndex: match.index + match[0].length,
+      level: Number.parseInt(match[1].slice(1), 10),
+      title: cleanTitle,
+    })
+  }
+
+  return headings
+}
+
+function shouldSkipLeadingStructuralHeading(headings: HeadingBoundary[], html: string): boolean {
+  if (headings.length < 2) {
+    return false
+  }
+
+  const [firstHeading, secondHeading] = headings
+  const topLevelHeadings = headings.filter((heading) => heading.level === firstHeading.level)
+  if (firstHeading.level !== 1 || topLevelHeadings.length !== 1) {
+    return false
+  }
+
+  if (!headings.some((heading) => heading.level > firstHeading.level)) {
+    return false
+  }
+
+  const betweenHeadings = html.slice(firstHeading.endIndex, secondHeading.index)
+  return !hasReadableBlockContent(betweenHeadings)
+}
+
+function hasReadableBlockContent(content: string): boolean {
+  const normalizedText = collapseWhitespace(stripHtml(content))
+  if (normalizedText.length > 0) {
+    return true
+  }
+
+  return /<(img|table|blockquote|hr|ul|ol|pre)\b/i.test(content)
 }
 
 /**
@@ -430,4 +499,24 @@ function getFileExtension(fileName: string): typeof SUPPORTED_BOOK_EXTENSIONS[nu
 
 function sanitizePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '-')
+}
+
+/**
+ * Resolves the repository-level public directory for both `next dev` and
+ * Next standalone production builds.
+ *
+ * Next standalone rewrites the process working directory to `.next/standalone`,
+ * so using `process.cwd()` directly would save uploaded covers into the build
+ * artifact instead of the real project `public` directory.
+ *
+ * @returns Absolute path to the root public directory.
+ */
+function resolveProjectPublicDirectory(): string {
+  const currentWorkingDirectory = process.cwd()
+  const standaloneSuffix = `${path.sep}.next${path.sep}standalone`
+  const projectRoot = currentWorkingDirectory.endsWith(standaloneSuffix)
+    ? path.resolve(currentWorkingDirectory, '..', '..')
+    : currentWorkingDirectory
+
+  return path.join(projectRoot, 'public')
 }
