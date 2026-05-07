@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
+import { mapAnnotationComment, sortCommentsByTop } from '@/lib/annotations'
 import { db } from '@/lib/db'
 
 interface RouteParams {
@@ -39,6 +40,7 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const variantType = searchParams.get('variantType') || 'original'
     const anchorChapterId = searchParams.get('anchorChapterId') || ''
+    const readerId = searchParams.get('readerId')
     const before = normalizeWindowParam(searchParams.get('before'), 1)
     const after = normalizeWindowParam(searchParams.get('after'), 1)
     const previewLimit = normalizeWindowParam(searchParams.get('previewLimit'), 3) || 3
@@ -121,65 +123,29 @@ export async function GET(
         )
         const parsedParagraphs = buildParagraphInputsFromHtml(variantWithParagraphs.contentHtml)
 
-        const [annotations, legacyComments] = await Promise.all([
+        const [annotations, annotationCount] = await Promise.all([
           db.annotation.findMany({
             where: {
               chapterId: chapter.id,
               kind: 'comment',
               status: 'active',
             },
-            orderBy: { createdAt: 'desc' },
-            take: previewLimit,
-          }),
-          db.comment.findMany({
-            where: {
-              chapterId: chapter.id,
-              status: 'active',
-            },
             include: {
-              quotes: true,
+              votes: {
+                select: {
+                  readerId: true,
+                },
+              },
+              chapter: {
+                select: {
+                  id: true,
+                  title: true,
+                  position: true,
+                },
+              },
             },
-            orderBy: { createdAt: 'desc' },
-            take: previewLimit,
+            take: Math.max(previewLimit * 3, previewLimit),
           }),
-        ])
-
-        const commentsPreview = [
-          ...annotations.map((annotation) => ({
-            id: annotation.id,
-            readerId: annotation.readerId,
-            username: annotation.username,
-            body: annotation.body || '',
-            createdAt: annotation.createdAt.toISOString(),
-            quotes: annotation.paragraphId && annotation.selectedText
-              ? [{
-                  id: `${annotation.id}:quote`,
-                  variantType: annotation.variantType,
-                  selectedText: annotation.selectedText,
-                  paragraphId: annotation.paragraphId,
-                  endParagraphId: annotation.endParagraphId,
-                }]
-              : [],
-          })),
-          ...legacyComments.map((comment) => ({
-            id: comment.id,
-            readerId: comment.readerId,
-            username: comment.username,
-            body: comment.body,
-            createdAt: comment.createdAt.toISOString(),
-            quotes: comment.quotes.map((quote) => ({
-              id: quote.id,
-              variantType: quote.variantType,
-              selectedText: quote.selectedText,
-              paragraphId: quote.paragraphId,
-              endParagraphId: quote.endParagraphId,
-            })),
-          })),
-        ]
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .slice(0, previewLimit)
-
-        const [annotationCount, legacyCommentCount] = await Promise.all([
           db.annotation.count({
             where: {
               chapterId: chapter.id,
@@ -187,13 +153,11 @@ export async function GET(
               status: 'active',
             },
           }),
-          db.comment.count({
-            where: {
-              chapterId: chapter.id,
-              status: 'active',
-            },
-          }),
         ])
+
+        const commentsPreview = sortCommentsByTop(
+          annotations.map((annotation) => mapAnnotationComment(annotation, readerId)),
+        ).slice(0, previewLimit)
 
         return {
           chapter: {
@@ -217,7 +181,7 @@ export async function GET(
             })),
           },
           commentsPreview,
-          commentCount: annotationCount + legacyCommentCount,
+          commentCount: annotationCount,
           prevChapterId: windowChapters[localIndex - 1]?.id || book.chapters[startIndex + localIndex - 1]?.id || null,
           nextChapterId: windowChapters[localIndex + 1]?.id || book.chapters[startIndex + localIndex + 1]?.id || null,
         }

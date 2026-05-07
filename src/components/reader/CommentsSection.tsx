@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore } from '@/lib/store'
 import { MessageSquare } from 'lucide-react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ArrowUpRight } from 'lucide-react'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import CommentVoteButton from './CommentVoteButton'
 import type { CommentSubmitHandler, ReaderComment } from './comment-types'
 
 const VARIANT_LABELS: Record<string, string> = {
@@ -66,7 +68,7 @@ function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment)
     return comments
   }
 
-  return [comment, ...comments]
+  return sortCommentsByTop([comment, ...comments])
 }
 
 export default function CommentsSection({
@@ -89,6 +91,7 @@ export default function CommentsSection({
   const [isEditingName, setIsEditingName] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [togglingCommentId, setTogglingCommentId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -103,7 +106,11 @@ export default function CommentsSection({
 
     const loadComments = async (): Promise<void> => {
       try {
-        const res = await fetch(`/api/chapters/${chapterId}/comments`)
+        const params = new URLSearchParams()
+        if (readerId) {
+          params.set('readerId', readerId)
+        }
+        const res = await fetch(`/api/chapters/${chapterId}/comments?${params.toString()}`)
         if (!res.ok) {
           return
         }
@@ -124,7 +131,7 @@ export default function CommentsSection({
     return () => {
       isCancelled = true
     }
-  }, [chapterId])
+  }, [chapterId, readerId])
 
   useEffect(() => {
     const handleCommentCreated = (event: Event): void => {
@@ -201,6 +208,58 @@ export default function CommentsSection({
 
   const handleNameSubmit = () => {
     setIsEditingName(false)
+  }
+
+  const handleToggleVote = async (commentId: string): Promise<void> => {
+    if (!readerId || togglingCommentId) return
+
+    const previousComments = comments
+    const optimisticComments = sortCommentsByTop(
+      comments.map((comment) => (
+        comment.id === commentId
+          ? {
+              ...comment,
+              reacted: !comment.reacted,
+              upvoteCount: comment.reacted
+                ? Math.max(0, comment.upvoteCount - 1)
+                : comment.upvoteCount + 1,
+            }
+          : comment
+      )),
+    )
+    setComments(optimisticComments)
+    setTogglingCommentId(commentId)
+
+    try {
+      const response = await fetch(`/api/annotations/${commentId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId }),
+      })
+
+      if (!response.ok) {
+        setComments(previousComments)
+        return
+      }
+
+      const data = await response.json()
+      setComments((currentComments) => sortCommentsByTop(
+        currentComments.map((comment) => (
+          comment.id === commentId
+            ? {
+                ...comment,
+                reacted: Boolean(data.reacted),
+                upvoteCount: Number.isFinite(data.upvoteCount) ? data.upvoteCount : comment.upvoteCount,
+              }
+            : comment
+        )),
+      ))
+    } catch (error) {
+      console.error('Failed to toggle comment vote:', error)
+      setComments(previousComments)
+    } finally {
+      setTogglingCommentId(null)
+    }
   }
 
   const visibleComments = showCommunityAnnotations
@@ -289,6 +348,9 @@ export default function CommentsSection({
                       marginBottom: '0.5rem',
                       fontSize: '0.75rem',
                       textDecoration: 'none',
+                      display: 'grid',
+                      gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+                      alignItems: 'flex-start',
                     }}
                     title="Открыть цитату в книге"
                   >
@@ -300,10 +362,11 @@ export default function CommentsSection({
                     </span>
                     <span
                       style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        minWidth: 0,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.45,
                       }}
                     >
                       {comment.quotes[0].selectedText}
@@ -316,7 +379,13 @@ export default function CommentsSection({
                 ) : (
                   <div
                     className="quote-bar"
-                    style={{ marginBottom: '0.5rem', fontSize: '0.75rem' }}
+                    style={{
+                      marginBottom: '0.5rem',
+                      fontSize: '0.75rem',
+                      display: 'grid',
+                      gridTemplateColumns: 'auto minmax(0, 1fr)',
+                      alignItems: 'flex-start',
+                    }}
                   >
                     <span
                       className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
@@ -326,10 +395,11 @@ export default function CommentsSection({
                     </span>
                     <span
                       style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        minWidth: 0,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.45,
                       }}
                     >
                       {comment.quotes[0].selectedText}
@@ -365,6 +435,15 @@ export default function CommentsSection({
                     <span style={{ fontSize: '0.6875rem', color: 'var(--r-text-secondary)' }}>
                       {timeAgo(comment.createdAt)}
                     </span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <CommentVoteButton
+                        reacted={comment.reacted}
+                        upvoteCount={comment.upvoteCount}
+                        disabled={!readerId || togglingCommentId === comment.id}
+                        onClick={() => void handleToggleVote(comment.id)}
+                        compact
+                      />
+                    </div>
                   </div>
                   <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.4, wordBreak: 'break-word' }}>
                     {comment.body}

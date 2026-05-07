@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { mapAnnotationQuote, sortQuotesByTop } from '@/lib/annotations'
 
 interface RouteParams {
   bookId: string
@@ -37,15 +38,18 @@ export async function GET(
   try {
     const { bookId } = await params
     const { searchParams } = new URL(request.url)
-    const readerId = searchParams.get('readerId') ?? ''
+    const readerId = searchParams.get('readerId')
 
-    const [annotations, legacyQuotes, presets] = await Promise.all([
+    const [annotations, presets] = await Promise.all([
       db.annotation.findMany({
         where: {
           bookId,
           kind: 'quote',
           status: 'active',
           selectedText: {
+            not: null,
+          },
+          paragraphId: {
             not: null,
           },
         },
@@ -73,41 +77,6 @@ export async function GET(
         },
         take: 200,
       }),
-      db.commentQuote.findMany({
-        where: {
-          comment: {
-            bookId,
-            status: 'active',
-          },
-        },
-        select: {
-          id: true,
-          selectedText: true,
-          variantType: true,
-          paragraphId: true,
-          endParagraphId: true,
-          createdAt: true,
-          comment: {
-            select: {
-              username: true,
-              readerId: true,
-              chapter: {
-                select: {
-                  id: true,
-                  title: true,
-                  position: true,
-                },
-              },
-            },
-          },
-          upvotes: {
-            select: {
-              readerId: true,
-            },
-          },
-        },
-        take: 200,
-      }),
       db.variantPreset.findMany({
         select: {
           slug: true,
@@ -120,51 +89,15 @@ export async function GET(
       presets.map((preset) => [preset.slug, preset.label]),
     ) as Record<string, string>
 
-    const annotationQuotes: QuotePayload[] = annotations
-      .filter((quote) => (quote.selectedText || '').trim().length > 0)
-      .map((quote) => ({
-        id: quote.id,
-        text: quote.selectedText || '',
-        variantType: quote.variantType,
-        variantLabel: formatVariantLabel(quote.variantType, presetLabels),
-        chapterId: quote.chapter.id,
-        paragraphId: quote.paragraphId || '',
-        paragraphEndId: quote.endParagraphId,
-        chapterTitle: quote.chapter.title,
-        chapterPosition: quote.chapter.position,
-        username: quote.username,
-        createdAt: quote.createdAt.toISOString(),
-        upvoteCount: quote.votes.length,
-        reacted: readerId
-          ? quote.votes.some((upvote) => upvote.readerId === readerId)
-          : false,
-      }))
-
-    const legacyQuotePayload: QuotePayload[] = legacyQuotes
-      .filter((quote) => quote.selectedText.trim().length > 0)
-      .map((quote) => ({
-        id: quote.id,
-        text: quote.selectedText,
-        variantType: quote.variantType,
-        variantLabel: formatVariantLabel(quote.variantType, presetLabels),
-        chapterId: quote.comment.chapter.id,
-        paragraphId: quote.paragraphId,
-        paragraphEndId: quote.endParagraphId,
-        chapterTitle: quote.comment.chapter.title,
-        chapterPosition: quote.comment.chapter.position,
-        username: quote.comment.username,
-        createdAt: quote.createdAt.toISOString(),
-        upvoteCount: quote.upvotes.length,
-        reacted: readerId
-          ? quote.upvotes.some((upvote) => upvote.readerId === readerId)
-          : false,
-      }))
-
-    const payload: QuotePayload[] = [...annotationQuotes, ...legacyQuotePayload]
-      .sort((a, b) => {
-        if (b.upvoteCount !== a.upvoteCount) return b.upvoteCount - a.upvoteCount
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      })
+    const payload = sortQuotesByTop(
+      annotations
+        .map((quote) => mapAnnotationQuote(quote, readerId))
+        .filter((quote): quote is NonNullable<typeof quote> => Boolean(quote))
+        .map((quote): QuotePayload => ({
+          ...quote,
+          variantLabel: formatVariantLabel(quote.variantType, presetLabels),
+        })),
+    )
 
     return NextResponse.json({ quotes: payload })
   } catch (error) {

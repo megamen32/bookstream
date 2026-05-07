@@ -16,11 +16,12 @@ interface Comment {
   id: string
   bookId: string
   chapterId: string
+  chapterTitle: string
+  chapterPosition: number
   username: string
   body: string
   status: string
   createdAt: string
-  chapter: { title: string }
 }
 
 type FilterStatus = 'all' | 'active' | 'shadowbanned'
@@ -99,7 +100,7 @@ export default function CommentsPage() {
 
   // Group comments by chapter
   const groupedComments = comments.reduce<Record<string, Comment[]>>((acc, comment) => {
-    const key = comment.chapter?.title || 'Без главы'
+    const key = comment.chapterTitle || 'Без главы'
     if (!acc[key]) acc[key] = []
     acc[key].push(comment)
     return acc

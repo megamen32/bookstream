@@ -15,9 +15,12 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore } from '@/lib/store'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import { cn } from '@/lib/utils'
+import type { ReaderComment } from '@/components/reader/comment-types'
+import TopCommentCard from '@/components/reader/TopCommentCard'
 
 type SectionKey = 'comments' | 'quotes' | 'toc'
 
@@ -26,15 +29,6 @@ interface Chapter {
   title: string
   position: number
   variants: Array<{ id: string; variantType: string }>
-}
-
-interface BookComment {
-  id: string
-  chapterId: string
-  username: string
-  body: string
-  createdAt: string
-  chapter?: { title: string }
 }
 
 interface BookQuote {
@@ -83,7 +77,7 @@ const SECTION_CONFIGS: Record<SectionKey, SectionConfig> = {
     key: 'comments',
     order: '01',
     title: 'Комментарии',
-    subtitle: 'Свежие отклики читателей',
+    subtitle: 'Топ комментарии',
     icon: MessageSquare,
     tone: {
       accent: 'emerald',
@@ -99,7 +93,7 @@ const SECTION_CONFIGS: Record<SectionKey, SectionConfig> = {
     key: 'quotes',
     order: '02',
     title: 'Цитаты',
-    subtitle: 'Лучшие фрагменты книги',
+    subtitle: 'Выделенные цитаты',
     icon: MessageSquareQuote,
     tone: {
       accent: 'amber',
@@ -115,7 +109,7 @@ const SECTION_CONFIGS: Record<SectionKey, SectionConfig> = {
     key: 'toc',
     order: '03',
     title: 'Содержание',
-    subtitle: 'Навигация по главам',
+    subtitle: 'Список глав',
     icon: ListOrdered,
     tone: {
       accent: 'slate',
@@ -149,15 +143,6 @@ function timeAgo(dateStr: string): string {
   if (hours < 24) return `${hours} ч.`
   if (days < 7) return `${days} д.`
   return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-}
-
-function stringToColor(str: string): string {
-  let hash = 0
-  for (let index = 0; index < str.length; index += 1) {
-    hash = str.charCodeAt(index) + ((hash << 5) - hash)
-  }
-  const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 60%, 45%)`
 }
 
 function clampParagraphStyle(lines: number): CSSProperties {
@@ -231,57 +216,6 @@ function HighlightHeader({
           )}
         </Button>
       </div>
-    </div>
-  )
-}
-
-function CommentCard({
-  comment,
-  chapterHref,
-  expanded,
-}: {
-  comment: BookComment
-  chapterHref: string
-  expanded: boolean
-}) {
-  const avatarColor = stringToColor(comment.username)
-
-  return (
-    <div
-      className={cn(
-        'rounded-2xl border border-border/70 bg-card/85 p-3 shadow-sm transition-all duration-200',
-        expanded && 'p-4 shadow-[0_12px_32px_-24px_rgba(15,23,42,0.42)]',
-      )}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-          style={{ backgroundColor: avatarColor }}
-        >
-          {comment.username.charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold text-foreground" style={{ color: avatarColor }}>
-              {comment.username}
-            </span>
-            <span className="text-xs text-muted-foreground">{timeAgo(comment.createdAt)}</span>
-            <Link
-              href={chapterHref}
-              className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {comment.chapter?.title ?? 'Глава'}
-              <ArrowUpRight size={12} />
-            </Link>
-          </div>
-        </div>
-      </div>
-      <p
-        className={cn('mt-3 text-sm leading-6 text-foreground/90', expanded ? 'pr-1' : 'pr-2')}
-        style={clampParagraphStyle(expanded ? 4 : 2)}
-      >
-        {comment.body}
-      </p>
     </div>
   )
 }
@@ -434,21 +368,6 @@ function LoadingStack({ count }: { count: number }) {
   )
 }
 
-function getInitialActiveSection({
-  commentCount,
-  quoteCount,
-  chapterCount,
-}: {
-  commentCount: number
-  quoteCount: number
-  chapterCount: number
-}): SectionKey | null {
-  if (commentCount > 0) return 'comments'
-  if (quoteCount > 0) return 'quotes'
-  if (chapterCount > 0) return 'toc'
-  return null
-}
-
 export default function BookHighlightsPanel({
   authorSlug,
   bookSlug,
@@ -456,14 +375,14 @@ export default function BookHighlightsPanel({
   chapters,
 }: BookHighlightsPanelProps) {
   const { readerId, loadFromStorage } = useReaderStore()
-  const [comments, setComments] = useState<BookComment[]>([])
+  const [comments, setComments] = useState<ReaderComment[]>([])
   const [quotes, setQuotes] = useState<BookQuote[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [quotesLoading, setQuotesLoading] = useState(true)
   const [commentsError, setCommentsError] = useState<string | null>(null)
   const [quotesError, setQuotesError] = useState<string | null>(null)
-  const [manualActiveSection, setManualActiveSection] = useState<SectionKey | null>(null)
-  const [hasManualSectionChoice, setHasManualSectionChoice] = useState(false)
+  const [activeSection, setActiveSection] = useState<SectionKey | null>(null)
+  const [togglingCommentId, setTogglingCommentId] = useState<string | null>(null)
   const [togglingQuoteId, setTogglingQuoteId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -485,10 +404,12 @@ export default function BookHighlightsPanel({
       setCommentsError(null)
       setQuotesError(null)
 
-      const commentsUrl = `/api/comments/list?${new URLSearchParams({
+      const commentsParams = new URLSearchParams({
         bookId,
         status: 'active',
-      }).toString()}`
+      })
+      if (readerId) commentsParams.set('readerId', readerId)
+      const commentsUrl = `/api/comments/list?${commentsParams.toString()}`
       const quotesParams = new URLSearchParams()
       if (readerId) quotesParams.set('readerId', readerId)
       const quotesUrl = `/api/books/${bookId}/quotes${quotesParams.toString() ? `?${quotesParams.toString()}` : ''}`
@@ -503,7 +424,7 @@ export default function BookHighlightsPanel({
 
         if (commentsResult.status === 'fulfilled' && commentsResult.value.ok) {
           const commentsData = await commentsResult.value.json()
-          setComments(Array.isArray(commentsData) ? commentsData : [])
+          setComments(sortCommentsByTop(Array.isArray(commentsData) ? commentsData : []))
         } else {
           setComments([])
           setCommentsError('Не удалось загрузить комментарии')
@@ -542,20 +463,62 @@ export default function BookHighlightsPanel({
   const chapterCountLabel = contentCount === 1 ? 'глава' : 'глав'
   const commentCount = comments.length
   const quoteCount = quotes.length
-  const preferredActiveSection = useMemo(
-    () =>
-      getInitialActiveSection({
-        commentCount,
-        quoteCount,
-        chapterCount: contentCount,
-      }),
-    [commentCount, quoteCount, contentCount],
-  )
-  const activeSection = hasManualSectionChoice ? manualActiveSection : preferredActiveSection
 
   const handleSectionToggle = (section: SectionKey) => {
-    setHasManualSectionChoice(true)
-    setManualActiveSection((current) => (current === section ? null : section))
+    setActiveSection((current) => (current === section ? null : section))
+  }
+
+  const handleToggleCommentVote = async (commentId: string): Promise<void> => {
+    if (!readerId || togglingCommentId) return
+
+    const previousComments = comments
+    const optimisticComments = sortCommentsByTop(
+      comments.map((comment) => (
+        comment.id === commentId
+          ? {
+              ...comment,
+              reacted: !comment.reacted,
+              upvoteCount: comment.reacted
+                ? Math.max(0, comment.upvoteCount - 1)
+                : comment.upvoteCount + 1,
+            }
+          : comment
+      )),
+    )
+
+    setComments(optimisticComments)
+    setTogglingCommentId(commentId)
+
+    try {
+      const response = await fetch(`/api/annotations/${commentId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId }),
+      })
+
+      if (!response.ok) {
+        setComments(previousComments)
+        return
+      }
+
+      const data = await response.json()
+      setComments((currentComments) => sortCommentsByTop(
+        currentComments.map((comment) => (
+          comment.id === commentId
+            ? {
+                ...comment,
+                reacted: Boolean(data.reacted),
+                upvoteCount: Number.isFinite(data.upvoteCount) ? data.upvoteCount : comment.upvoteCount,
+              }
+            : comment
+        )),
+      ))
+    } catch (error) {
+      console.error('Failed to toggle comment vote:', error)
+      setComments(previousComments)
+    } finally {
+      setTogglingCommentId(null)
+    }
   }
 
   const handleToggleUpvote = async (quoteId: string): Promise<void> => {
@@ -578,7 +541,7 @@ export default function BookHighlightsPanel({
     setTogglingQuoteId(quoteId)
 
     try {
-      const response = await fetch(`/api/quotes/${quoteId}/upvote`, {
+      const response = await fetch(`/api/annotations/${quoteId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ readerId }),
@@ -623,18 +586,18 @@ export default function BookHighlightsPanel({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-              Витрина книги
+              Раздел книги
             </p>
             <h2 className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">
               Комментарии, цитаты и содержание
             </h2>
             <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
-              «Развернуть» поднимает в фокус только один слой. Остальные остаются в компактном
-              превью, чтобы страница не теряла ритм.
+              Выберите один раздел для режима фокуса или снимите выбор, чтобы снова увидеть всю
+              витрину в компактном виде.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+          <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-full border border-white/60 bg-white/70 p-1 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.45)] backdrop-blur-md sm:w-auto sm:flex-nowrap">
             {(['comments', 'quotes', 'toc'] as const).map((sectionKey) => {
               const config = SECTION_CONFIGS[sectionKey]
               const isActive = activeSection === sectionKey
@@ -649,8 +612,10 @@ export default function BookHighlightsPanel({
                   variant={isActive ? 'default' : 'outline'}
                   onClick={() => handleSectionToggle(sectionKey)}
                   className={cn(
-                    'rounded-full px-3 shadow-none',
-                    isActive ? config.tone.buttonActive : config.tone.button,
+                    'min-w-0 flex-1 rounded-full border-0 px-4 shadow-none transition-all duration-200 sm:flex-none',
+                    isActive
+                      ? `${config.tone.buttonActive} scale-[1.02] shadow-[0_14px_30px_-18px_rgba(15,23,42,0.55)]`
+                      : 'bg-transparent text-foreground/75 hover:bg-white/80 hover:text-foreground',
                   )}
                 >
                   {config.title}
@@ -664,136 +629,143 @@ export default function BookHighlightsPanel({
         </div>
 
         <div className="mt-6 space-y-3">
-          <article
-            className={cn(
-              'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
-              activeSection === 'comments'
-                ? 'border-emerald-300/80 shadow-[0_16px_40px_-30px_rgba(16,185,129,0.45)]'
-                : 'border-l-4 border-l-emerald-500',
-            )}
-          >
-            <HighlightHeader
-              config={SECTION_CONFIGS.comments}
-              count={commentCount}
-              active={activeSection === 'comments'}
-              onToggle={() => handleSectionToggle('comments')}
-            />
-            {(activeSection === 'comments' || commentsLoading || commentsError || commentCount > 0) && (
-              <div className="px-4 py-4 sm:px-5">
-                {commentsLoading ? (
-                  <LoadingStack count={3} />
-                ) : commentsError ? (
-                  <EmptyState text={commentsError} />
-                ) : commentCount === 0 ? (
-                  <EmptyState text="Пока нет активных комментариев для этой книги." />
-                ) : (
-                  <div className="space-y-3">
-                    {visibleComments.map((comment) => (
-                      <CommentCard
-                        key={comment.id}
-                        comment={comment}
-                        chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`}
-                        expanded={activeSection === 'comments'}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </article>
-
-          <article
-            className={cn(
-              'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
-              activeSection === 'quotes'
-                ? 'border-amber-300/80 shadow-[0_16px_40px_-30px_rgba(245,158,11,0.45)]'
-                : 'border-l-4 border-l-amber-500',
-            )}
-          >
-            <HighlightHeader
-              config={SECTION_CONFIGS.quotes}
-              count={quoteCount}
-              active={activeSection === 'quotes'}
-              onToggle={() => handleSectionToggle('quotes')}
-            />
-            {(activeSection === 'quotes' || quotesLoading || quotesError || quoteCount > 0) && (
-              <div className="px-4 py-4 sm:px-5">
-                {quotesLoading ? (
-                  <LoadingStack count={3} />
-                ) : quotesError ? (
-                  <EmptyState text={quotesError} />
-                ) : quoteCount === 0 ? (
-                  <EmptyState text="Пока никто не вынес цитаты из этой книги." />
-                ) : (
-                  <div className="space-y-3">
-                    {visibleQuotes.map((quote) => (
-                      <QuoteCard
-                        key={quote.id}
-                        quote={quote}
-                        active={activeSection === 'quotes'}
-                        toggling={togglingQuoteId === quote.id}
-                        onToggleUpvote={() => void handleToggleUpvote(quote.id)}
-                        authorSlug={authorSlug}
-                        bookSlug={bookSlug}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </article>
-
-          <article
-            className={cn(
-              'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
-              activeSection === 'toc'
-                ? 'border-slate-300/80 shadow-[0_16px_40px_-30px_rgba(51,65,85,0.35)]'
-                : 'border-l-4 border-l-slate-500',
-            )}
-          >
-            <HighlightHeader
-              config={SECTION_CONFIGS.toc}
-              count={contentCount}
-              active={activeSection === 'toc'}
-              onToggle={() => handleSectionToggle('toc')}
-            />
-            <div className="px-4 py-4 sm:px-5">
-              {contentCount === 0 ? (
-                <EmptyState text="Содержание появится после загрузки глав." />
-              ) : activeSection === 'toc' ? (
-                <div className="space-y-3">
-                  {chapters.map((chapter) => (
-                    <ChapterRow
-                      key={chapter.id}
-                      chapter={chapter}
-                      authorSlug={authorSlug}
-                      bookSlug={bookSlug}
-                      expanded
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleChapters.map((chapter) => (
-                    <ChapterRow
-                      key={chapter.id}
-                      chapter={chapter}
-                      authorSlug={authorSlug}
-                      bookSlug={bookSlug}
-                      expanded={false}
-                    />
-                  ))}
-                  {contentCount > visibleChapters.length && (
-                    <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
-                      <Sparkles size={14} />
-                      Ещё {contentCount - visibleChapters.length} {chapterCountLabel} скрыты до
-                      раскрытия.
+          {(activeSection === null || activeSection === 'comments') && (
+            <article
+              className={cn(
+                'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
+                activeSection === 'comments'
+                  ? 'border-emerald-300/80 shadow-[0_16px_40px_-30px_rgba(16,185,129,0.45)]'
+                  : 'border-l-4 border-l-emerald-500',
+              )}
+            >
+              <HighlightHeader
+                config={SECTION_CONFIGS.comments}
+                count={commentCount}
+                active={activeSection === 'comments'}
+                onToggle={() => handleSectionToggle('comments')}
+              />
+              {(activeSection === 'comments' || commentsLoading || commentsError || commentCount > 0) && (
+                <div className="px-4 py-4 sm:px-5">
+                  {commentsLoading ? (
+                    <LoadingStack count={3} />
+                  ) : commentsError ? (
+                    <EmptyState text={commentsError} />
+                  ) : commentCount === 0 ? (
+                    activeSection === 'comments' ? <EmptyState text="Пока нет комментариев к этой книге." /> : null
+                  ) : (
+                    <div className="space-y-3">
+                      {visibleComments.map((comment) => (
+                        <TopCommentCard
+                          key={comment.id}
+                          comment={comment}
+                          chapterHref={`/${authorSlug}/${bookSlug}/read?chapter=${comment.chapterId}`}
+                          onToggleVote={() => void handleToggleCommentVote(comment.id)}
+                          voteDisabled={!readerId || togglingCommentId === comment.id}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          </article>
+            </article>
+          )}
+
+          {(activeSection === null || activeSection === 'quotes') && (
+            <article
+              className={cn(
+                'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
+                activeSection === 'quotes'
+                  ? 'border-amber-300/80 shadow-[0_16px_40px_-30px_rgba(245,158,11,0.45)]'
+                  : 'border-l-4 border-l-amber-500',
+              )}
+            >
+              <HighlightHeader
+                config={SECTION_CONFIGS.quotes}
+                count={quoteCount}
+                active={activeSection === 'quotes'}
+                onToggle={() => handleSectionToggle('quotes')}
+              />
+              {(activeSection === 'quotes' || quotesLoading || quotesError || quoteCount > 0) && (
+                <div className="px-4 py-4 sm:px-5">
+                  {quotesLoading ? (
+                    <LoadingStack count={3} />
+                  ) : quotesError ? (
+                    <EmptyState text={quotesError} />
+                  ) : quoteCount === 0 ? (
+                    activeSection === 'quotes' ? <EmptyState text="Пока никто не вынес цитаты из этой книги." /> : null
+                  ) : (
+                    <div className="space-y-3">
+                      {visibleQuotes.map((quote) => (
+                        <QuoteCard
+                          key={quote.id}
+                          quote={quote}
+                          active={activeSection === 'quotes'}
+                          toggling={togglingQuoteId === quote.id}
+                          onToggleUpvote={() => void handleToggleUpvote(quote.id)}
+                          authorSlug={authorSlug}
+                          bookSlug={bookSlug}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </article>
+          )}
+
+          {(activeSection === null || activeSection === 'toc') && (
+            <article
+              className={cn(
+                'overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/90 transition-all duration-300',
+                activeSection === 'toc'
+                  ? 'border-slate-300/80 shadow-[0_16px_40px_-30px_rgba(51,65,85,0.35)]'
+                  : 'border-l-4 border-l-slate-500',
+              )}
+            >
+              <HighlightHeader
+                config={SECTION_CONFIGS.toc}
+                count={contentCount}
+                active={activeSection === 'toc'}
+                onToggle={() => handleSectionToggle('toc')}
+              />
+              <div className="px-4 py-4 sm:px-5">
+                {contentCount === 0 ? (
+                  activeSection === 'toc' ? <EmptyState text="Содержание появится после загрузки глав." /> : null
+                ) : activeSection === 'toc' ? (
+                  <div className="space-y-3">
+                    {chapters.map((chapter) => (
+                      <ChapterRow
+                        key={chapter.id}
+                        chapter={chapter}
+                        authorSlug={authorSlug}
+                        bookSlug={bookSlug}
+                        expanded
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {visibleChapters.map((chapter) => (
+                      <ChapterRow
+                        key={chapter.id}
+                        chapter={chapter}
+                        authorSlug={authorSlug}
+                        bookSlug={bookSlug}
+                        expanded={false}
+                      />
+                    ))}
+                    {contentCount > visibleChapters.length && (
+                      <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+                        <Sparkles size={14} />
+                        Ещё {contentCount - visibleChapters.length} {chapterCountLabel} скрыты до
+                        раскрытия.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </article>
+          )}
         </div>
       </div>
     </section>

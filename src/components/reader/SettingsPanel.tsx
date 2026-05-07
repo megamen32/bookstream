@@ -105,6 +105,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
               {(Object.keys(WIDTH_LABELS) as LineWidth[]).map((w) => (
                 <button
                   key={w}
+                  type="button"
                   onClick={() => setLineWidth(w)}
                   style={{
                     flex: 1,
@@ -134,6 +135,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
               {themeList.map((t) => (
                 <button
                   key={t.name}
+                  type="button"
                   onClick={() => setTheme(t.name as ReaderTheme)}
                   style={{
                     display: 'flex',
@@ -171,6 +173,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
           </div>
 
           <div
+            className="md:hidden"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -195,6 +198,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
 
           {/* Very large quick button */}
           <button
+            type="button"
             onClick={() => {
               setFontSize(24)
               setLineHeight(2.0)

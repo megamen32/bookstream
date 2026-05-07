@@ -71,7 +71,7 @@ export default function HomePage() {
             <h1 className="text-xl font-semibold uppercase tracking-[0.18em]">Bookstream</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-white/60 sm:inline">Книжная витрина</span>
+            <span className="hidden text-sm text-white/60 sm:inline">Каталог книг</span>
             <Button
               asChild
               variant="outline"
@@ -88,39 +88,7 @@ export default function HomePage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-        <section className="poster-card relative overflow-hidden rounded-[2rem] border border-white/10 px-6 py-10 sm:px-8 lg:px-10">
-          <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
-          <div className="relative grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-end">
-            <div className="max-w-3xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-white/70">
-                <Sparkles size={14} className="text-amber-300" />
-                Витрина обложек
-              </div>
-              <h2 className="max-w-2xl text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Книги должны смотреться как премиальные постеры, а не как список файлов.
-              </h2>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/70 sm:text-lg">
-                Вертикальные обложки выходят на первый план, описание уходит в роль подписи,
-                а вся витрина работает как дорогой стриминговый каталог.
-              </p>
-            </div>
-
-            <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-3 lg:grid-cols-1">
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
-                <div className="text-2xl font-semibold text-white">{books.length}</div>
-                <div className="mt-1 text-white/60">книг на витрине</div>
-              </div>
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
-                <div className="text-2xl font-semibold text-white">{authors.length}</div>
-                <div className="mt-1 text-white/60">авторов</div>
-              </div>
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
-                <div className="text-2xl font-semibold text-white">3 режима</div>
-                <div className="mt-1 text-white/60">чтения и работы с текстом</div>
-              </div>
-            </div>
-          </div>
-        </section>
+       
 
         {loading ? (
           <div className="mt-10">
@@ -137,7 +105,7 @@ export default function HomePage() {
               <div className="mb-5">
                 <h3 className="text-2xl font-semibold text-white">Последние книги</h3>
                 <p className="mt-1 text-sm text-white/60">
-                  Весь экран и вся композиция подчинены вертикальной обложке.
+                  Новые книги показываются с обложкой, автором и кратким описанием.
                 </p>
               </div>
 
@@ -169,7 +137,7 @@ export default function HomePage() {
                           {book.title}
                         </h4>
                         <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/60">
-                          {book.description || 'Вертикальная обложка ведет историю, описание лишь задает интонацию.'}
+                          {book.description || 'Описание не указано.'}
                         </p>
                         <div className="mt-4 flex items-center justify-between gap-3 text-sm">
                           <span className="text-white/48">{formatChapterLabel(book._count.chapters)}</span>
@@ -184,6 +152,39 @@ export default function HomePage() {
                 ))}
               </div>
             </section>
+             <section className="poster-card relative overflow-hidden rounded-[2rem] border border-white/10 px-6 py-10 sm:px-8 lg:px-10">
+          <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-end">
+            <div className="max-w-3xl">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-white/70">
+                <Sparkles size={14} className="text-amber-300" />
+                Главная
+              </div>
+              <h2 className="max-w-2xl text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
+                Книги собраны в каталог с крупными обложками и короткими подписями.
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/70 sm:text-lg">
+                На первом плане обложка, рядом автор и описание. Каждая книга открывается в один
+                клик.
+              </p>
+            </div>
+
+            <div className="grid gap-3 text-sm text-white/80 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                <div className="text-2xl font-semibold text-white">{books.length}</div>
+                <div className="mt-1 text-white/60">книг в каталоге</div>
+              </div>
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                <div className="text-2xl font-semibold text-white">{authors.length}</div>
+                <div className="mt-1 text-white/60">авторов</div>
+              </div>
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                <div className="text-2xl font-semibold text-white">3 режима</div>
+                <div className="mt-1 text-white/60">чтения и работы с текстом</div>
+              </div>
+            </div>
+          </div>
+        </section>
 
             {authors.length > 0 && (
               <section className="mt-12">
@@ -192,7 +193,7 @@ export default function HomePage() {
                     <div>
                       <h3 className="text-2xl font-semibold text-white">Авторы</h3>
                       <p className="mt-1 text-sm text-white/60">
-                        Отдельные подборки и быстрый переход в каталог конкретного автора.
+                        Быстрый переход к книгам конкретного автора.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -217,14 +218,14 @@ export default function HomePage() {
           <div className="poster-card mt-10 rounded-[2rem] border border-white/10 px-6 py-16 text-center text-white/70">
             <BookOpen size={48} className="mx-auto mb-4 opacity-40" />
             <p className="text-lg font-medium text-white">Пока нет опубликованных книг</p>
-            <p className="mt-2 text-sm text-white/60">Когда книги появятся, витрина сразу покажет их как постеры.</p>
+            <p className="mt-2 text-sm text-white/60">Когда книги появятся, они отобразятся здесь.</p>
           </div>
         )}
       </main>
 
       <footer className="border-t border-white/10">
         <div className="mx-auto max-w-7xl px-4 py-6 text-center text-sm text-white/50 sm:px-6 lg:px-8">
-          Bookstream — витрина для чтения, где обложка снова имеет вес
+          Bookstream
         </div>
       </footer>
     </div>

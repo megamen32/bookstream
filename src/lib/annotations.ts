@@ -74,6 +74,177 @@ export interface UnifiedAnnotationItem {
   endOffset: number
 }
 
+export interface AnnotationVoteLike {
+  readerId: string
+}
+
+export interface AnnotationChapterLike {
+  id: string
+  title: string
+  position: number
+}
+
+export interface AnnotationCommentItem {
+  id: string
+  bookId: string
+  chapterId: string
+  chapterTitle: string
+  chapterPosition: number
+  chapterVariantId: string | null
+  variantType: string
+  readerId: string
+  username: string
+  body: string
+  status: string
+  createdAt: string
+  selectedText: string | null
+  paragraphId: string | null
+  endParagraphId: string | null
+  startOffset: number
+  endOffset: number
+  upvoteCount: number
+  reacted: boolean
+  quotes: Array<{
+    id: string
+    variantType: string
+    selectedText: string
+    paragraphId: string
+    endParagraphId?: string | null
+  }>
+}
+
+export interface AnnotationQuoteItem {
+  id: string
+  text: string
+  variantType: string
+  chapterId: string
+  paragraphId: string
+  paragraphEndId: string | null
+  chapterTitle: string
+  chapterPosition: number
+  username: string
+  createdAt: string
+  upvoteCount: number
+  reacted: boolean
+}
+
+export interface AnnotationCommentRowLike {
+  id: string
+  bookId: string
+  chapterId: string
+  chapterVariantId: string | null
+  variantType: string
+  readerId: string
+  username: string
+  body: string | null
+  status: string
+  createdAt: Date
+  selectedText: string | null
+  paragraphId: string | null
+  endParagraphId: string | null
+  startOffset: number
+  endOffset: number
+  votes: AnnotationVoteLike[]
+  chapter: AnnotationChapterLike
+}
+
+export interface AnnotationQuoteRowLike {
+  id: string
+  selectedText: string | null
+  variantType: string
+  paragraphId: string | null
+  endParagraphId: string | null
+  createdAt: Date
+  readerId: string
+  username: string
+  votes: AnnotationVoteLike[]
+  chapter: AnnotationChapterLike
+}
+
+export function sortItemsByCreatedAt<T extends { createdAt: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+export function sortCommentsByTop<T extends { upvoteCount: number; createdAt: string }>(comments: T[]): T[] {
+  return [...comments].sort((a, b) => {
+    if (b.upvoteCount !== a.upvoteCount) return b.upvoteCount - a.upvoteCount
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  })
+}
+
+export function sortQuotesByTop<T extends { upvoteCount: number; createdAt: string }>(quotes: T[]): T[] {
+  return sortCommentsByTop(quotes)
+}
+
+export function mapAnnotationComment(
+  annotation: AnnotationCommentRowLike,
+  readerId?: string | null,
+): AnnotationCommentItem {
+  const reacted = Boolean(readerId && annotation.votes.some((vote) => vote.readerId === readerId))
+  const selectedText = annotation.selectedText && annotation.selectedText.trim().length > 0
+    ? annotation.selectedText
+    : null
+  const paragraphId = annotation.paragraphId
+  const endParagraphId = annotation.endParagraphId
+
+  return {
+    id: annotation.id,
+    bookId: annotation.bookId,
+    chapterId: annotation.chapterId,
+    chapterTitle: annotation.chapter.title,
+    chapterPosition: annotation.chapter.position,
+    chapterVariantId: annotation.chapterVariantId,
+    variantType: annotation.variantType,
+    readerId: annotation.readerId,
+    username: annotation.username,
+    body: annotation.body || '',
+    status: annotation.status,
+    createdAt: annotation.createdAt.toISOString(),
+    selectedText,
+    paragraphId,
+    endParagraphId,
+    startOffset: annotation.startOffset,
+    endOffset: annotation.endOffset,
+    upvoteCount: annotation.votes.length,
+    reacted,
+    quotes: paragraphId && selectedText
+      ? [{
+          id: `${annotation.id}:quote`,
+          variantType: annotation.variantType,
+          selectedText,
+          paragraphId,
+          endParagraphId,
+        }]
+      : [],
+  }
+}
+
+export function mapAnnotationQuote(
+  annotation: AnnotationQuoteRowLike,
+  readerId?: string | null,
+): AnnotationQuoteItem | null {
+  const text = annotation.selectedText?.trim() || ''
+  const paragraphId = annotation.paragraphId || ''
+  if (!text || !paragraphId) {
+    return null
+  }
+
+  return {
+    id: annotation.id,
+    text,
+    variantType: annotation.variantType,
+    chapterId: annotation.chapter.id,
+    paragraphId,
+    paragraphEndId: annotation.endParagraphId,
+    chapterTitle: annotation.chapter.title,
+    chapterPosition: annotation.chapter.position,
+    username: annotation.username,
+    createdAt: annotation.createdAt.toISOString(),
+    upvoteCount: annotation.votes.length,
+    reacted: Boolean(readerId && annotation.votes.some((vote) => vote.readerId === readerId)),
+  }
+}
+
 export function normalizeParagraphEnd(paragraphId: string, endParagraphId?: string | null): string {
   return endParagraphId && endParagraphId.length > 0 ? endParagraphId : paragraphId
 }

@@ -90,12 +90,12 @@ function CoverImage({
   }
 
   return (
-    <div className={cn('relative overflow-hidden bg-muted', className)}>
+    <div className={cn('relative overflow-hidden bg-transparent', className)}>
       <img
         src={src}
         alt={alt}
         className={cn(
-          'h-full w-full bg-muted',
+          'h-full w-full bg-transparent',
           fit === 'cover' ? 'object-cover' : 'object-contain',
           imageClassName
         )}

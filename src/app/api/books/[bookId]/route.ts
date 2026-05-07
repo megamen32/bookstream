@@ -51,7 +51,7 @@ export async function GET(
             orderBy: { position: 'asc' },
             include: { variants: true },
           },
-          _count: { select: { comments: true } },
+          _count: { select: { chapters: true } },
         },
       })
     } else {
@@ -67,7 +67,7 @@ export async function GET(
             orderBy: { position: 'asc' },
             include: { variants: true },
           },
-          _count: { select: { comments: true } },
+          _count: { select: { chapters: true } },
         },
       })
     }
@@ -76,7 +76,21 @@ export async function GET(
       return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
     }
 
-    return NextResponse.json(book)
+    const commentCount = await db.annotation.count({
+      where: {
+        bookId: book.id,
+        kind: 'comment',
+        status: 'active',
+      },
+    })
+
+    return NextResponse.json({
+      ...book,
+      _count: {
+        ...book._count,
+        comments: commentCount,
+      },
+    })
   } catch (error) {
     console.error('Error fetching book:', error)
     return NextResponse.json({ error: 'Ошибка загрузки книги' }, { status: 500 })
@@ -147,10 +161,6 @@ export async function DELETE(
       })
 
       await tx.annotation.deleteMany({
-        where: { bookId },
-      })
-
-      await tx.comment.deleteMany({
         where: { bookId },
       })
 

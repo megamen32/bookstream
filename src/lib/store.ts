@@ -1,3 +1,4 @@
+import type { StoreApi, UseBoundStore } from 'zustand'
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -72,6 +73,14 @@ function generateReaderId(): string {
 
 const STORAGE_KEY = 'bookstream-reader-state'
 
+type ReaderStore = UseBoundStore<StoreApi<ReaderState>>
+
+declare global {
+  interface Window {
+    __bookstreamReaderStore?: ReaderStore
+  }
+}
+
 interface StoredState {
   readerId?: string
   username?: string
@@ -85,123 +94,137 @@ interface StoredState {
   showMobileReactionBar?: boolean
 }
 
-export const useReaderStore = create<ReaderState>((set, get) => ({
-  // Current reading context
-  bookId: null,
-  chapterId: null,
-  variantType: 'original',
-  readingMode: 'feed',
+function createReaderStore(): ReaderStore {
+  return create<ReaderState>((set, get) => ({
+    // Current reading context
+    bookId: null,
+    chapterId: null,
+    variantType: 'original',
+    readingMode: 'feed',
 
-  // UI Settings
-  fontSize: 18,
-  lineHeight: 1.6,
-  lineWidth: 'medium',
-  theme: 'light',
-  accentTheme: 'sky',
-  showMobileReactionBar: false,
+    // UI Settings
+    fontSize: 18,
+    lineHeight: 1.6,
+    lineWidth: 'medium',
+    theme: 'light',
+    accentTheme: 'sky',
+    showMobileReactionBar: false,
 
-  // Reader identity
-  readerId: '',
-  username: '',
-  showCommunityAnnotations: true,
+    // Reader identity
+    readerId: '',
+    username: '',
+    showCommunityAnnotations: true,
 
-  // Comment composer
-  replyingTo: null,
+    // Comment composer
+    replyingTo: null,
 
-  // Actions
-  setBookId: (id: string) => set({ bookId: id }),
-  setChapterId: (id: string) => set({ chapterId: id }),
-  setVariantType: (type: VariantType) => set({ variantType: type }),
-  setReadingMode: (mode: ReadingMode) => set({ readingMode: mode }),
-  setFontSize: (size: number) => {
-    set({ fontSize: size })
-    get().saveToStorage()
-  },
-  setLineHeight: (height: number) => {
-    set({ lineHeight: height })
-    get().saveToStorage()
-  },
-  setLineWidth: (width: LineWidth) => {
-    set({ lineWidth: width })
-    get().saveToStorage()
-  },
-  setTheme: (theme: ReaderTheme) => {
-    set({ theme: theme })
-    get().saveToStorage()
-  },
-  setAccentTheme: (accentTheme: AccentTheme) => {
-    set({ accentTheme })
-    get().saveToStorage()
-  },
-  setShowMobileReactionBar: (showMobileReactionBar: boolean) => {
-    set({ showMobileReactionBar })
-    get().saveToStorage()
-  },
-  setReaderId: (id: string) => {
-    set({ readerId: id })
-    get().saveToStorage()
-  },
-  setUsername: (name: string) => {
-    set({ username: name })
-    get().saveToStorage()
-  },
-  setShowCommunityAnnotations: (value: boolean) => {
-    set({ showCommunityAnnotations: value })
-    get().saveToStorage()
-  },
-  setReplyingTo: (quote: ReplyQuote | null) => set({ replyingTo: quote }),
+    // Actions
+    setBookId: (id: string) => set({ bookId: id }),
+    setChapterId: (id: string) => set({ chapterId: id }),
+    setVariantType: (type: VariantType) => set({ variantType: type }),
+    setReadingMode: (mode: ReadingMode) => set({ readingMode: mode }),
+    setFontSize: (size: number) => {
+      set({ fontSize: size })
+      get().saveToStorage()
+    },
+    setLineHeight: (height: number) => {
+      set({ lineHeight: height })
+      get().saveToStorage()
+    },
+    setLineWidth: (width: LineWidth) => {
+      set({ lineWidth: width })
+      get().saveToStorage()
+    },
+    setTheme: (theme: ReaderTheme) => {
+      set({ theme: theme })
+      get().saveToStorage()
+    },
+    setAccentTheme: (accentTheme: AccentTheme) => {
+      set({ accentTheme })
+      get().saveToStorage()
+    },
+    setShowMobileReactionBar: (showMobileReactionBar: boolean) => {
+      set({ showMobileReactionBar })
+      get().saveToStorage()
+    },
+    setReaderId: (id: string) => {
+      set({ readerId: id })
+      get().saveToStorage()
+    },
+    setUsername: (name: string) => {
+      set({ username: name })
+      get().saveToStorage()
+    },
+    setShowCommunityAnnotations: (value: boolean) => {
+      set({ showCommunityAnnotations: value })
+      get().saveToStorage()
+    },
+    setReplyingTo: (quote: ReplyQuote | null) => set({ replyingTo: quote }),
 
-  // Persistence
-  loadFromStorage: () => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) {
+    // Persistence
+    loadFromStorage: () => {
+      if (typeof window === 'undefined') return
+      const currentState = get()
+      if (currentState.readerId) return
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (!raw) {
+          const readerId = generateReaderId()
+          const username = generateRussianUsername()
+          set({ readerId, username })
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerId, username, accentTheme: 'sky' }))
+          return
+        }
+        const stored: StoredState = JSON.parse(raw)
+        set({
+          readerId: stored.readerId || generateReaderId(),
+          username: stored.username || generateRussianUsername(),
+          showCommunityAnnotations: stored.showCommunityAnnotations ?? true,
+          accentTheme: stored.accentTheme || 'sky',
+          fontSize: stored.fontSize || 18,
+          lineHeight: stored.lineHeight || 1.6,
+          lineWidth: stored.lineWidth || 'medium',
+          theme: stored.theme || 'light',
+          readingMode: stored.readingMode || 'feed',
+          showMobileReactionBar: stored.showMobileReactionBar || false,
+        })
+      } catch {
         const readerId = generateReaderId()
         const username = generateRussianUsername()
         set({ readerId, username })
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerId, username, accentTheme: 'sky' }))
-        return
       }
-      const stored: StoredState = JSON.parse(raw)
-      set({
-        readerId: stored.readerId || generateReaderId(),
-        username: stored.username || generateRussianUsername(),
-        showCommunityAnnotations: stored.showCommunityAnnotations ?? true,
-        accentTheme: stored.accentTheme || 'sky',
-        fontSize: stored.fontSize || 18,
-        lineHeight: stored.lineHeight || 1.6,
-        lineWidth: stored.lineWidth || 'medium',
-        theme: stored.theme || 'light',
-        readingMode: stored.readingMode || 'feed',
-        showMobileReactionBar: stored.showMobileReactionBar || false,
-      })
-    } catch {
-      const readerId = generateReaderId()
-      const username = generateRussianUsername()
-      set({ readerId, username })
-    }
-  },
+    },
 
-  saveToStorage: () => {
-    if (typeof window === 'undefined') return
-    try {
-      const state = get()
-      const toStore: StoredState = {
-        readerId: state.readerId,
-        username: state.username,
-        showCommunityAnnotations: state.showCommunityAnnotations,
-        accentTheme: state.accentTheme,
-        fontSize: state.fontSize,
-        lineHeight: state.lineHeight,
-        lineWidth: state.lineWidth,
-        theme: state.theme,
-        readingMode: state.readingMode,
-        showMobileReactionBar: state.showMobileReactionBar,
+    saveToStorage: () => {
+      if (typeof window === 'undefined') return
+      try {
+        const state = get()
+        const toStore: StoredState = {
+          readerId: state.readerId,
+          username: state.username,
+          showCommunityAnnotations: state.showCommunityAnnotations,
+          accentTheme: state.accentTheme,
+          fontSize: state.fontSize,
+          lineHeight: state.lineHeight,
+          lineWidth: state.lineWidth,
+          theme: state.theme,
+          readingMode: state.readingMode,
+          showMobileReactionBar: state.showMobileReactionBar,
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
+      } catch {
+        // silently fail
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
-    } catch {
-      // silently fail
-    }
-  },
-}))
+    },
+  }))
+}
+
+const existingReaderStore = typeof window !== 'undefined' ? window.__bookstreamReaderStore : undefined
+const readerStore = existingReaderStore ?? createReaderStore()
+
+if (typeof window !== 'undefined') {
+  window.__bookstreamReaderStore = readerStore
+}
+
+export const useReaderStore = readerStore

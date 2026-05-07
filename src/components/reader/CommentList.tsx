@@ -2,12 +2,15 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
+import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore } from '@/lib/store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageSquare } from 'lucide-react'
 import { ArrowUpRight } from 'lucide-react'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import CommentVoteButton from './CommentVoteButton'
+import type { ReaderComment } from './comment-types'
 
 const VARIANT_LABELS: Record<string, string> = {
   original: 'Оригинал',
@@ -46,21 +49,6 @@ function stringToColor(str: string): string {
   return `hsl(${hue}, 60%, 45%)`
 }
 
-interface Comment {
-  id: string
-  readerId: string
-  username: string
-  body: string
-  createdAt: string
-  quotes: Array<{
-    id: string
-    variantType: string
-    selectedText: string
-    paragraphId: string
-    endParagraphId?: string | null
-  }>
-}
-
 interface CommentListProps {
   chapterId: string
   open: boolean
@@ -78,7 +66,9 @@ export default function CommentList({
   authorSlug,
   bookSlug,
 }: CommentListProps) {
-  const [comments, setComments] = useState<Comment[]>([])
+  const readerId = useReaderStore((state) => state.readerId)
+  const [comments, setComments] = useState<ReaderComment[]>([])
+  const [togglingCommentId, setTogglingCommentId] = useState<string | null>(null)
 
   const prevOpenRef = useRef(false)
 
@@ -87,10 +77,14 @@ export default function CommentList({
       const controller = new AbortController()
       ;(async () => {
         try {
-          const res = await fetch(`/api/chapters/${chapterId}/comments`, { signal: controller.signal })
+          const params = new URLSearchParams()
+          if (readerId) {
+            params.set('readerId', readerId)
+          }
+          const res = await fetch(`/api/chapters/${chapterId}/comments?${params.toString()}`, { signal: controller.signal })
           if (res.ok) {
             const data = await res.json()
-            setComments(data.comments || [])
+            setComments(sortCommentsByTop(Array.isArray(data.comments) ? data.comments : []))
           }
         } catch (e) {
           if (!controller.signal.aborted) {
@@ -103,7 +97,59 @@ export default function CommentList({
     return () => {
       // no-op cleanup; abort not needed since fetch completes fast
     }
-  }, [open, chapterId])
+  }, [open, chapterId, readerId])
+
+  const handleToggleVote = async (commentId: string): Promise<void> => {
+    if (!readerId || togglingCommentId) return
+
+    const previousComments = comments
+    const optimisticComments = sortCommentsByTop(
+      comments.map((comment) => (
+        comment.id === commentId
+          ? {
+              ...comment,
+              reacted: !comment.reacted,
+              upvoteCount: comment.reacted
+                ? Math.max(0, comment.upvoteCount - 1)
+                : comment.upvoteCount + 1,
+            }
+          : comment
+      )),
+    )
+    setComments(optimisticComments)
+    setTogglingCommentId(commentId)
+
+    try {
+      const response = await fetch(`/api/annotations/${commentId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId }),
+      })
+
+      if (!response.ok) {
+        setComments(previousComments)
+        return
+      }
+
+      const data = await response.json()
+      setComments((currentComments) => sortCommentsByTop(
+        currentComments.map((comment) => (
+          comment.id === commentId
+            ? {
+                ...comment,
+                reacted: Boolean(data.reacted),
+                upvoteCount: Number.isFinite(data.upvoteCount) ? data.upvoteCount : comment.upvoteCount,
+              }
+            : comment
+        )),
+      ))
+    } catch (error) {
+      console.error('Failed to toggle comment vote:', error)
+      setComments(previousComments)
+    } finally {
+      setTogglingCommentId(null)
+    }
+  }
 
   return (
     <>
@@ -198,29 +244,33 @@ export default function CommentList({
                             paragraphId: comment.quotes[0].paragraphId,
                             paragraphEndId: comment.quotes[0].endParagraphId,
                           })}
-                          className="quote-bar group"
-                          style={{
-                            marginBottom: '0.5rem',
-                            fontSize: '0.75rem',
-                            textDecoration: 'none',
-                          }}
-                          title="Открыть цитату в книге"
-                        >
+                        className="quote-bar group"
+                        style={{
+                          marginBottom: '0.5rem',
+                          fontSize: '0.75rem',
+                          textDecoration: 'none',
+                          display: 'grid',
+                          gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+                          alignItems: 'flex-start',
+                        }}
+                        title="Открыть цитату в книге"
+                      >
                           <span
                             className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
                             style={{ flexShrink: 0 }}
                           >
                             {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
                           </span>
-                          <span
-                            style={{
-                              flex: 1,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {comment.quotes[0].selectedText}
+                        <span
+                          style={{
+                              minWidth: 0,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.45,
+                          }}
+                        >
+                          {comment.quotes[0].selectedText}
                           </span>
                           <span className="inline-flex items-center gap-1 text-[0.6875rem] font-medium text-[color:var(--r-accent)] transition-transform duration-200 group-hover:translate-x-0.5">
                             В книгу
@@ -229,27 +279,31 @@ export default function CommentList({
                         </Link>
                       ) : (
                         <div
-                          className="quote-bar"
-                          style={{
-                            marginBottom: '0.5rem',
-                            fontSize: '0.75rem',
-                          }}
-                        >
+                        className="quote-bar"
+                        style={{
+                          marginBottom: '0.5rem',
+                          fontSize: '0.75rem',
+                          display: 'grid',
+                          gridTemplateColumns: 'auto minmax(0, 1fr)',
+                          alignItems: 'flex-start',
+                        }}
+                      >
                           <span
                             className={VARIANT_CLASSES[comment.quotes[0].variantType] || VARIANT_CLASSES.original}
                             style={{ flexShrink: 0 }}
                           >
                             {VARIANT_LABELS[comment.quotes[0].variantType] || 'Оригинал'}
                           </span>
-                          <span
-                            style={{
-                              flex: 1,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {comment.quotes[0].selectedText}
+                        <span
+                          style={{
+                              minWidth: 0,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.45,
+                          }}
+                        >
+                          {comment.quotes[0].selectedText}
                           </span>
                         </div>
                       )
@@ -282,6 +336,15 @@ export default function CommentList({
                           <span style={{ fontSize: '0.6875rem', color: 'var(--r-text-secondary)' }}>
                             {timeAgo(comment.createdAt)}
                           </span>
+                          <div style={{ marginLeft: 'auto' }}>
+                            <CommentVoteButton
+                              reacted={comment.reacted}
+                              upvoteCount={comment.upvoteCount}
+                              disabled={!readerId || togglingCommentId === comment.id}
+                              onClick={() => void handleToggleVote(comment.id)}
+                              compact
+                            />
+                          </div>
                         </div>
                         <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.4, wordBreak: 'break-word' }}>
                           {comment.body}

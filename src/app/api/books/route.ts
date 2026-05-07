@@ -31,20 +31,44 @@ export async function GET(request: NextRequest) {
       ...(includeDrafts ? {} : { isPublic: true }),
     };
 
-    const books = await db.book.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        author: {
-          select: { id: true, slug: true, name: true },
+    const [books, commentCounts] = await Promise.all([
+      db.book.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          author: {
+            select: { id: true, slug: true, name: true },
+          },
+          _count: {
+            select: { chapters: true },
+          },
+        },
+      }),
+      db.annotation.groupBy({
+        by: ['bookId'],
+        where: {
+          kind: 'comment',
+          status: 'active',
         },
         _count: {
-          select: { chapters: true, comments: true },
+          _all: true,
         },
-      },
-    });
+      }),
+    ]);
 
-    return NextResponse.json(books);
+    const commentCountByBookId = new Map(
+      commentCounts.map((entry) => [entry.bookId, entry._count._all]),
+    );
+
+    return NextResponse.json(
+      books.map((book) => ({
+        ...book,
+        _count: {
+          ...book._count,
+          comments: commentCountByBookId.get(book.id) ?? 0,
+        },
+      })),
+    );
   } catch (error) {
     console.error('Error listing books:', error);
     return NextResponse.json(

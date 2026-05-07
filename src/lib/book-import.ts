@@ -7,8 +7,6 @@ import sharp from 'sharp'
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
 const MARKDOWN_FRONTMATTER_PATTERN = /^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/
-const BOOK_COVER_DIRECTORY = path.join(resolveProjectPublicDirectory(), 'uploads', 'covers')
-
 export interface ImportedBookContent {
   html: string
   text: string
@@ -262,10 +260,7 @@ export async function persistImportedBookCover(params: {
     return null
   }
 
-  await mkdir(BOOK_COVER_DIRECTORY, { recursive: true })
-
   const fileName = `${sanitizePathSegment(bookId)}-${sanitizePathSegment(bookSlug)}.webp`
-  const targetPath = path.join(BOOK_COVER_DIRECTORY, fileName)
 
   const optimizedCover = await sharp(coverBuffer)
     .rotate()
@@ -273,7 +268,14 @@ export async function persistImportedBookCover(params: {
     .webp({ quality: 82 })
     .toBuffer()
 
-  await writeFile(targetPath, optimizedCover)
+  const publicDirectories = resolveRuntimePublicDirectories()
+  for (const publicDirectory of publicDirectories) {
+    const coverDirectory = path.join(publicDirectory, 'uploads', 'covers')
+    const targetPath = path.join(coverDirectory, fileName)
+
+    await mkdir(coverDirectory, { recursive: true })
+    await writeFile(targetPath, optimizedCover)
+  }
 
   return `/uploads/covers/${fileName}`
 }
@@ -502,21 +504,31 @@ function sanitizePathSegment(value: string): string {
 }
 
 /**
- * Resolves the repository-level public directory for both `next dev` and
- * Next standalone production builds.
+ * Resolves all runtime public directories that may be used to serve uploaded
+ * assets in development and standalone production.
  *
- * Next standalone rewrites the process working directory to `.next/standalone`,
- * so using `process.cwd()` directly would save uploaded covers into the build
- * artifact instead of the real project `public` directory.
+ * In production we start `.next/standalone/server.js` from the repository
+ * root, so `process.cwd()` points to `<repo>` while static files are served
+ * from `<repo>/.next/standalone/public`. Writing to both locations keeps
+ * uploads immediately visible in prod and preserved in the source tree.
  *
- * @returns Absolute path to the root public directory.
+ * @returns Deduplicated absolute public directories.
  */
-function resolveProjectPublicDirectory(): string {
+function resolveRuntimePublicDirectories(): string[] {
+  const directories = new Set<string>()
   const currentWorkingDirectory = process.cwd()
-  const standaloneSuffix = `${path.sep}.next${path.sep}standalone`
-  const projectRoot = currentWorkingDirectory.endsWith(standaloneSuffix)
-    ? path.resolve(currentWorkingDirectory, '..', '..')
-    : currentWorkingDirectory
 
-  return path.join(projectRoot, 'public')
+  directories.add(path.join(currentWorkingDirectory, 'public'))
+
+  const entryScriptPath = process.argv[1]
+  if (entryScriptPath) {
+    const normalizedEntryDirectory = path.dirname(path.resolve(entryScriptPath))
+    const standaloneSuffix = `${path.sep}.next${path.sep}standalone`
+
+    if (normalizedEntryDirectory.endsWith(standaloneSuffix)) {
+      directories.add(path.join(normalizedEntryDirectory, 'public'))
+    }
+  }
+
+  return Array.from(directories)
 }

@@ -1,48 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-
-interface ActivityQuote {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  commentId: string
-  commentBody: string
-  variantType: string
-  paragraphId: string
-  endParagraphId: string | null
-  selectedText: string
-}
-
-interface ActivityComment {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  body: string
-  quoteCount: number
-  quoteText: string | null
-  quoteParagraphId: string | null
-  quoteEndParagraphId: string | null
-  quoteVariantType: string | null
-}
-
-interface ActivityReaction {
-  id: string
-  createdAt: string
-  chapterId: string
-  chapterTitle: string
-  chapterPosition: number
-  paragraphId: string
-  endParagraphId: string | null
-  startOffset: number
-  endOffset: number
-  selectedText: string | null
-  emoji: string
-  variantType: string
-}
+import { mapAnnotationComment, mapAnnotationQuote, sortItemsByCreatedAt } from '@/lib/annotations'
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,153 +15,65 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const [comments, reactions, quotes] = await Promise.all([
-      db.comment.findMany({
-        where: {
-          readerId,
-          bookId,
-        },
-        select: {
-          id: true,
-          body: true,
-          createdAt: true,
-          chapter: {
-            select: {
-              id: true,
-              title: true,
-              position: true,
-            },
-          },
-          quotes: {
-            select: {
-              id: true,
-              paragraphId: true,
-              endParagraphId: true,
-              selectedText: true,
-              variantType: true,
-            },
+    const annotations = await db.annotation.findMany({
+      where: {
+        readerId,
+        bookId,
+        status: 'active',
+      },
+      include: {
+        votes: {
+          select: {
+            readerId: true,
           },
         },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      }),
-      db.reaction.findMany({
-        where: {
-          readerId,
-          chapterVariant: {
-            chapter: {
-              bookId,
-            },
+        chapter: {
+          select: {
+            id: true,
+            title: true,
+            position: true,
           },
         },
-        select: {
-          id: true,
-          createdAt: true,
-          emoji: true,
-          paragraphId: true,
-          endParagraphId: true,
-          startOffset: true,
-          endOffset: true,
-          selectedText: true,
-          chapterVariant: {
-            select: {
-              variantType: true,
-              chapter: {
-                select: {
-                  id: true,
-                  title: true,
-                  position: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 150,
-      }),
-      db.commentQuote.findMany({
-        where: {
-          comment: {
-            readerId,
-            bookId,
-          },
-        },
-        select: {
-          id: true,
-          createdAt: true,
-          paragraphId: true,
-          endParagraphId: true,
-          selectedText: true,
-          variantType: true,
-          comment: {
-            select: {
-              id: true,
-              body: true,
-              chapter: {
-                select: {
-                  id: true,
-                  title: true,
-                  position: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 150,
-      }),
-    ])
-
-    const payloadQuotes: ActivityQuote[] = quotes.map((quote) => ({
-      id: quote.id,
-      createdAt: quote.createdAt.toISOString(),
-      chapterId: quote.comment.chapter.id,
-      chapterTitle: quote.comment.chapter.title,
-      chapterPosition: quote.comment.chapter.position,
-      commentId: quote.comment.id,
-      commentBody: quote.comment.body,
-      variantType: quote.variantType,
-      paragraphId: quote.paragraphId,
-      endParagraphId: quote.endParagraphId,
-      selectedText: quote.selectedText,
-    }))
-
-    const payloadComments: ActivityComment[] = comments.map((comment) => {
-      const firstQuote = comment.quotes[0]
-      return {
-        id: comment.id,
-        createdAt: comment.createdAt.toISOString(),
-        chapterId: comment.chapter.id,
-        chapterTitle: comment.chapter.title,
-        chapterPosition: comment.chapter.position,
-        body: comment.body,
-        quoteCount: comment.quotes.length,
-        quoteText: firstQuote?.selectedText ?? null,
-        quoteParagraphId: firstQuote?.paragraphId ?? null,
-        quoteEndParagraphId: firstQuote?.endParagraphId ?? null,
-        quoteVariantType: firstQuote?.variantType ?? null,
-      }
+      },
+      take: 200,
     })
 
-    const payloadReactions: ActivityReaction[] = reactions.map((reaction) => ({
-      id: reaction.id,
-      createdAt: reaction.createdAt.toISOString(),
-      chapterId: reaction.chapterVariant.chapter.id,
-      chapterTitle: reaction.chapterVariant.chapter.title,
-      chapterPosition: reaction.chapterVariant.chapter.position,
-      paragraphId: reaction.paragraphId,
-      endParagraphId: reaction.endParagraphId,
-      startOffset: reaction.startOffset,
-      endOffset: reaction.endOffset,
-      selectedText: reaction.selectedText,
-      emoji: reaction.emoji,
-      variantType: reaction.chapterVariant.variantType,
-    }))
+    const comments = sortItemsByCreatedAt(
+      annotations
+        .filter((annotation) => annotation.kind === 'comment')
+        .map((annotation) => mapAnnotationComment(annotation, readerId)),
+    )
+
+    const quotes = sortItemsByCreatedAt(
+      annotations
+        .filter((annotation) => annotation.kind === 'quote')
+        .map((annotation) => mapAnnotationQuote(annotation, readerId))
+        .filter((annotation): annotation is NonNullable<typeof annotation> => Boolean(annotation)),
+    )
+
+    const reactions = sortItemsByCreatedAt(
+      annotations
+        .filter((annotation) => annotation.kind === 'reaction')
+        .map((annotation) => ({
+          id: annotation.id,
+          createdAt: annotation.createdAt.toISOString(),
+          chapterId: annotation.chapter.id,
+          chapterTitle: annotation.chapter.title,
+          chapterPosition: annotation.chapter.position,
+          paragraphId: annotation.paragraphId,
+          endParagraphId: annotation.endParagraphId,
+          startOffset: annotation.startOffset,
+          endOffset: annotation.endOffset,
+          selectedText: annotation.selectedText,
+          emoji: annotation.emoji || '',
+          variantType: annotation.variantType,
+        })),
+    )
 
     return NextResponse.json({
-      quotes: payloadQuotes,
-      comments: payloadComments,
-      reactions: payloadReactions,
+      quotes,
+      comments,
+      reactions,
     })
   } catch (error) {
     console.error('Error fetching reader activity:', error)

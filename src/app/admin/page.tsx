@@ -113,14 +113,14 @@ export default function AdminLibraryPage() {
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-white/70">
               <Sparkles size={14} className="text-amber-300" />
-              Админская витрина
+              Админка книг
             </div>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Библиотека должна показывать обложки как товар премиум-класса.
+              Список книг, статусов и действий в одном месте.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
-              Вертикальные постеры крупные, чистые и заметные. Метаданные, статус и действия
-              остаются рядом, но больше не спорят с обложкой за внимание.
+              Карточка показывает обложку, статус, количество глав и комментариев. Редактирование
+              и удаление доступны прямо отсюда.
             </p>
           </div>
 
@@ -143,7 +143,8 @@ export default function AdminLibraryPage() {
         <div className="mt-8 rounded-[2rem] border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
           <h3 className="text-lg font-semibold text-slate-950">Библиотека пуста</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-            Загрузите первую книгу, и она сразу появится в витрине с нормальным вертикальным постером.
+            Добавьте первую книгу, и она появится здесь с обложкой, статусом и основными
+            метаданными.
           </p>
           <Link href="/admin/upload" className="mt-6 inline-flex">
             <Button className="rounded-full bg-amber-500 px-6 text-white hover:bg-amber-600">
@@ -200,7 +201,7 @@ export default function AdminLibraryPage() {
                     {book.title}
                   </h2>
                   <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
-                    {book.description || 'Описание не задано. Сейчас карточка всё равно работает за счёт самой обложки.'}
+                    {book.description || 'Описание не задано.'}
                   </p>
 
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">

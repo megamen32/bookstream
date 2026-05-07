@@ -381,6 +381,8 @@ export default function BookReader({
     onToggleBookmark?.(stableKey)
   }, [onToggleBookmark])
 
+  const showCommentButton = readingMode !== 'book'
+
   return (
     <div
       ref={innerRef}
@@ -569,51 +571,52 @@ export default function BookReader({
         {currentPage} / {totalPages}
       </div>
 
-      {/* Comments button (bottom-right, always visible) */}
-      <button
-        onClick={() => setShowComments(true)}
-        style={{
-          position: 'absolute',
-          bottom: '0.75rem',
-          right: '0.75rem',
-          width: '44px',
-          height: '44px',
-          borderRadius: '50%',
-          backgroundColor: 'var(--r-accent)',
-          color: 'var(--r-accent-foreground)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '1.125rem',
-          border: 'none',
-          cursor: 'pointer',
-          zIndex: 20,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-          transition: 'transform 0.2s ease',
-        }}
-        title="Комментарии"
-      >
-        <MessageSquare size={20} />
-        {commentCount > 0 && (
-          <span style={{
+      {showCommentButton && (
+        <button
+          onClick={() => setShowComments(true)}
+          style={{
             position: 'absolute',
-            top: '-2px',
-            right: '-2px',
-            backgroundColor: '#ef4444',
-            color: '#fff',
-            fontSize: '0.625rem',
-            fontWeight: 700,
-            width: '1.125rem',
-            height: '1.125rem',
+            bottom: '0.75rem',
+            right: '0.75rem',
+            width: '44px',
+            height: '44px',
             borderRadius: '50%',
+            backgroundColor: 'var(--r-accent)',
+            color: 'var(--r-accent-foreground)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-          }}>
-            {commentCount > 99 ? '99+' : commentCount}
-          </span>
-        )}
-      </button>
+            fontSize: '1.125rem',
+            border: 'none',
+            cursor: 'pointer',
+            zIndex: 20,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            transition: 'transform 0.2s ease',
+          }}
+          title="Комментарии"
+        >
+          <MessageSquare size={20} />
+          {commentCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: '-2px',
+              right: '-2px',
+              backgroundColor: '#ef4444',
+              color: '#fff',
+              fontSize: '0.625rem',
+              fontWeight: 700,
+              width: '1.125rem',
+              height: '1.125rem',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {commentCount > 99 ? '99+' : commentCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Slide-up Comments Panel (Telegram-style) */}
       {showComments && (

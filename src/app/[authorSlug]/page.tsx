@@ -112,12 +112,12 @@ export default function AuthorProfilePage() {
           <div className="poster-sheen pointer-events-none absolute inset-0 opacity-70" />
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-amber-300">Авторская полка</p>
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-amber-300">Автор</p>
               <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
                 {author.name}
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60">
-                {author.bio || 'Все книги автора собраны в одном постерном каталоге, где обложка является главным носителем настроения.'}
+                {author.bio || 'Все книги автора собраны в одном каталоге.'}
               </p>
             </div>
             <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-5 py-4 text-sm text-white/70">
@@ -159,7 +159,7 @@ export default function AuthorProfilePage() {
                         {book.title}
                       </h2>
                       <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/60">
-                        {book.description || 'Описание намеренно уходит на второй план, чтобы сначала работала сама обложка.'}
+                        {book.description || 'Описание не указано.'}
                       </p>
                       <div className="mt-4 flex items-center justify-between gap-3 text-sm">
                         <span className="text-white/48">{formatChapterLabel(book._count.chapters)}</span>

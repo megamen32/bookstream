@@ -29,27 +29,48 @@ export async function GET(
       );
     }
 
-    const chapters = await db.chapter.findMany({
-      where: { bookId },
-      orderBy: { position: 'asc' },
-      include: {
-        variants: {
-          select: {
-            id: true,
-            variantType: true,
-            editedByAuthor: true,
-            createdAt: true,
-            updatedAt: true,
+    const [chapters, commentCounts] = await Promise.all([
+      db.chapter.findMany({
+        where: { bookId },
+        orderBy: { position: 'asc' },
+        include: {
+          variants: {
+            select: {
+              id: true,
+              variantType: true,
+              editedByAuthor: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+            orderBy: { createdAt: 'asc' },
           },
-          orderBy: { createdAt: 'asc' },
+        },
+      }),
+      db.annotation.groupBy({
+        by: ['chapterId'],
+        where: {
+          bookId,
+          kind: 'comment',
+          status: 'active',
         },
         _count: {
-          select: { comments: true },
+          _all: true,
         },
-      },
-    });
+      }),
+    ]);
 
-    return NextResponse.json(chapters);
+    const commentCountByChapterId = new Map(
+      commentCounts.map((entry) => [entry.chapterId, entry._count._all]),
+    );
+
+    return NextResponse.json(
+      chapters.map((chapter) => ({
+        ...chapter,
+        _count: {
+          comments: commentCountByChapterId.get(chapter.id) ?? 0,
+        },
+      })),
+    );
   } catch (error) {
     console.error('Error listing chapters:', error);
     return NextResponse.json(

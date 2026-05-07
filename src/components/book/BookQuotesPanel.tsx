@@ -131,7 +131,7 @@ export default function BookQuotesPanel({
     setTogglingQuoteId(quoteId)
 
     try {
-      const response = await fetch(`/api/quotes/${quoteId}/upvote`, {
+      const response = await fetch(`/api/annotations/${quoteId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ readerId }),

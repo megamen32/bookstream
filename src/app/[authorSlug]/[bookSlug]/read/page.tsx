@@ -15,6 +15,7 @@ import {
   UserRound,
   MessageSquare,
 } from 'lucide-react'
+import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore, type VariantType, type ReadingMode } from '@/lib/store'
 import { applyTheme } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
@@ -99,7 +100,7 @@ function mergeSections(current: FeedSectionData[], incoming: FeedSectionData[]):
 
 function prependUniqueComment(comments: ReaderComment[], comment: ReaderComment, limit: number): ReaderComment[] {
   const next = [comment, ...comments.filter((entry) => entry.id !== comment.id)]
-  return next.slice(0, limit)
+  return sortCommentsByTop(next).slice(0, limit)
 }
 
 export default function ReaderPage() {
@@ -233,7 +234,11 @@ export default function ReaderPage() {
     }
 
     try {
-      const commentsRes = await fetch(`/api/chapters/${targetChapterId}/comments`)
+      const params = new URLSearchParams()
+      if (readerId) {
+        params.set('readerId', readerId)
+      }
+      const commentsRes = await fetch(`/api/chapters/${targetChapterId}/comments?${params.toString()}`)
       if (!commentsRes.ok) return
 
       const commentsData = await commentsRes.json() as { comments?: ReaderComment[] }
@@ -258,12 +263,15 @@ export default function ReaderPage() {
       after: String(after),
       previewLimit: '5',
     })
+    if (readerId) {
+      params.set('readerId', readerId)
+    }
     const response = await fetch(`/api/books/${targetBookId}/feed?${params.toString()}`)
     if (!response.ok) {
       return null
     }
     return await response.json() as FeedResponse
-  }, [])
+  }, [readerId])
 
   const fetchSingleChapter = useCallback(async (
     targetChapterId: string,
@@ -384,7 +392,6 @@ export default function ReaderPage() {
             scrollPercent: progress,
             fontSize: useReaderStore.getState().fontSize,
             lineHeight: useReaderStore.getState().lineHeight,
-            theme: useReaderStore.getState().theme,
             readingMode: useReaderStore.getState().readingMode,
           }),
         })
@@ -434,7 +441,6 @@ export default function ReaderPage() {
               variantType?: string
               fontSize?: number
               lineHeight?: number
-              theme?: string
               readingMode?: ReadingMode
               scrollPercent?: number
             } | null
@@ -445,7 +451,6 @@ export default function ReaderPage() {
               restoreScrollPercent = progressData.scrollPercent ?? 0
               if (progressData.fontSize) setFontSize(progressData.fontSize)
               if (progressData.lineHeight) setLineHeight(progressData.lineHeight)
-              if (progressData.theme) setTheme(progressData.theme as typeof theme)
             }
           }
         } catch {

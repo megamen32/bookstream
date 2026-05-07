@@ -30,7 +30,6 @@ model Book {
   updatedAt          DateTime          @updatedAt
   author             Author            @relation(fields: [authorId], references: [id])
   chapters           Chapter[]
-  comments           Comment[]
   annotations        Annotation[]
   readingProgress    ReadingProgress[]
 
@@ -47,7 +46,6 @@ model Chapter {
   updatedAt DateTime         @updatedAt
   book      Book             @relation(fields: [bookId], references: [id])
   variants  ChapterVariant[]
-  comments  Comment[]
   annotations Annotation[]
 
   @@unique([bookId, position])
@@ -75,51 +73,10 @@ model Paragraph {
   stableKey        String
   position         Int
   text             String
-  commentQuotes    CommentQuote[]
   chapterVariant   ChapterVariant @relation(fields: [chapterVariantId], references: [id])
   reactions        Reaction[]
 
   @@unique([chapterVariantId, position])
-}
-
-model Comment {
-  id        String         @id @default(cuid())
-  bookId    String
-  chapterId String
-  readerId  String
-  username  String
-  body      String
-  status    String         @default("active")
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  chapter   Chapter        @relation(fields: [chapterId], references: [id])
-  book      Book           @relation(fields: [bookId], references: [id])
-  quotes    CommentQuote[]
-}
-
-model CommentQuote {
-  id             String        @id @default(cuid())
-  commentId      String
-  variantType    String        @default("original")
-  paragraphId    String
-  endParagraphId String?
-  selectedText   String
-  startOffset    Int           @default(0)
-  endOffset      Int           @default(0)
-  createdAt      DateTime      @default(now())
-  paragraph      Paragraph     @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
-  comment        Comment       @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  upvotes        QuoteUpvote[]
-}
-
-model QuoteUpvote {
-  id             String       @id @default(cuid())
-  commentQuoteId String
-  readerId       String
-  createdAt      DateTime     @default(now())
-  commentQuote   CommentQuote @relation(fields: [commentQuoteId], references: [id], onDelete: Cascade)
-
-  @@unique([commentQuoteId, readerId])
 }
 
 model Reaction {
@@ -195,7 +152,6 @@ model ReadingProgress {
   scrollPercent Float    @default(0)
   fontSize      Int      @default(18)
   lineHeight    Float    @default(1.6)
-  theme         String   @default("light")
   readingMode   String   @default("feed")
   updatedAt     DateTime @updatedAt
   book          Book     @relation(fields: [bookId], references: [id])

@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
       scrollPercent,
       fontSize,
       lineHeight,
-      theme,
       readingMode,
     } = body;
 
@@ -74,7 +73,6 @@ export async function POST(request: NextRequest) {
         ...(scrollPercent !== undefined && { scrollPercent }),
         ...(fontSize !== undefined && { fontSize }),
         ...(lineHeight !== undefined && { lineHeight }),
-        ...(theme !== undefined && { theme }),
         ...(readingMode !== undefined && { readingMode }),
       },
       create: {
@@ -85,7 +83,6 @@ export async function POST(request: NextRequest) {
         scrollPercent: scrollPercent ?? 0,
         fontSize: fontSize ?? 18,
         lineHeight: lineHeight ?? 1.6,
-        theme: theme || 'light',
         readingMode: readingMode || 'feed',
       },
     });
