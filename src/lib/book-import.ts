@@ -3,6 +3,7 @@ import path from 'node:path'
 import mammoth from 'mammoth'
 import { marked } from 'marked'
 import sharp from 'sharp'
+import { resolveCoverDirectories } from '@/lib/cover-storage'
 
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
@@ -304,9 +305,8 @@ export async function persistImportedBookCover(params: {
     .webp({ quality: 82 })
     .toBuffer()
 
-  const publicDirectories = resolveRuntimePublicDirectories()
-  for (const publicDirectory of publicDirectories) {
-    const coverDirectory = path.join(publicDirectory, 'uploads', 'covers')
+  const coverDirectories = resolveCoverDirectories()
+  for (const coverDirectory of coverDirectories) {
     const targetPath = path.join(coverDirectory, fileName)
 
     await mkdir(coverDirectory, { recursive: true })
@@ -537,34 +537,4 @@ function getFileExtension(fileName: string): typeof SUPPORTED_BOOK_EXTENSIONS[nu
 
 function sanitizePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '-')
-}
-
-/**
- * Resolves all runtime public directories that may be used to serve uploaded
- * assets in development and standalone production.
- *
- * In production we start `.next/standalone/server.js` from the repository
- * root, so `process.cwd()` points to `<repo>` while static files are served
- * from `<repo>/.next/standalone/public`. Writing to both locations keeps
- * uploads immediately visible in prod and preserved in the source tree.
- *
- * @returns Deduplicated absolute public directories.
- */
-function resolveRuntimePublicDirectories(): string[] {
-  const directories = new Set<string>()
-  const currentWorkingDirectory = process.cwd()
-
-  directories.add(path.join(currentWorkingDirectory, 'public'))
-
-  const entryScriptPath = process.argv[1]
-  if (entryScriptPath) {
-    const normalizedEntryDirectory = path.dirname(path.resolve(entryScriptPath))
-    const standaloneSuffix = `${path.sep}.next${path.sep}standalone`
-
-    if (normalizedEntryDirectory.endsWith(standaloneSuffix)) {
-      directories.add(path.join(normalizedEntryDirectory, 'public'))
-    }
-  }
-
-  return Array.from(directories)
 }

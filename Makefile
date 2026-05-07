@@ -74,15 +74,21 @@ install-service: service-sync
 		systemctl enable "$(SERVICE_NAME)"; \
 	fi
 
-restart: deps prisma build service-sync
+restart: deps prisma service-sync
 	@set -e; \
 	mkdir -p "$(PROJECT_DIR)/.zscripts"; \
 	printf 'prod\n' >"$(SERVICE_MODE_FILE)"; \
 	echo "[service] mode -> prod"; \
 	if command -v sudo >/dev/null 2>&1; then \
-		sudo -n systemctl restart "$(SERVICE_NAME)" >/dev/null 2>&1 || sudo systemctl restart "$(SERVICE_NAME)"; \
+		sudo -n systemctl stop "$(SERVICE_NAME)" >/dev/null 2>&1 || sudo systemctl stop "$(SERVICE_NAME)"; \
 	else \
-		systemctl restart "$(SERVICE_NAME)"; \
+		systemctl stop "$(SERVICE_NAME)"; \
+	fi; \
+	$(MAKE) build; \
+	if command -v sudo >/dev/null 2>&1; then \
+		sudo -n systemctl start "$(SERVICE_NAME)" >/dev/null 2>&1 || sudo systemctl start "$(SERVICE_NAME)"; \
+	else \
+		systemctl start "$(SERVICE_NAME)"; \
 	fi; \
 	echo "[service] status"; \
 	systemctl --no-pager --full status "$(SERVICE_NAME)" | sed -n '1,20p'

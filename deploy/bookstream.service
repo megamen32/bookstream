@@ -12,6 +12,7 @@ Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=HOSTNAME=0.0.0.0
 Environment=PORT=3000
 Environment=DATABASE_URL=file:/home/roomhacker/PycharmProjects/bookstream/db/custom.db
+Environment=BOOKSTREAM_PUBLIC_DIR=/home/roomhacker/PycharmProjects/bookstream/public
 Environment=BOOKSTREAM_MODE_FILE=/home/roomhacker/PycharmProjects/bookstream/.zscripts/service.mode
 ExecStart=/home/roomhacker/PycharmProjects/bookstream/deploy/bookstream-run.sh
 Restart=always

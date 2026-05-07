@@ -584,25 +584,24 @@ export default function BookHighlightsPanel({
 
       <div className="relative px-4 py-5 sm:px-6 sm:py-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-2xl">
+        <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">
               Раздел книги
             </p>
             <h2 className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">
               Комментарии, цитаты и содержание
             </h2>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
-              Выберите один раздел для режима фокуса или снимите выбор, чтобы снова увидеть всю
-              витрину в компактном виде.
-            </p>
-          </div>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
+            Выберите один раздел для режима фокуса или снимите выбор, чтобы снова увидеть всю
+            витрину в компактном виде.
+          </p>
+        </div>
 
-          <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-full border border-white/60 bg-white/70 p-1 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.45)] backdrop-blur-md sm:w-auto sm:flex-nowrap">
+        <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-full border border-white/60 bg-white/70 p-1 shadow-[0_18px_48px_-32px_rgba(15,23,42,0.45)] backdrop-blur-md sm:w-auto sm:flex-nowrap">
             {(['comments', 'quotes', 'toc'] as const).map((sectionKey) => {
               const config = SECTION_CONFIGS[sectionKey]
               const isActive = activeSection === sectionKey
-              const count =
-                sectionKey === 'comments' ? commentCount : sectionKey === 'quotes' ? quoteCount : contentCount
+              const count = sectionKey === 'comments' ? commentCount : sectionKey === 'quotes' ? quoteCount : contentCount
 
               return (
                 <Button

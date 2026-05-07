@@ -6,7 +6,6 @@ import { useParams } from 'next/navigation'
 import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
-import CommentsSection from '@/components/reader/CommentsSection'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -149,13 +148,6 @@ export default function BookCoverPage() {
                   {book.description}
                 </div>
               ) : null}
-
-              <CommentsSection
-                bookId={book.id}
-                authorSlug={authorSlug}
-                bookSlug={bookSlug}
-                showComposer={false}
-              />
 
               <Link href={`/${authorSlug}/${bookSlug}/read`} className="mt-8 inline-flex w-full sm:w-auto">
                 <Button

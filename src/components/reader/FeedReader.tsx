@@ -5,7 +5,6 @@ import { useReaderStore } from '@/lib/store'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import CommentsSection from './CommentsSection'
-import FeedCommentsPreview from './FeedCommentsPreview'
 import ReactionBar from './ReactionBar'
 import type { CommentSubmitHandler } from './comment-types'
 import type { FeedSectionData } from './feed-types'
@@ -626,15 +625,6 @@ export default function FeedReader({
                   )
                 })}
               </div>
-
-              <FeedCommentsPreview
-                chapterId={section.chapter.id}
-                chapterTitle={section.chapter.title}
-                authorSlug={authorSlug}
-                bookSlug={bookSlug}
-                comments={section.commentsPreview}
-                totalCount={section.commentCount}
-              />
 
               {isActiveSection && (
                 <div style={{ marginTop: '1.5rem' }}>
