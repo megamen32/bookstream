@@ -334,6 +334,21 @@ export default function BookReader({
       article.appendChild(p)
       wrapper.appendChild(article)
 
+      /**
+       * The rendered paragraph includes a reaction bar on wider viewports.
+       * It must be included in measurement too, otherwise page splitting
+       * underestimates the real height and the bottom of the content gets cut off.
+       */
+      if (window.matchMedia('(min-width: 768px)').matches) {
+        const reactionBar = document.createElement('div')
+        reactionBar.className = 'reaction-bar items-center gap-1 pt-2 md:flex md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100'
+        reactionBar.style.display = 'flex'
+        reactionBar.style.visibility = 'hidden'
+        reactionBar.style.pointerEvents = 'none'
+        reactionBar.style.minHeight = '1.9rem'
+        wrapper.appendChild(reactionBar)
+      }
+
       return wrapper
     }
 

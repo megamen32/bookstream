@@ -5,6 +5,7 @@ import {
   resolveBookProgressPercent,
   resolveBookReaderPage,
   setBookReaderPage,
+  setBookReaderPageToLastPage,
 } from '../src/lib/book-reader-progress.ts'
 
 describe('book reader progress helpers', () => {
@@ -31,6 +32,22 @@ describe('book reader progress helpers', () => {
     setBookReaderPage(storage, 'chapter-42', 1)
 
     assert.equal(values.get('bookstream-page-chapter-42'), '1')
+  })
+
+  it('stores a sentinel that restores the last page when going back to a chapter', () => {
+    const values = new Map<string, string>()
+    const storage = {
+      setItem(key: string, value: string) {
+        values.set(key, value)
+      },
+    }
+
+    setBookReaderPageToLastPage(storage, 'chapter-42')
+
+    const savedPage = values.get('bookstream-page-chapter-42')
+
+    assert.ok(savedPage)
+    assert.equal(resolveBookReaderPage(savedPage, 7), 7)
   })
 
   it('derives overall book progress from chapter position and local progress', () => {

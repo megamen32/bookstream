@@ -17,6 +17,19 @@ export function setBookReaderPage(
 }
 
 /**
+ * Stores a sentinel page value so the next mount opens the chapter on its last page.
+ *
+ * The reader clamps saved values to the available range, so a very large page
+ * number is a deliberate signal to resume from the end of the chapter.
+ */
+export function setBookReaderPageToLastPage(
+  storage: Pick<Storage, 'setItem'>,
+  chapterId: string,
+): void {
+  storage.setItem(getBookReaderPageStorageKey(chapterId), String(Number.MAX_SAFE_INTEGER))
+}
+
+/**
  * Resolves the page to open when a chapter is mounted.
  *
  * The reader should always start from page 1 when there is no saved

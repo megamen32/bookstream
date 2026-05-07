@@ -24,6 +24,7 @@ interface ReaderState {
   chapterId: string | null
   variantType: VariantType
   readingMode: ReadingMode
+  hasStoredReadingMode: boolean
 
   // UI Settings
   fontSize: number
@@ -101,6 +102,7 @@ function createReaderStore(): ReaderStore {
     chapterId: null,
     variantType: 'original',
     readingMode: 'feed',
+    hasStoredReadingMode: false,
 
     // UI Settings
     fontSize: 18,
@@ -122,7 +124,10 @@ function createReaderStore(): ReaderStore {
     setBookId: (id: string) => set({ bookId: id }),
     setChapterId: (id: string) => set({ chapterId: id }),
     setVariantType: (type: VariantType) => set({ variantType: type }),
-    setReadingMode: (mode: ReadingMode) => set({ readingMode: mode }),
+    setReadingMode: (mode: ReadingMode) => {
+      set({ readingMode: mode, hasStoredReadingMode: true })
+      get().saveToStorage()
+    },
     setFontSize: (size: number) => {
       set({ fontSize: size })
       get().saveToStorage()
@@ -187,12 +192,13 @@ function createReaderStore(): ReaderStore {
           lineWidth: stored.lineWidth || 'medium',
           theme: stored.theme || 'light',
           readingMode: stored.readingMode || 'feed',
+          hasStoredReadingMode: stored.readingMode !== undefined,
           showMobileReactionBar: stored.showMobileReactionBar || false,
         })
       } catch {
         const readerId = generateReaderId()
         const username = generateRussianUsername()
-        set({ readerId, username })
+        set({ readerId, username, hasStoredReadingMode: false })
       }
     },
 

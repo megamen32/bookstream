@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { sortCommentsByTop } from '@/lib/annotations'
 import { useReaderStore, type VariantType, type ReadingMode, type ReplyQuote } from '@/lib/store'
 import { applyTheme } from '@/lib/themes'
+import { resolveInitialReadingMode } from '@/lib/reader-mode'
 import FeedReader from '@/components/reader/FeedReader'
 import BookReader from '@/components/reader/BookReader'
 import SettingsPanel from '@/components/reader/SettingsPanel'
@@ -20,7 +21,11 @@ import type {
   FeedSectionData,
   ReaderChapterListItem,
 } from '@/components/reader/feed-types'
-import { resolveBookProgressPercent, setBookReaderPage } from '@/lib/book-reader-progress'
+import {
+  resolveBookProgressPercent,
+  setBookReaderPage,
+  setBookReaderPageToLastPage,
+} from '@/lib/book-reader-progress'
 import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
@@ -280,17 +285,29 @@ export default function ReaderPage() {
       height: body.style.height,
     }
 
-    // Safari on iPhone can keep scrolling the root document when the browser chrome
-    // expands or collapses. Lock the page shell so the book stays pinned to the viewport.
-    html.style.overflow = 'hidden'
-    html.style.overscrollBehavior = 'none'
-    html.style.width = '100%'
-    html.style.height = '100%'
+    if (readingMode === 'book') {
+      // Safari on iPhone can keep scrolling the root document when the browser chrome
+      // expands or collapses. Lock the page shell only in book mode so the feed can scroll normally.
+      html.style.overflow = 'hidden'
+      html.style.overscrollBehavior = 'none'
+      html.style.width = '100%'
+      html.style.height = '100%'
 
-    body.style.overflow = 'hidden'
-    body.style.overscrollBehavior = 'none'
-    body.style.width = '100%'
-    body.style.height = '100%'
+      body.style.overflow = 'hidden'
+      body.style.overscrollBehavior = 'none'
+      body.style.width = '100%'
+      body.style.height = '100%'
+    } else {
+      html.style.overflow = previousHtmlStyle.overflow
+      html.style.overscrollBehavior = previousHtmlStyle.overscrollBehavior
+      html.style.width = previousHtmlStyle.width
+      html.style.height = previousHtmlStyle.height
+
+      body.style.overflow = previousBodyStyle.overflow
+      body.style.overscrollBehavior = previousBodyStyle.overscrollBehavior
+      body.style.width = previousBodyStyle.width
+      body.style.height = previousBodyStyle.height
+    }
 
     return () => {
       html.style.overflow = previousHtmlStyle.overflow
@@ -303,7 +320,7 @@ export default function ReaderPage() {
       body.style.width = previousBodyStyle.width
       body.style.height = previousBodyStyle.height
     }
-  }, [])
+  }, [readingMode])
 
   const fetchFeedWindow = useCallback(async (
     targetBookId: string,
@@ -528,6 +545,29 @@ export default function ReaderPage() {
     }, 1200)
   }, [bookId, readerId])
 
+  const saveReadingMode = useCallback(async (nextMode: ReadingMode): Promise<void> => {
+    if (!bookId || !readerId || !activeChapterId) return
+
+    try {
+      await fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerId,
+          bookId,
+          chapterId: activeChapterId,
+          variantType,
+          scrollPercent: scrollProgress,
+          fontSize: useReaderStore.getState().fontSize,
+          lineHeight: useReaderStore.getState().lineHeight,
+          readingMode: nextMode,
+        }),
+      })
+    } catch (error) {
+      console.error('Failed to save reading mode:', error)
+    }
+  }, [activeChapterId, bookId, readerId, scrollProgress, variantType])
+
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
@@ -557,8 +597,9 @@ export default function ReaderPage() {
 
         let targetChapterId = book.chapters[0]?.id || null
         let targetVariant = 'original' as VariantType
-        let targetMode = book.readingModeDefault || 'feed'
         let restoreScrollPercent = 0
+        const { hasStoredReadingMode, readingMode: storedReadingMode } = useReaderStore.getState()
+        let progressReadingMode: ReadingMode | null = null
 
         try {
           const progressRes = await fetch(`/api/progress?readerId=${readerId}&bookId=${book.id}`)
@@ -574,7 +615,7 @@ export default function ReaderPage() {
             if (progressData) {
               targetChapterId = progressData.chapterId || targetChapterId
               targetVariant = progressData.variantType || targetVariant
-              targetMode = progressData.readingMode || targetMode
+              progressReadingMode = progressData.readingMode || null
               restoreScrollPercent = progressData.scrollPercent ?? 0
               if (progressData.fontSize) setFontSize(progressData.fontSize)
               if (progressData.lineHeight) setLineHeight(progressData.lineHeight)
@@ -602,16 +643,18 @@ export default function ReaderPage() {
           targetVariant = urlVariant as VariantType
         }
 
-        if (shouldForceBookModeFromQuoteTarget({
-          paragraph: urlParagraph,
-          paragraphEnd: urlParagraphEnd,
-          startOffsetRaw: urlStartOffsetRaw,
-          endOffsetRaw: urlEndOffsetRaw,
-        })) {
-          // Quote links are page-centric, so we always open the paged reader
-          // even if the last persisted session was in feed mode.
-          targetMode = 'book'
-        }
+        const targetMode = resolveInitialReadingMode({
+          bookDefaultMode: book.readingModeDefault || 'feed',
+          storedReadingMode: hasStoredReadingMode ? storedReadingMode : null,
+          hasStoredReadingMode,
+          progressReadingMode,
+          forceBookMode: shouldForceBookModeFromQuoteTarget({
+            paragraph: urlParagraph,
+            paragraphEnd: urlParagraphEnd,
+            startOffsetRaw: urlStartOffsetRaw,
+            endOffsetRaw: urlEndOffsetRaw,
+          }),
+        })
 
         setQuoteTargetParagraphId(urlParagraph)
         setQuoteTargetParagraphEndId(urlParagraphEnd)
@@ -1014,7 +1057,7 @@ export default function ReaderPage() {
     const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
     if (currentIndex <= 0) return
     const prevChapterId = bookData.chapters[currentIndex - 1].id
-    setBookReaderPage(localStorage, prevChapterId, 1)
+    setBookReaderPageToLastPage(localStorage, prevChapterId)
     void handleChapterChange(prevChapterId)
   }, [activeChapterId, bookData, handleChapterChange])
 
@@ -1177,6 +1220,7 @@ export default function ReaderPage() {
 
     const nextMode: ReadingMode = readingMode === 'feed' ? 'book' : 'feed'
     setReadingMode(nextMode)
+    void saveReadingMode(nextMode)
 
     if (nextMode === 'book') {
       const section = await fetchSingleChapter(activeChapterId, variantType)
@@ -1191,7 +1235,7 @@ export default function ReaderPage() {
     const before = activeIndex >= 0 ? activeIndex : 1
     const after = activeIndex >= 0 ? feedSections.length - activeIndex - 1 : 1
     await replaceFeedSections(activeChapterId, variantType, before, after, scrollProgress, false)
-  }, [activeChapterId, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, scrollProgress, setReadingMode, variantType])
+  }, [activeChapterId, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, saveReadingMode, scrollProgress, setReadingMode, variantType])
 
   const chapters = bookData?.chapters || []
   const activeFeedSection = feedSections.find((section) => section.chapter.id === activeChapterId) || null

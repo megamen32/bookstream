@@ -58,6 +58,13 @@ interface ScrollSnapshot {
   scrollHeight: number
 }
 
+interface PointerGestureState {
+  pointerId: number
+  pointerType: string
+  clientX: number
+  clientY: number
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -100,6 +107,7 @@ export default function FeedReader({
   const restoreAppliedTokenRef = useRef<number | null>(null)
   const prependSnapshotRef = useRef<ScrollSnapshot | null>(null)
   const tickingRef = useRef(false)
+  const pointerGestureRef = useRef<PointerGestureState | null>(null)
 
   const [selectionHighlights, setSelectionHighlights] = useState<StoredSelectionAnnotationRange[]>([])
   const paragraphIndexMaps = useMemo(() => (
@@ -489,19 +497,43 @@ export default function FeedReader({
     onToggleBookmark?.(chapterId, stableKey)
   }, [onToggleBookmark])
 
-  const handleSurfaceClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (!onSurfaceTap) {
-      return
-    }
+  const clearPointerGesture = useCallback((): void => {
+    pointerGestureRef.current = null
+  }, [])
 
-    const target = event.target
+  const isInteractiveTarget = useCallback((target: EventTarget | null): boolean => {
     if (!(target instanceof HTMLElement)) {
+      return false
+    }
+
+    return Boolean(target.closest(
+      'button, a, input, textarea, select, label, [role="dialog"], [data-reader-ignore-chrome], .selection-toolbar',
+    ))
+  }, [])
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSurfaceTap || event.button !== 0) {
+      clearPointerGesture()
       return
     }
 
-    if (target.closest(
-      'button, a, input, textarea, select, label, [role="dialog"], [data-reader-ignore-chrome], .selection-toolbar',
-    )) {
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    }
+  }, [clearPointerGesture, onSurfaceTap])
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGestureRef.current
+    clearPointerGesture()
+
+    if (!onSurfaceTap || !gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    if (isInteractiveTarget(event.target)) {
       return
     }
 
@@ -510,8 +542,31 @@ export default function FeedReader({
       return
     }
 
+    const dx = event.clientX - gesture.clientX
+    const dy = event.clientY - gesture.clientY
+    const absDx = Math.abs(dx)
+    const absDy = Math.abs(dy)
+
+    if (gesture.pointerType === 'touch' && (absDx > 8 || absDy > 8)) {
+      return
+    }
+
+    if (absDx > 8 || absDy > 8) {
+      return
+    }
+
     onSurfaceTap()
-  }, [onSurfaceTap])
+  }, [clearPointerGesture, isInteractiveTarget, onSurfaceTap])
+
+  const handlePointerCancel = useCallback(() => {
+    clearPointerGesture()
+  }, [clearPointerGesture])
+
+  const handlePointerLeave = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.buttons & 1) === 0) {
+      clearPointerGesture()
+    }
+  }, [clearPointerGesture])
 
   const contentMaxWidth = lineWidth === 'narrow'
     ? '36rem'
@@ -520,7 +575,13 @@ export default function FeedReader({
       : '64rem'
 
   return (
-    <div className="feed-reader-shell" onClick={handleSurfaceClick}>
+    <div
+      className="feed-reader-shell"
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onPointerLeave={handlePointerLeave}
+    >
       <div
         ref={(node) => {
           scrollRef.current = node
