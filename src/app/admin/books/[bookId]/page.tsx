@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import {
   ArrowLeft,
   BookOpen,
@@ -527,13 +528,13 @@ export default function BookEditorPage() {
               {editMode === 'info' ? (
                 <div className="space-y-4">
                   {book.coverUrl && (
-                    <div className="overflow-hidden rounded-3xl border">
-                      <img
-                        src={book.coverUrl}
-                        alt={`Обложка книги «${book.title}»`}
-                        className="h-56 w-full object-cover"
-                      />
-                    </div>
+                    <BookCoverArtwork
+                      title={book.title}
+                      slug={book.slug}
+                      coverUrl={book.coverUrl}
+                      className="h-56 rounded-3xl border"
+                      titleClassName="text-2xl"
+                    />
                   )}
 
                   <div className="space-y-2">
@@ -601,9 +602,9 @@ export default function BookEditorPage() {
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
-                    <CardTitle className="truncate text-base">{selectedChapter.title}</CardTitle>
+                    <CardTitle className="truncate text-base">Глава {selectedChapter.position}</CardTitle>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Telegraph-like редактор · сохраняется как HTML
+                      Название редактируется в поле ниже · Telegraph-like редактор · сохраняется как HTML
                     </p>
                   </div>
 

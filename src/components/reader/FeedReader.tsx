@@ -31,6 +31,7 @@ interface ChapterItem {
 interface FeedReaderProps {
   paragraphs: Paragraph[]
   variantId: string
+  chapterTitle: string
   nextChapter?: ChapterItem | null
   onNextChapter: () => void
   /** Callback when reader requests scroll-to-comments (from toolbar button) */
@@ -57,6 +58,7 @@ interface FeedReaderProps {
 export default function FeedReader({
   paragraphs,
   variantId,
+  chapterTitle,
   nextChapter,
   onNextChapter,
   commentsSectionRef,
@@ -296,6 +298,27 @@ export default function FeedReader({
       style={{ overflowY: 'auto', height: '100%', padding: '1.5rem 1rem' }}
     >
       <div style={{ position: 'relative' }}>
+        <div
+          style={{
+            maxWidth: contentMaxWidth,
+            margin: '0 auto 1.75rem',
+            padding: '0 0 0.75rem',
+            textAlign: 'center',
+          }}
+        >
+          <h1
+            style={{
+              margin: 0,
+              color: 'var(--r-text)',
+              fontSize: 'clamp(1.4rem, 2.8vw, 2.2rem)',
+              lineHeight: 1.08,
+              fontWeight: 780,
+              letterSpacing: '-0.05em',
+            }}
+          >
+            {chapterTitle}
+          </h1>
+        </div>
         <TextSelector containerRef={scrollRef} variantId={variantId} onSelectionAnnotation={handleSelectionAnnotation} />
         <div
           className="reader-content"

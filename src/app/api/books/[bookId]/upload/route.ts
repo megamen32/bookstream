@@ -36,6 +36,10 @@ export async function POST(
       importedContent.html,
       book.title
     )
+    const detectedCoverDataUrl =
+      typeof suggestedCoverDataUrl === 'string'
+        ? suggestedCoverDataUrl
+        : importedContent.coverDataUrl
 
     for (let index = 0; index < chapterParts.length; index += 1) {
       const chapterTitle = chapterParts[index].title || `Глава ${index + 1}`
@@ -62,7 +66,7 @@ export async function POST(
       bookId: book.id,
       bookSlug: book.slug,
       coverFile: cover instanceof File ? cover : null,
-      suggestedCoverDataUrl: typeof suggestedCoverDataUrl === 'string' ? suggestedCoverDataUrl : null,
+      suggestedCoverDataUrl: detectedCoverDataUrl,
     })
 
     if (coverUrl) {

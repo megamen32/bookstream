@@ -701,6 +701,7 @@ export default function ReaderPage() {
               key={`${chapterId}-${variantType}`}
               paragraphs={paragraphs}
               variantId={variantId}
+              chapterTitle={chapterData.title}
               nextChapter={nextChapter}
               onNextChapter={goToNextChapter}
               commentsSectionRef={commentsSectionRef}

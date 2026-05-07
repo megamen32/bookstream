@@ -384,25 +384,6 @@ export default function BookReader({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Chapter title overlay */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '0.5rem',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          fontSize: '0.6875rem',
-          color: 'var(--r-text-secondary)',
-          zIndex: 15,
-          pointerEvents: 'none',
-          opacity: showMenu ? 1 : 0,
-          transition: 'opacity 0.2s ease',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {chapterTitle}
-      </div>
-
       {/* Scrollable content container */}
       <div
         ref={(node) => {
@@ -421,6 +402,28 @@ export default function BookReader({
         }}
       >
         <div style={{ position: 'relative' }}>
+          <div
+            style={{
+              columnSpan: 'all',
+              breakInside: 'avoid',
+              margin: '0 0 1.5rem',
+              padding: '0 0 1rem',
+              textAlign: 'center',
+            }}
+          >
+            <h1
+              style={{
+                margin: 0,
+                color: 'var(--r-text)',
+                fontSize: 'clamp(1.4rem, 2.8vw, 2.2rem)',
+                lineHeight: 1.08,
+                fontWeight: 780,
+                letterSpacing: '-0.05em',
+              }}
+            >
+              {chapterTitle}
+            </h1>
+          </div>
           <TextSelector containerRef={contentRefInternal} variantId={variantId} onSelectionAnnotation={handleSelectionAnnotation} />
           {paragraphs.map((p) => {
             const isQuoteTarget = highlightParagraphId === p.id

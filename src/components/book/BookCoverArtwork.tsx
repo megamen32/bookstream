@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface BookCoverArtworkProps {
@@ -35,17 +36,58 @@ export default function BookCoverArtwork({
 }: BookCoverArtworkProps) {
   if (coverUrl) {
     return (
-      <div className={cn('relative overflow-hidden bg-muted', className)}>
-        <img
-          src={coverUrl}
-          alt={`Обложка книги «${title}»`}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-      </div>
+      <CoverImage
+        key={coverUrl}
+        src={coverUrl}
+        alt={`Обложка книги «${title}»`}
+        className={className}
+        title={title}
+        slug={slug}
+        titleClassName={titleClassName}
+      />
     )
   }
 
+  return <FallbackArtwork title={title} slug={slug} className={className} titleClassName={titleClassName} />
+}
+
+interface CoverImageProps {
+  src: string
+  alt: string
+  className?: string
+  title: string
+  slug: string
+  titleClassName?: string
+}
+
+function CoverImage({ src, alt, className, title, slug, titleClassName }: CoverImageProps) {
+  const [failed, setFailed] = useState(false)
+
+  if (failed) {
+    return <FallbackArtwork title={title} slug={slug} className={className} titleClassName={titleClassName} />
+  }
+
+  return (
+    <div className={cn('relative overflow-hidden bg-muted', className)}>
+      <img
+        src={src}
+        alt={alt}
+        className="h-full w-full object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  )
+}
+
+interface FallbackArtworkProps {
+  title: string
+  slug: string
+  className?: string
+  titleClassName?: string
+}
+
+function FallbackArtwork({ title, slug, className, titleClassName }: FallbackArtworkProps) {
   return (
     <div
       className={cn(
