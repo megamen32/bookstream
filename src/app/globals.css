@@ -220,7 +220,7 @@
 .bookstream-quote-frame {
   position: relative;
   border-radius: 0.9rem;
-  transition: box-shadow 180ms ease, background-color 180ms ease, transform 180ms ease;
+  transition: background-color 180ms ease, transform 180ms ease;
 }
 
 .bookstream-word-highlight {
@@ -320,12 +320,10 @@
 }
 
 .bookstream-selection-frame {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--r-accent) 55%, transparent), 0 14px 30px rgba(0, 0, 0, 0.08);
   background-color: color-mix(in srgb, var(--r-accent) 9%, transparent);
 }
 
 .bookstream-quote-frame {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--r-accent) 45%, transparent), 0 16px 32px rgba(0, 0, 0, 0.10);
   background-color: color-mix(in srgb, var(--r-accent) 7%, transparent);
 }
 

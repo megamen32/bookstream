@@ -320,12 +320,6 @@ export default function FeedReader({
                 style={{
                   position: 'relative',
                   marginBottom: '0.25rem',
-                  borderRadius: isQuoteTarget ? '0.95rem' : undefined,
-                  boxShadow: hasSelectionHighlight
-                    ? '0 0 0 1px color-mix(in srgb, var(--r-accent) 45%, transparent), 0 14px 32px rgba(0, 0, 0, 0.12)'
-                    : isQuoteTarget
-                      ? '0 0 0 1px var(--r-accent), 0 18px 40px rgba(0, 0, 0, 0.12)'
-                      : 'none',
                   backgroundColor: hasSelectionHighlight
                     ? 'color-mix(in srgb, var(--r-accent) 6%, transparent)'
                     : isQuoteTarget
