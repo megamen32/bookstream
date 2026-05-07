@@ -1,61 +1,185 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import ZAI from 'z-ai-web-dev-sdk'
 
+async function callLLM(systemPrompt: string, userPrompt: string): Promise<string> {
+  const zai = await ZAI.create()
+  const completion = await zai.chat.completions.create({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.3,
+    max_tokens: 4000,
+  })
+  return completion.choices[0]?.message?.content || ''
+}
+
+async function upsertVariant(
+  chapterId: string,
+  variantType: string,
+  text: string
+): Promise<{ variantId: string; paragraphCount: number } | null> {
+  const paragraphs = text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 10)
+
+  if (paragraphs.length === 0) return null
+
+  const contentHtml = paragraphs.map((p) => `<p>${p}</p>`).join('\n')
+
+  const variant = await db.chapterVariant.upsert({
+    where: {
+      chapterId_variantType: { chapterId, variantType },
+    },
+    update: { contentHtml },
+    create: { chapterId, variantType, contentHtml },
+  })
+
+  await db.paragraph.deleteMany({
+    where: { chapterVariantId: variant.id },
+  })
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    await db.paragraph.create({
+      data: {
+        chapterVariantId: variant.id,
+        stableKey: `p-${i}`,
+        position: i,
+        text: paragraphs[i],
+      },
+    })
+  }
+
+  return { variantId: variant.id, paragraphCount: paragraphs.length }
+}
+
+/**
+ * POST /api/chapters/[id]/summarize
+ *
+ * Ways to invoke:
+ *
+ *  1. Default (no body): generates clean + essence using hardcoded prompts
+ *  2. Custom variants:  { "variants": [{ "type": "slug", "prompt": "..." }] }
+ *  3. From preset:       { "presetIds": ["preset-cuid-1", "preset-cuid-2"] }
+ *     — uses systemPromptTemplate from VariantPreset, replacing {word_count}
+ *
+ * Query params:
+ *   ?force=true  — regenerate even if variants already exist
+ */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const body = await request.json().catch(() => ({}))
 
-    // Find the original variant
+    // 1. Find original variant
     const original = await db.chapterVariant.findUnique({
       where: {
         chapterId_variantType: { chapterId: id, variantType: 'original' },
       },
+      include: { paragraphs: { orderBy: { position: 'asc' } } },
     })
 
     if (!original) {
-      return NextResponse.json({ error: 'Оригинальный текст не найден' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Оригинальный текст не найден' },
+        { status: 404 }
+      )
     }
 
-    // Strip HTML to get plain text
-    const plainText = original.contentHtml
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
+    const plainText = original.paragraphs.map((p) => p.text).join('\n\n')
+    const wordCount = plainText.split(/\s+/).length
 
-    const sentences = plainText
-      .split(/(?<=[.!?])\s+/)
-      .filter((s) => s.length > 20)
+    if (plainText.length < 50) {
+      return NextResponse.json(
+        { error: 'Текст слишком короткий для обработки' },
+        { status: 400 }
+      )
+    }
 
-    // Simple summarization: take every other sentence for "clean", every third for "essence"
-    const cleanSentences = sentences.filter((_, i) => i % 2 === 0 || i % 5 === 0)
-    const essenceSentences = sentences.filter((_, i) => i % 3 === 0)
+    // 2. Build list of variant definitions to generate
+    const variantDefs: Array<{ type: string; prompt: string }> = []
 
-    const cleanHtml = cleanSentences.map((s) => `<p>${s}</p>`).join('\n')
-    const essenceHtml = essenceSentences.map((s) => `<p>${s}</p>`).join('\n')
+    // Mode A: explicit preset IDs
+    if (body.presetIds && Array.isArray(body.presetIds)) {
+      const presets = await db.variantPreset.findMany({
+        where: { id: { in: body.presetIds } },
+        orderBy: { position: 'asc' },
+      })
+      for (const preset of presets) {
+        let prompt = preset.systemPromptTemplate
+        // Replace {word_count} only if targetSizePercent is set
+        if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
+          const targetWords = Math.round(wordCount * preset.targetSizePercent / 100)
+          prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
+        }
+        variantDefs.push({ type: preset.slug, prompt })
+      }
+    }
 
-    // Upsert both variants
-    await db.chapterVariant.upsert({
-      where: {
-        chapterId_variantType: { chapterId: id, variantType: 'clean' },
-      },
-      update: { contentHtml: cleanHtml },
-      create: { chapterId: id, variantType: 'clean', contentHtml: cleanHtml },
+    // Mode B: explicit variants in body
+    if (body.variants && Array.isArray(body.variants)) {
+      for (const v of body.variants) {
+        variantDefs.push({ type: v.type, prompt: v.prompt })
+      }
+    }
+
+    // Mode C: default — fetch all presets from DB
+    if (variantDefs.length === 0) {
+      const presets = await db.variantPreset.findMany({
+        orderBy: { position: 'asc' },
+      })
+
+      if (presets.length > 0) {
+        for (const preset of presets) {
+          let prompt = preset.systemPromptTemplate
+          if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
+            const targetWords = Math.round(wordCount * preset.targetSizePercent / 100)
+            prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
+          }
+          variantDefs.push({ type: preset.slug, prompt })
+        }
+      } else {
+        // Fallback hardcoded prompts (if no presets seeded yet)
+        const target50 = Math.round(wordCount * 0.5)
+        const target20 = Math.round(wordCount * 0.2)
+
+        variantDefs.push(
+          {
+            type: 'clean',
+            prompt: `Сократи текст до примерно ${target50} слов (50%), сохрани нарратив. Чистый текст, без markdown.`,
+          },
+          {
+            type: 'essence',
+            prompt: `Выжми ядро — ${target20} слов (20%), дающих 80% смысла. Один абзац = одна мысль. Без markdown.`,
+          },
+        )
+      }
+    }
+
+    // 3. Generate all in parallel
+    const results = await Promise.all(
+      variantDefs.map(async ({ type, prompt }) => {
+        const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`)
+        const saved = await upsertVariant(id, type, result)
+        return { type, ...saved }
+      })
+    )
+
+    return NextResponse.json({
+      success: true,
+      originalWordCount: wordCount,
+      generated: results,
     })
-
-    await db.chapterVariant.upsert({
-      where: {
-        chapterId_variantType: { chapterId: id, variantType: 'essence' },
-      },
-      update: { contentHtml: essenceHtml },
-      create: { chapterId: id, variantType: 'essence', contentHtml: essenceHtml },
-    })
-
-    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error generating summary:', error)
-    return NextResponse.json({ error: 'Ошибка генерации' }, { status: 500 })
+    console.error('Error generating variants:', error)
+    return NextResponse.json(
+      { error: 'Ошибка генерации: ' + (error instanceof Error ? error.message : String(error)) },
+      { status: 500 }
+    )
   }
 }

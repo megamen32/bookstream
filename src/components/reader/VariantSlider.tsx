@@ -3,18 +3,34 @@
 import { useReaderStore } from '@/lib/store'
 import type { VariantType } from '@/lib/store'
 
+interface VariantPresetMeta {
+  label: string
+  emoji: string
+  description?: string
+  targetSizePercent?: number | null
+  /** Display order from DB (lower = first) */
+  position?: number
+}
+
 interface VariantSliderProps {
   onVariantChange: (type: VariantType) => void
   availableVariants: Array<VariantType>
+  /** Preset metadata from API, keyed by slug */
+  variantPresets?: Record<string, VariantPresetMeta>
 }
 
-const VARIANT_INFO: Record<VariantType, { label: string; emoji: string }> = {
+/** Built-in fallback labels for the 3 standard variants */
+const BUILTIN_INFO: Record<string, { label: string; emoji: string }> = {
   original: { label: 'Оригинал', emoji: '📝' },
   clean: { label: 'Без воды', emoji: '✂️' },
   essence: { label: 'Суть', emoji: '💡' },
 }
 
-export default function VariantSlider({ onVariantChange, availableVariants }: VariantSliderProps) {
+export default function VariantSlider({
+  onVariantChange,
+  availableVariants,
+  variantPresets = {},
+}: VariantSliderProps) {
   const { variantType, setVariantType } = useReaderStore()
 
   const handleChange = (type: VariantType) => {
@@ -22,7 +38,22 @@ export default function VariantSlider({ onVariantChange, availableVariants }: Va
     onVariantChange(type)
   }
 
-  if (availableVariants.length <= 1) return null
+  // Build sorted list: original first, then by preset position, then by targetSizePercent desc
+  const sortedVariants = [...availableVariants].sort((a, b) => {
+    // original always first
+    if (a === 'original') return -1
+    if (b === 'original') return 1
+    // use DB position if available (lower position = first)
+    const posA = variantPresets[a]?.position ?? 999
+    const posB = variantPresets[b]?.position ?? 999
+    if (posA !== posB) return posA - posB
+    // fallback: higher targetSizePercent first (100% before 50% before 20%)
+    const sizeA = variantPresets[a]?.targetSizePercent ?? 999
+    const sizeB = variantPresets[b]?.targetSizePercent ?? 999
+    return sizeB - sizeA
+  })
+
+  if (sortedVariants.length <= 1) return null
 
   return (
     <div
@@ -34,9 +65,12 @@ export default function VariantSlider({ onVariantChange, availableVariants }: Va
         gap: '0.125rem',
       }}
     >
-      {availableVariants.map((type) => {
+      {sortedVariants.map((type) => {
         const isActive = variantType === type
-        const info = VARIANT_INFO[type]
+        const preset = variantPresets[type]
+        const label = preset?.label || BUILTIN_INFO[type]?.label || type
+        const emoji = preset?.emoji || BUILTIN_INFO[type]?.emoji || ''
+
         return (
           <button
             key={type}
@@ -59,9 +93,20 @@ export default function VariantSlider({ onVariantChange, availableVariants }: Va
               justifyContent: 'center',
               gap: '0.25rem',
             }}
+            title={preset?.description || undefined}
           >
-            <span>{info.emoji}</span>
-            <span>{info.label}</span>
+            {emoji && <span>{emoji}</span>}
+            <span>{label}</span>
+            {preset?.targetSizePercent != null && (
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  opacity: 0.7,
+                }}
+              >
+                {preset.targetSizePercent}%
+              </span>
+            )}
           </button>
         )
       })}

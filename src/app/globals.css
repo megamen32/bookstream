@@ -173,6 +173,26 @@
   background-color: var(--r-bg);
   color: var(--r-text);
   transition: background-color 0.3s ease, color 0.3s ease;
+
+  /* Map shadcn CSS vars to reader theme so all shadcn components
+     (Sheet, Slider, Dropdown, etc.) respect the active theme */
+  --background: var(--r-bg);
+  --foreground: var(--r-text);
+  --card: var(--r-bg);
+  --card-foreground: var(--r-text);
+  --popover: var(--r-bg);
+  --popover-foreground: var(--r-text);
+  --primary: var(--r-accent);
+  --primary-foreground: var(--r-accent-foreground);
+  --secondary: var(--r-bg-secondary);
+  --secondary-foreground: var(--r-text);
+  --muted: var(--r-bg-secondary);
+  --muted-foreground: var(--r-text-secondary);
+  --accent: var(--r-bg-secondary);
+  --accent-foreground: var(--r-text);
+  --border: var(--r-border);
+  --input: var(--r-border);
+  --ring: var(--r-accent);
 }
 
 .reader-wrapper * {

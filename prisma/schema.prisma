@@ -18,109 +18,109 @@ model Author {
 }
 
 model Book {
-  id                  String   @id @default(cuid())
-  slug                String
-  title               String
-  description         String?
-  coverUrl            String?
-  authorId            String
-  readingModeDefault  String   @default("feed")
-  isPublic            Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  author              Author   @relation(fields: [authorId], references: [id])
-  chapters            Chapter[]
-  comments            Comment[]
-  readingProgress     ReadingProgress[]
+  id                 String            @id @default(cuid())
+  slug               String
+  title              String
+  description        String?
+  coverUrl           String?
+  authorId           String
+  readingModeDefault String            @default("feed")
+  isPublic           Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  author             Author            @relation(fields: [authorId], references: [id])
+  chapters           Chapter[]
+  comments           Comment[]
+  readingProgress    ReadingProgress[]
 
   @@unique([authorId, slug])
 }
 
 model Chapter {
-  id         String   @id @default(cuid())
-  bookId     String
-  title      String
-  position   Int
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  book       Book     @relation(fields: [bookId], references: [id])
-  variants   ChapterVariant[]
-  comments   Comment[]
+  id        String           @id @default(cuid())
+  bookId    String
+  title     String
+  position  Int
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  book      Book             @relation(fields: [bookId], references: [id])
+  variants  ChapterVariant[]
+  comments  Comment[]
 
   @@unique([bookId, position])
 }
 
 model ChapterVariant {
-  id              String   @id @default(cuid())
-  chapterId       String
-  variantType     String   @default("original")
-  contentHtml     String
-  editedByAuthor  Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  chapter         Chapter  @relation(fields: [chapterId], references: [id])
-  paragraphs      Paragraph[]
-  reactions       Reaction[]
+  id             String      @id @default(cuid())
+  chapterId      String
+  variantType    String      @default("original")
+  contentHtml    String
+  editedByAuthor Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  chapter        Chapter     @relation(fields: [chapterId], references: [id])
+  paragraphs     Paragraph[]
+  reactions      Reaction[]
 
   @@unique([chapterId, variantType])
 }
 
 model Paragraph {
-  id                String         @id @default(cuid())
-  chapterVariantId  String
-  stableKey         String
-  position          Int
-  text              String
-  chapterVariant    ChapterVariant @relation(fields: [chapterVariantId], references: [id])
-  reactions         Reaction[]
-  commentQuotes     CommentQuote[]
+  id               String         @id @default(cuid())
+  chapterVariantId String
+  stableKey        String
+  position         Int
+  text             String
+  commentQuotes    CommentQuote[]
+  chapterVariant   ChapterVariant @relation(fields: [chapterVariantId], references: [id])
+  reactions        Reaction[]
 
   @@unique([chapterVariantId, position])
 }
 
 model Comment {
-  id            String         @id @default(cuid())
-  bookId        String
-  chapterId     String
-  readerId      String
-  username      String
-  body          String
-  status        String         @default("active")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  book          Book           @relation(fields: [bookId], references: [id])
-  chapter       Chapter        @relation(fields: [chapterId], references: [id])
-  quotes        CommentQuote[]
+  id        String         @id @default(cuid())
+  bookId    String
+  chapterId String
+  readerId  String
+  username  String
+  body      String
+  status    String         @default("active")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  chapter   Chapter        @relation(fields: [chapterId], references: [id])
+  book      Book           @relation(fields: [bookId], references: [id])
+  quotes    CommentQuote[]
 }
 
 model CommentQuote {
-  id            String     @id @default(cuid())
-  commentId     String
-  variantType   String     @default("original")
-  paragraphId   String
-  selectedText  String
-  startOffset   Int        @default(0)
-  endOffset     Int        @default(0)
-  createdAt     DateTime   @default(now())
-  comment       Comment    @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  paragraph     Paragraph  @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  commentId    String
+  variantType  String    @default("original")
+  paragraphId  String
+  selectedText String
+  startOffset  Int       @default(0)
+  endOffset    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  paragraph    Paragraph @relation(fields: [paragraphId], references: [id], onDelete: Cascade)
+  comment      Comment   @relation(fields: [commentId], references: [id], onDelete: Cascade)
 }
 
 model Reaction {
-  id                String         @id @default(cuid())
-  paragraphId       String
-  chapterVariantId  String
-  readerId          String
-  emoji             String
-  createdAt         DateTime       @default(now())
-  paragraph         Paragraph      @relation(fields: [paragraphId], references: [id])
-  chapterVariant    ChapterVariant @relation(fields: [chapterVariantId], references: [id])
+  id               String         @id @default(cuid())
+  paragraphId      String
+  chapterVariantId String
+  readerId         String
+  emoji            String
+  createdAt        DateTime       @default(now())
+  chapterVariant   ChapterVariant @relation(fields: [chapterVariantId], references: [id])
+  paragraph        Paragraph      @relation(fields: [paragraphId], references: [id])
 
   @@unique([paragraphId, readerId, emoji])
 }
 
 model Reader {
-  id              String @id @default(cuid())
+  id              String   @id @default(cuid())
   currentUsername String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -141,4 +141,22 @@ model ReadingProgress {
   book          Book     @relation(fields: [bookId], references: [id])
 
   @@unique([readerId, bookId])
+}
+
+/// Presets for text variant generation.
+/// Admin can create custom presets with arbitrary names, emojis, and LLM prompts.
+/// systemPromptTemplate may use {word_count} placeholder — it will be replaced
+/// with Math.round(originalWordCount * targetSizePercent / 100).
+/// If targetSizePercent is null, {word_count} will NOT be replaced (variant decides own length).
+model VariantPreset {
+  id                   String   @id @default(cuid())
+  slug                 String   @unique
+  label                String
+  emoji                String   @default("")
+  description          String   @default("")
+  targetSizePercent    Int?
+  systemPromptTemplate String
+  position             Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

@@ -46,7 +46,7 @@ export default function SettingsPanel({ open, onOpenChange }: SettingsPanelProps
           maxHeight: '80vh',
           backgroundColor: 'var(--r-bg)',
           color: 'var(--r-text)',
-          border: 'none',
+          borderTop: '1px solid var(--r-border)',
         }}
       >
         <SheetHeader>

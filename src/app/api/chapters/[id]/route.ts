@@ -34,14 +34,7 @@ export async function GET(
             },
           },
         },
-        variants: {
-          where: { variantType },
-          include: {
-            paragraphs: {
-              orderBy: { position: 'asc' },
-            },
-          },
-        },
+        variants: true,
       },
     })
 
@@ -49,20 +42,37 @@ export async function GET(
       return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
     }
 
-    const variant = chapter.variants[0]
+    // Get the requested variant with paragraphs separately
+    const variant = chapter.variants.find(v => v.variantType === variantType)
 
     if (!variant) {
       return NextResponse.json({ error: 'Variant not found' }, { status: 404 })
     }
 
+    // Fetch paragraphs only for the requested variant
+    const variantWithParagraphs = await db.chapterVariant.findUnique({
+      where: { id: variant.id },
+      include: {
+        paragraphs: { orderBy: { position: 'asc' } },
+      },
+    })
+
+    // Fetch variant presets for UI labels
+    const variantTypes = chapter.variants.map(v => v.variantType)
+    const presets = await db.variantPreset.findMany({
+      where: { slug: { in: variantTypes } },
+    })
+    const presetMap = Object.fromEntries(presets.map(p => [p.slug, p]))
+
     return NextResponse.json({
       chapter,
       variant: {
-        id: variant.id,
-        variantType: variant.variantType,
-        contentHtml: variant.contentHtml,
-        paragraphs: variant.paragraphs,
+        id: variantWithParagraphs!.id,
+        variantType: variantWithParagraphs!.variantType,
+        contentHtml: variantWithParagraphs!.contentHtml,
+        paragraphs: variantWithParagraphs!.paragraphs,
       },
+      variantPresets: presetMap,
       prevChapter: chapter.book.chapters.find(c => c.position === chapter.position - 1) || null,
       nextChapter: chapter.book.chapters.find(c => c.position === chapter.position + 1) || null,
     })

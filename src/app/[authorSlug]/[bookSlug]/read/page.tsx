@@ -4,16 +4,15 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Settings, List, BookOpen, AlignJustify } from 'lucide-react'
+import { ArrowLeft, Settings, BookOpen, AlignJustify } from 'lucide-react'
 import { useReaderStore, type VariantType } from '@/lib/store'
-import { applyTheme } from '@/lib/themes'
+import { applyTheme, themes } from '@/lib/themes'
 import FeedReader from '@/components/reader/FeedReader'
 import BookReader from '@/components/reader/BookReader'
-import CommentComposer from '@/components/reader/CommentComposer'
-import CommentList from '@/components/reader/CommentList'
+import { MessageSquare } from 'lucide-react'
 import VariantSlider from '@/components/reader/VariantSlider'
 import SettingsPanel from '@/components/reader/SettingsPanel'
-import ChapterNavigation from '@/components/reader/ChapterNavigation'
+import TableOfContents from '@/components/reader/TableOfContents'
 
 interface Paragraph {
   id: string
@@ -72,10 +71,11 @@ export default function ReaderPage() {
   const [paragraphs, setParagraphs] = useState<Paragraph[]>([])
   const [variantId, setVariantId] = useState<string>('')
   const [availableVariants, setAvailableVariants] = useState<VariantType[]>([])
+  const [variantPresets, setVariantPresets] = useState<Record<string, { label: string; emoji: string; description?: string; targetSizePercent?: number | null; position?: number }>>({})
   const [loading, setLoading] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
-  const [showComments, setShowComments] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
+  const commentsSectionRef = useRef<HTMLDivElement>(null)
   const initialized = useRef(false)
 
   // Initialize store from localStorage
@@ -84,6 +84,53 @@ export default function ReaderPage() {
     initialized.current = true
     loadFromStorage()
   }, [loadFromStorage])
+
+  // Sync reader theme CSS vars to document root so portaled components
+  // (Sheet, Dialog, Popover, etc.) pick up the correct colors
+  useEffect(() => {
+    const root = document.documentElement
+    const vars = themes[theme].vars
+
+    // Set --r-* vars
+    for (const [key, val] of Object.entries(vars)) {
+      root.style.setProperty(key, val)
+    }
+
+    // Map shadcn CSS vars to reader theme (same as .reader-wrapper does)
+    root.style.setProperty('--background', vars['--r-bg'])
+    root.style.setProperty('--foreground', vars['--r-text'])
+    root.style.setProperty('--card', vars['--r-bg'])
+    root.style.setProperty('--card-foreground', vars['--r-text'])
+    root.style.setProperty('--popover', vars['--r-bg'])
+    root.style.setProperty('--popover-foreground', vars['--r-text'])
+    root.style.setProperty('--primary', vars['--r-accent'])
+    root.style.setProperty('--primary-foreground', vars['--r-accent-foreground'])
+    root.style.setProperty('--secondary', vars['--r-bg-secondary'])
+    root.style.setProperty('--secondary-foreground', vars['--r-text'])
+    root.style.setProperty('--muted', vars['--r-bg-secondary'])
+    root.style.setProperty('--muted-foreground', vars['--r-text-secondary'])
+    root.style.setProperty('--accent', vars['--r-bg-secondary'])
+    root.style.setProperty('--accent-foreground', vars['--r-text'])
+    root.style.setProperty('--border', vars['--r-border'])
+    root.style.setProperty('--input', vars['--r-border'])
+    root.style.setProperty('--ring', vars['--r-accent'])
+
+    return () => {
+      // Clean up: remove all --r-* vars and restore shadcn defaults
+      for (const key of Object.keys(vars)) {
+        root.style.removeProperty(key)
+      }
+      const shadcnVars = [
+        '--background', '--foreground', '--card', '--card-foreground',
+        '--popover', '--popover-foreground', '--primary', '--primary-foreground',
+        '--secondary', '--secondary-foreground', '--muted', '--muted-foreground',
+        '--accent', '--accent-foreground', '--border', '--input', '--ring',
+      ]
+      for (const v of shadcnVars) {
+        root.style.removeProperty(v)
+      }
+    }
+  }, [theme])
 
   // Fetch chapter data
   const fetchChapter = useCallback(async (cId: string, vType: VariantType) => {
@@ -99,6 +146,11 @@ export default function ReaderPage() {
         // Detect available variants
         const variants = data.chapter?.variants?.map((v: { variantType: string }) => v.variantType) || []
         setAvailableVariants(variants as VariantType[])
+
+        // Store variant preset metadata for dynamic labels
+        if (data.variantPresets) {
+          setVariantPresets(data.variantPresets)
+        }
 
         // Fetch comment count
         const commentsRes = await fetch(`/api/chapters/${cId}/comments`)
@@ -180,12 +232,34 @@ export default function ReaderPage() {
     await fetchChapter(chapterId, newType)
   }, [chapterId, fetchChapter])
 
-  // Handle chapter change
+  // Handle chapter change (from Table of Contents)
   const handleChapterChange = useCallback(async (newChapterId: string) => {
-    if (!chapterId) return
     setChapterId(newChapterId)
     await fetchChapter(newChapterId, variantType)
-  }, [chapterId, variantType, fetchChapter, setChapterId])
+  }, [variantType, fetchChapter, setChapterId])
+
+  // Navigate to next/prev chapter (used by readers at chapter boundaries)
+  const goToNextChapter = useCallback(() => {
+    if (!chapterData) return
+    const chapters = chapterData.book.chapters
+    const idx = chapters.findIndex(c => c.id === chapterId)
+    if (idx < chapters.length - 1) {
+      const nextId = chapters[idx + 1].id
+      setChapterId(nextId)
+      fetchChapter(nextId, variantType)
+    }
+  }, [chapterData, chapterId, variantType, setChapterId, fetchChapter])
+
+  const goToPrevChapter = useCallback(() => {
+    if (!chapterData) return
+    const chapters = chapterData.book.chapters
+    const idx = chapters.findIndex(c => c.id === chapterId)
+    if (idx > 0) {
+      const prevId = chapters[idx - 1].id
+      setChapterId(prevId)
+      fetchChapter(prevId, variantType)
+    }
+  }, [chapterData, chapterId, variantType, setChapterId, fetchChapter])
 
   // Send comment
   const handleSendComment = useCallback(async (body: string) => {
@@ -224,6 +298,14 @@ export default function ReaderPage() {
   // Theme CSS variables
   const themeVars = applyTheme(theme)
 
+  // Derived values for chapter navigation
+  const chapters = chapterData?.book.chapters || []
+  const currentChapterIndex = chapters.findIndex(c => c.id === chapterId)
+  const hasNextChapter = currentChapterIndex < chapters.length - 1
+  const hasPrevChapter = currentChapterIndex > 0
+  const nextChapter = hasNextChapter ? chapters[currentChapterIndex + 1] : null
+  const prevChapter = hasPrevChapter ? chapters[currentChapterIndex - 1] : null
+
   if (loading) {
     return (
       <div className="h-screen flex flex-col bg-background">
@@ -248,7 +330,7 @@ export default function ReaderPage() {
         <div className="text-center">
           <p className="text-lg font-medium mb-2">Не удалось загрузить главу</p>
           <Link href={`/${authorSlug}/${bookSlug}`} className="text-sm text-muted-foreground hover:underline">
-            ← Вернуться к книге
+            &larr; Вернуться к книге
           </Link>
         </div>
       </div>
@@ -261,7 +343,7 @@ export default function ReaderPage() {
       data-reader-theme={theme}
       style={themeVars as React.CSSProperties}
     >
-      {/* Top bar */}
+      {/* Top bar — minimal: back, title, TOC, settings, comments */}
       <header
         style={{
           display: 'flex',
@@ -290,16 +372,32 @@ export default function ReaderPage() {
           <ArrowLeft size={20} />
         </Link>
 
-        {/* Chapter navigation */}
+        {/* Book title (truncated) */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {chapterData.book.chapters.length > 0 && (
-            <ChapterNavigation
-              chapters={chapterData.book.chapters}
-              currentChapterId={chapterId || ''}
-              onChapterChange={handleChapterChange}
-              theme={theme}
-            />
-          )}
+          <div
+            style={{
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'var(--r-text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={chapterData.book.title}
+          >
+            {chapterData.book.title}
+          </div>
+          <div
+            style={{
+              fontSize: '0.6875rem',
+              color: 'var(--r-text-secondary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {chapterData.title}
+          </div>
         </div>
 
         {/* Reading mode toggle */}
@@ -322,6 +420,13 @@ export default function ReaderPage() {
           {readingMode === 'feed' ? <BookOpen size={20} /> : <AlignJustify size={20} />}
         </button>
 
+        {/* Table of Contents */}
+        <TableOfContents
+          chapters={chapters}
+          currentChapterId={chapterId || ''}
+          onChapterChange={handleChapterChange}
+        />
+
         {/* Settings */}
         <button
           onClick={() => setShowSettings(true)}
@@ -342,13 +447,56 @@ export default function ReaderPage() {
           <Settings size={20} />
         </button>
 
-        {/* Comments */}
-        <CommentList
-          chapterId={chapterId || ''}
-          open={showComments}
-          onOpenChange={setShowComments}
-          commentCount={commentCount}
-        />
+        {/* Comments — scroll to bottom */}
+        <button
+          onClick={() => {
+            if (readingMode === 'feed') {
+              // Feed: scroll to comments section at bottom
+              commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
+            } else {
+              // Book: show comments page
+              // We'll use a custom event since BookReader manages its own state
+              window.dispatchEvent(new CustomEvent('bookstream:show-comments'))
+            }
+          }}
+          style={{
+            position: 'relative',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--r-text)',
+            padding: '0.5rem',
+            minWidth: '44px',
+            minHeight: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          title="Комментарии"
+        >
+          <MessageSquare size={20} />
+          {commentCount > 0 && (
+            <span
+              style={{
+                position: 'absolute',
+                top: '0.125rem',
+                right: '0.125rem',
+                backgroundColor: 'var(--r-accent)',
+                color: 'var(--r-accent-foreground)',
+                fontSize: '0.625rem',
+                fontWeight: 700,
+                width: '1.125rem',
+                height: '1.125rem',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {commentCount > 99 ? '99+' : commentCount}
+            </span>
+          )}
+        </button>
       </header>
 
       {/* Variant slider */}
@@ -363,6 +511,7 @@ export default function ReaderPage() {
           <VariantSlider
             onVariantChange={handleVariantChange}
             availableVariants={availableVariants}
+            variantPresets={variantPresets}
           />
         </div>
       )}
@@ -374,18 +523,27 @@ export default function ReaderPage() {
             key={`${chapterId}-${variantType}`}
             paragraphs={paragraphs}
             variantId={variantId}
+            nextChapter={nextChapter}
+            onNextChapter={goToNextChapter}
+            commentsSectionRef={commentsSectionRef}
+            onSendComment={handleSendComment}
+            commentCount={commentCount}
           />
         ) : (
           <BookReader
             key={`${chapterId}-${variantType}`}
             paragraphs={paragraphs}
             variantId={variantId}
+            hasNextChapter={hasNextChapter}
+            hasPrevChapter={hasPrevChapter}
+            onNextChapter={goToNextChapter}
+            onPrevChapter={goToPrevChapter}
+            chapterTitle={chapterData.title}
+            onSendComment={handleSendComment}
+            commentCount={commentCount}
           />
         )}
       </main>
-
-      {/* Comment composer */}
-      <CommentComposer onSend={handleSendComment} />
 
       {/* Settings panel */}
       <SettingsPanel

@@ -1,0 +1,23 @@
+[Unit]
+Description=Bookstream Next.js application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=roomhacker
+Group=roomhacker
+WorkingDirectory=/home/roomhacker/PycharmProjects/bookstream
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=3000
+Environment=DATABASE_URL=file:/home/roomhacker/PycharmProjects/bookstream/db/custom.db
+ExecStart=/usr/bin/node /home/roomhacker/PycharmProjects/bookstream/.next/standalone/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
