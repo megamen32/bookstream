@@ -172,6 +172,7 @@ export default function FeedCommentsPreview({
             })}
             onToggleVote={() => void handleToggleVote(comment.id)}
             voteDisabled={!readerId || togglingCommentId === comment.id}
+            bodyLines={3}
           />
         ))}
       </div>

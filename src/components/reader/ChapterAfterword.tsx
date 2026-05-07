@@ -252,6 +252,7 @@ export default function ChapterAfterword({
                   })}
                   onToggleVote={() => void handleToggleVote(comment.id, comment, commentVoteOverrides, setCommentVoteOverrides)}
                   voteDisabled={!readerId || togglingId === comment.id}
+                  bodyLines={3}
                   compact
                   showChapterLink={false}
                   metaLabel={index === 0 ? 'Главный комментарий' : 'Свежий комментарий'}

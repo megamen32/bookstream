@@ -22,6 +22,11 @@ import type {
   ReaderChapterListItem,
 } from '@/components/reader/feed-types'
 import { setBookReaderPage } from '@/lib/book-reader-progress'
+import {
+  buildReaderLocationSearch,
+  resolveReaderLocationSearch,
+  shouldForceBookModeFromQuoteTarget,
+} from '@/lib/reader-location'
 
 interface BookData {
   id: string
@@ -153,7 +158,6 @@ export default function ReaderPage() {
   const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
-  const feedScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
   const hasResolvedInitialLocation = useRef(false)
   const restoreTokenRef = useRef(0)
@@ -168,10 +172,6 @@ export default function ReaderPage() {
 
   const setSearchContentNode = useCallback((node: HTMLDivElement | null) => {
     searchContentRef.current = node
-  }, [])
-
-  const setFeedScrollContainerNode = useCallback((node: HTMLDivElement | null) => {
-    feedScrollContainerRef.current = node
   }, [])
 
   const getChapterCacheKey = useCallback((targetChapterId: string, requestedVariant: VariantType): string => (
@@ -558,6 +558,17 @@ export default function ReaderPage() {
           targetVariant = urlVariant as VariantType
         }
 
+        if (shouldForceBookModeFromQuoteTarget({
+          paragraph: urlParagraph,
+          paragraphEnd: urlParagraphEnd,
+          startOffsetRaw: urlStartOffsetRaw,
+          endOffsetRaw: urlEndOffsetRaw,
+        })) {
+          // Quote links are page-centric, so we always open the paged reader
+          // even if the last persisted session was in feed mode.
+          targetMode = 'book'
+        }
+
         setQuoteTargetParagraphId(urlParagraph)
         setQuoteTargetParagraphEndId(urlParagraphEnd)
         setQuoteTargetStartOffset(urlStartOffset)
@@ -654,35 +665,14 @@ export default function ReaderPage() {
     }
 
     const currentUrl = new URL(window.location.href)
-    const nextSearchParams = new URLSearchParams(currentUrl.search)
-    nextSearchParams.set('chapter', activeChapterId)
-    nextSearchParams.set('variant', variantType)
-
-    if (quoteTargetParagraphId) {
-      nextSearchParams.set('paragraph', quoteTargetParagraphId)
-    } else {
-      nextSearchParams.delete('paragraph')
-    }
-
-    if (quoteTargetParagraphEndId) {
-      nextSearchParams.set('paragraphEnd', quoteTargetParagraphEndId)
-    } else {
-      nextSearchParams.delete('paragraphEnd')
-    }
-
-    if (Number.isFinite(quoteTargetStartOffset)) {
-      nextSearchParams.set('startOffset', String(quoteTargetStartOffset))
-    } else {
-      nextSearchParams.delete('startOffset')
-    }
-
-    if (Number.isFinite(quoteTargetEndOffset)) {
-      nextSearchParams.set('endOffset', String(quoteTargetEndOffset))
-    } else {
-      nextSearchParams.delete('endOffset')
-    }
-
-    const nextSearch = nextSearchParams.toString()
+    const nextSearch = buildReaderLocationSearch({
+      chapterId: activeChapterId,
+      variantType,
+      paragraphId: quoteTargetParagraphId,
+      paragraphEndId: quoteTargetParagraphEndId,
+      startOffset: quoteTargetStartOffset,
+      endOffset: quoteTargetEndOffset,
+    })
     const nextHref = nextSearch ? `${currentUrl.pathname}?${nextSearch}` : currentUrl.pathname
     const currentHref = `${currentUrl.pathname}${currentUrl.search}`
     if (nextHref !== currentHref) {
@@ -695,12 +685,14 @@ export default function ReaderPage() {
       return
     }
 
-    const urlChapter = searchParams.get('chapter')
-    const urlVariant = searchParams.get('variant')
-    const urlParagraph = searchParams.get('paragraph')
-    const urlParagraphEnd = searchParams.get('paragraphEnd')
-    const urlStartOffsetRaw = searchParams.get('startOffset')
-    const urlEndOffsetRaw = searchParams.get('endOffset')
+    const effectiveSearch = resolveReaderLocationSearch(searchParams.toString(), window.location.search)
+    const effectiveSearchParams = new URLSearchParams(effectiveSearch)
+    const urlChapter = effectiveSearchParams.get('chapter')
+    const urlVariant = effectiveSearchParams.get('variant')
+    const urlParagraph = effectiveSearchParams.get('paragraph')
+    const urlParagraphEnd = effectiveSearchParams.get('paragraphEnd')
+    const urlStartOffsetRaw = effectiveSearchParams.get('startOffset')
+    const urlEndOffsetRaw = effectiveSearchParams.get('endOffset')
     const urlStartOffset = Number.isFinite(Number(urlStartOffsetRaw)) ? Number(urlStartOffsetRaw) : null
     const urlEndOffset = Number.isFinite(Number(urlEndOffsetRaw)) ? Number(urlEndOffsetRaw) : null
 
@@ -1121,23 +1113,6 @@ export default function ReaderPage() {
     setActiveOverlay('none')
   }, [])
 
-  const handleChromeWheelNavigate = useCallback((deltaY: number) => {
-    closeChrome()
-
-    if (readingMode !== 'feed') {
-      return
-    }
-
-    const container = feedScrollContainerRef.current
-    if (!container || !Number.isFinite(deltaY) || deltaY === 0) {
-      return
-    }
-
-    window.requestAnimationFrame(() => {
-      container.scrollTop += deltaY
-    })
-  }, [closeChrome, readingMode])
-
   const toggleChrome = useCallback(() => {
     setChromeVisible((current) => {
       const nextVisible = !current
@@ -1194,10 +1169,15 @@ export default function ReaderPage() {
       return
     }
 
+    if (activeOverlay === 'comments' && commentsChapterId === nextChapterId && !replyTo) {
+      closeOverlay()
+      return
+    }
+
     setReplyingTo(replyTo || null)
     setCommentsChapterId(nextChapterId)
     openOverlay('comments')
-  }, [activeChapterId, openOverlay, setReplyingTo])
+  }, [activeChapterId, activeOverlay, closeOverlay, commentsChapterId, openOverlay, setReplyingTo])
 
   const handleQuickActionVariants = useCallback(() => {
     openOverlay('variants')
@@ -1303,7 +1283,6 @@ export default function ReaderPage() {
           scrollToBookmark()
           closeChrome()
         }}
-        onWheelNavigate={handleChromeWheelNavigate}
       />
 
       <TableOfContents
@@ -1347,9 +1326,8 @@ export default function ReaderPage() {
               scrollToChapterId={scrollToChapterId}
               onScrollToChapterHandled={() => setScrollToChapterId(null)}
               onOpenChapterComments={handleOpenComments}
-              onSurfaceTap={openChrome}
+              onSurfaceTap={toggleChrome}
               onNavigate={closeChrome}
-              setScrollContainerNode={setFeedScrollContainerNode}
             />
           ) : bookModeSection ? (
             <BookReader

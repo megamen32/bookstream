@@ -46,7 +46,6 @@ interface FeedReaderProps {
   onOpenChapterComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
   onSurfaceTap?: () => void
   onNavigate?: () => void
-  setScrollContainerNode?: (node: HTMLDivElement | null) => void
 }
 
 interface StoredSelectionAnnotationRange extends SelectionAnnotationRange {
@@ -89,7 +88,6 @@ export default function FeedReader({
   onOpenChapterComments,
   onSurfaceTap,
   onNavigate,
-  setScrollContainerNode,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, bookId, readerId, showMobileReactionBar } = useReaderStore()
 
@@ -530,7 +528,6 @@ export default function FeedReader({
       <div
         ref={(node) => {
           scrollRef.current = node
-          setScrollContainerNode?.(node)
           setContentNode?.(node)
         }}
         className="reader-scrollbar feed-reader"

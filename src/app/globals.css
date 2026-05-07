@@ -1207,6 +1207,15 @@
   }
 
   .reader-comments-overlay__header {
+    position: relative;
+    padding-right: 3.75rem;
     padding-top: 0.2rem;
+  }
+
+  .reader-comments-overlay__close {
+    position: absolute;
+    top: max(0.4rem, env(safe-area-inset-top));
+    right: max(0.75rem, env(safe-area-inset-right));
+    z-index: 1;
   }
 }

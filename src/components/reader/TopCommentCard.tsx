@@ -37,7 +37,6 @@ export default function TopCommentCard({
       quoteHref={quoteHref || chapterHref}
       onToggleVote={onToggleVote}
       voteDisabled={voteDisabled}
-      bodyLines={compact ? 3 : 2}
       quoteLines={2}
       compact={compact}
       showChapterLink={showChapterLink}
