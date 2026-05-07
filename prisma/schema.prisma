@@ -25,6 +25,10 @@ model Book {
   coverUrl           String?
   authorId           String
   readingModeDefault String            @default("feed")
+  syntheticCommentsPerChapter Int      @default(3)
+  syntheticQuotesPerChapter   Int      @default(1)
+  syntheticReactionsPerChapter Int     @default(5)
+  syntheticCommentsUseLlm    Boolean   @default(false)
   isPublic           Boolean           @default(false)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -106,6 +110,7 @@ model Annotation {
   username         String
   kind             String
   status           String           @default("active")
+  isSynthetic      Boolean          @default(false)
   body             String?
   emoji            String?
   selectedText     String?

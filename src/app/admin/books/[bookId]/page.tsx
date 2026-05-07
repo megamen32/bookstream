@@ -17,6 +17,9 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -74,6 +77,10 @@ interface BookData {
   slug: string
   description: string | null
   coverUrl: string | null
+  syntheticCommentsPerChapter: number
+  syntheticQuotesPerChapter: number
+  syntheticReactionsPerChapter: number
+  syntheticCommentsUseLlm: boolean
   author: {
     slug: string
     name: string
@@ -131,10 +138,15 @@ export default function BookEditorPage() {
   const [editIsPublic, setEditIsPublic] = useState(false)
   const [editReadingMode, setEditReadingMode] = useState('feed')
   const [savingBook, setSavingBook] = useState(false)
+  const [seedingEngagement, setSeedingEngagement] = useState(false)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
   const [savingCover, setSavingCover] = useState(false)
   const coverInputRef = useRef<HTMLInputElement | null>(null)
+  const [editSyntheticCommentsPerChapter, setEditSyntheticCommentsPerChapter] = useState(3)
+  const [editSyntheticQuotesPerChapter, setEditSyntheticQuotesPerChapter] = useState(1)
+  const [editSyntheticReactionsPerChapter, setEditSyntheticReactionsPerChapter] = useState(5)
+  const [editSyntheticCommentsUseLlm, setEditSyntheticCommentsUseLlm] = useState(false)
 
   useEffect(() => (
     () => {
@@ -162,6 +174,10 @@ export default function BookEditorPage() {
       setEditDescription(data.description || '')
       setEditIsPublic(data.isPublic)
       setEditReadingMode(data.readingModeDefault)
+      setEditSyntheticCommentsPerChapter(data.syntheticCommentsPerChapter)
+      setEditSyntheticQuotesPerChapter(data.syntheticQuotesPerChapter)
+      setEditSyntheticReactionsPerChapter(data.syntheticReactionsPerChapter)
+      setEditSyntheticCommentsUseLlm(data.syntheticCommentsUseLlm)
       setSelectedChapterId(selectedExists ? selectedChapterId : data.chapters[0]?.id ?? null)
     } catch (error) {
       console.error('Error fetching book:', error)
@@ -208,8 +224,31 @@ export default function BookEditorPage() {
       editSlug !== book.slug ||
       editDescription !== (book.description || '') ||
       editIsPublic !== book.isPublic ||
-      editReadingMode !== book.readingModeDefault)
+      editReadingMode !== book.readingModeDefault ||
+      editSyntheticCommentsPerChapter !== book.syntheticCommentsPerChapter ||
+      editSyntheticQuotesPerChapter !== book.syntheticQuotesPerChapter ||
+      editSyntheticReactionsPerChapter !== book.syntheticReactionsPerChapter ||
+      editSyntheticCommentsUseLlm !== book.syntheticCommentsUseLlm)
   const effectiveCoverPreview = coverPreviewUrl || book?.coverUrl || null
+
+  const clampSyntheticCount = useCallback((value: number): number => {
+    if (!Number.isFinite(value)) {
+      return 0
+    }
+
+    return Math.max(0, Math.min(20, Math.round(value)))
+  }, [])
+
+  const handleSyntheticCountChange = useCallback(
+    (
+      nextValue: string,
+      setter: (value: number) => void,
+    ): void => {
+      const parsed = Number(nextValue)
+      setter(Number.isFinite(parsed) ? clampSyntheticCount(parsed) : 0)
+    },
+    [clampSyntheticCount],
+  )
 
   const handleEditorChange = (html: string): void => {
     setEditContent(html)
@@ -302,7 +341,7 @@ export default function BookEditorPage() {
     }
   }
 
-  const handleSaveBook = async (): Promise<void> => {
+  const handleSaveBook = useCallback(async (): Promise<void> => {
     setSavingBook(true)
 
     try {
@@ -315,6 +354,10 @@ export default function BookEditorPage() {
           slug: editSlug,
           isPublic: editIsPublic,
           readingModeDefault: editReadingMode,
+          syntheticCommentsPerChapter: clampSyntheticCount(editSyntheticCommentsPerChapter),
+          syntheticQuotesPerChapter: clampSyntheticCount(editSyntheticQuotesPerChapter),
+          syntheticReactionsPerChapter: clampSyntheticCount(editSyntheticReactionsPerChapter),
+          syntheticCommentsUseLlm: editSyntheticCommentsUseLlm,
         }),
       })
 
@@ -330,7 +373,44 @@ export default function BookEditorPage() {
     } finally {
       setSavingBook(false)
     }
-  }
+  }, [bookId, clampSyntheticCount, editDescription, editIsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
+
+  const handleSeedSyntheticEngagement = useCallback(async (): Promise<void> => {
+    setSeedingEngagement(true)
+
+    try {
+      const response = await fetch(`/api/books/${bookId}/synthetic-engagement`, {
+        method: 'POST',
+      })
+
+      const payload = (await response.json()) as {
+        error?: string
+        generated?: {
+          comments: number
+          quotes: number
+          reactions: number
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Не удалось заселить главы активностью')
+      }
+
+      toast({
+        title: 'Синтетическая активность добавлена',
+        description: `Комментарии: ${payload.generated?.comments ?? 0} · Цитаты: ${payload.generated?.quotes ?? 0} · Реакции: ${payload.generated?.reactions ?? 0}`,
+      })
+      await fetchBook()
+    } catch (error) {
+      toast({
+        title: 'Ошибка генерации активности',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
+    } finally {
+      setSeedingEngagement(false)
+    }
+  }, [bookId, fetchBook, toast])
 
   const replaceCoverPreview = useCallback((nextPreviewUrl: string | null): void => {
     setCoverPreviewUrl((currentPreviewUrl) => {
@@ -680,6 +760,112 @@ export default function BookEditorPage() {
                   showVisibility
                   disabled={savingBook}
                 />
+
+                <Card className="border-border/60">
+                  <CardHeader className="space-y-2">
+                    <CardTitle className="text-base">Синтетическая активность</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Нужна для пустого старта: автор может заранее “заселить” книгу комментариями,
+                      цитатами и реакциями. Эти записи помечаются как синтетические и потом могут
+                      скрываться отдельно от реальных.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium">Комментарии / глава</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={editSyntheticCommentsPerChapter}
+                          onChange={(event) => {
+                            handleSyntheticCountChange(event.target.value, setEditSyntheticCommentsPerChapter)
+                          }}
+                          disabled={savingBook || seedingEngagement}
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium">Цитаты / глава</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={editSyntheticQuotesPerChapter}
+                          onChange={(event) => {
+                            handleSyntheticCountChange(event.target.value, setEditSyntheticQuotesPerChapter)
+                          }}
+                          disabled={savingBook || seedingEngagement}
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium">Реакции / глава</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={editSyntheticReactionsPerChapter}
+                          onChange={(event) => {
+                            handleSyntheticCountChange(event.target.value, setEditSyntheticReactionsPerChapter)
+                          }}
+                          disabled={savingBook || seedingEngagement}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                      <Label htmlFor="synthetic-comments-use-llm" className="items-start gap-3">
+                        <Checkbox
+                          id="synthetic-comments-use-llm"
+                          checked={editSyntheticCommentsUseLlm}
+                          onCheckedChange={(checked) => setEditSyntheticCommentsUseLlm(checked === true)}
+                          disabled={savingBook || seedingEngagement}
+                          className="mt-0.5"
+                        />
+                        <span className="space-y-1">
+                          <span className="block text-sm font-medium">
+                            Использовать LLM для синтетических комментариев
+                          </span>
+                          <span className="block text-sm text-muted-foreground">
+                            Цитаты и диапазоны всё равно остаются привязанными к реальному тексту главы,
+                            а `LLM` меняет формулировки комментариев и может подсказать эмодзи для реакций.
+                            Если `LLM_*` переменные не настроены, генератор вернёт ошибку.
+                          </span>
+                        </span>
+                      </Label>
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Генератор проходит по всем главам и дозаполняет только недостающий минимум.
+                        Уже созданные синтетические записи повторно не дублируются.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-4 rounded-full"
+                        disabled={savingBook || seedingEngagement || bookInfoHasChanges}
+                        onClick={() => {
+                          void handleSeedSyntheticEngagement()
+                        }}
+                      >
+                        {seedingEngagement ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        Сгенерировать активность по всем главам
+                      </Button>
+                      {bookInfoHasChanges ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Сначала сохраните настройки книги, чтобы генератор использовал актуальные минимумы.
+                        </p>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               <SheetFooter className="border-t bg-background/95">
@@ -687,7 +873,7 @@ export default function BookEditorPage() {
                   type="button"
                   variant="outline"
                   onClick={() => setBookSettingsOpen(false)}
-                  disabled={savingBook}
+                  disabled={savingBook || seedingEngagement}
                 >
                   Закрыть
                 </Button>
@@ -696,7 +882,7 @@ export default function BookEditorPage() {
                   onClick={() => {
                     void handleSaveBook()
                   }}
-                  disabled={savingBook || !bookInfoHasChanges}
+                  disabled={savingBook || seedingEngagement || !bookInfoHasChanges}
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                   {savingBook ? (

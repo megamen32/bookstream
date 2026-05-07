@@ -5,6 +5,7 @@ import {
   mapAnnotationComment,
   sortCommentsByTop,
 } from '@/lib/annotations'
+import { limitSyntheticItems } from '@/lib/synthetic-visibility'
 
 export async function GET(
   request: NextRequest,
@@ -14,6 +15,21 @@ export async function GET(
     const { id } = await params
     const { searchParams } = new URL(request.url)
     const readerId = searchParams.get('readerId')
+
+    const chapter = await db.chapter.findUnique({
+      where: { id },
+      select: {
+        book: {
+          select: {
+            syntheticCommentsPerChapter: true,
+          },
+        },
+      },
+    })
+
+    if (!chapter) {
+      return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
+    }
 
     const annotations = await db.annotation.findMany({
       where: {
@@ -38,8 +54,13 @@ export async function GET(
       take: 100,
     })
 
+    const visibleAnnotations = limitSyntheticItems(
+      annotations,
+      chapter.book.syntheticCommentsPerChapter,
+    )
+
     const comments = sortCommentsByTop(
-      annotations.map((annotation) => mapAnnotationComment(annotation, readerId)),
+      visibleAnnotations.map((annotation) => mapAnnotationComment(annotation, readerId)),
     )
 
     return NextResponse.json({ comments })

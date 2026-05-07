@@ -67,6 +67,7 @@ export interface UnifiedAnnotationItem {
   username: string
   body: string | null
   emoji: string | null
+  isSynthetic: boolean
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
@@ -96,6 +97,7 @@ export interface AnnotationCommentItem {
   username: string
   body: string
   status: string
+  isSynthetic: boolean
   createdAt: string
   selectedText: string | null
   paragraphId: string | null
@@ -126,6 +128,7 @@ export interface AnnotationQuoteItem {
   createdAt: string
   upvoteCount: number
   reacted: boolean
+  isSynthetic: boolean
 }
 
 export interface AnnotationCommentRowLike {
@@ -138,6 +141,7 @@ export interface AnnotationCommentRowLike {
   username: string
   body: string | null
   status: string
+  isSynthetic: boolean
   createdAt: Date
   selectedText: string | null
   paragraphId: string | null
@@ -157,6 +161,7 @@ export interface AnnotationQuoteRowLike {
   createdAt: Date
   readerId: string
   username: string
+  isSynthetic: boolean
   votes: AnnotationVoteLike[]
   chapter: AnnotationChapterLike
 }
@@ -199,6 +204,7 @@ export function mapAnnotationComment(
     username: annotation.username,
     body: annotation.body || '',
     status: annotation.status,
+    isSynthetic: annotation.isSynthetic,
     createdAt: annotation.createdAt.toISOString(),
     selectedText,
     paragraphId,
@@ -242,6 +248,7 @@ export function mapAnnotationQuote(
     createdAt: annotation.createdAt.toISOString(),
     upvoteCount: annotation.votes.length,
     reacted: Boolean(readerId && annotation.votes.some((vote) => vote.readerId === readerId)),
+    isSynthetic: annotation.isSynthetic,
   }
 }
 

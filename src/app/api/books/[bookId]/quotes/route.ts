@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapAnnotationQuote, sortQuotesByTop } from '@/lib/annotations'
+import { limitSyntheticItems } from '@/lib/synthetic-visibility'
 
 interface RouteParams {
   bookId: string
@@ -40,7 +41,13 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const readerId = searchParams.get('readerId')
 
-    const [annotations, presets] = await Promise.all([
+    const [book, annotations, presets] = await Promise.all([
+      db.book.findUnique({
+        where: { id: bookId },
+        select: {
+          syntheticQuotesPerChapter: true,
+        },
+      }),
       db.annotation.findMany({
         where: {
           bookId,
@@ -62,6 +69,7 @@ export async function GET(
           createdAt: true,
           readerId: true,
           username: true,
+          isSynthetic: true,
           votes: {
             select: {
               readerId: true,
@@ -85,12 +93,27 @@ export async function GET(
       }),
     ])
 
+    if (!book) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
+    const annotationsByChapter = new Map<string, typeof annotations>()
+    for (const annotation of annotations) {
+      const chapterAnnotations = annotationsByChapter.get(annotation.chapter.id) ?? []
+      chapterAnnotations.push(annotation)
+      annotationsByChapter.set(annotation.chapter.id, chapterAnnotations)
+    }
+
+    const visibleAnnotations = Array.from(annotationsByChapter.values()).flatMap((chapterAnnotations) => (
+      limitSyntheticItems(chapterAnnotations, book.syntheticQuotesPerChapter)
+    ))
+
     const presetLabels = Object.fromEntries(
       presets.map((preset) => [preset.slug, preset.label]),
     ) as Record<string, string>
 
     const payload = sortQuotesByTop(
-      annotations
+      visibleAnnotations
         .map((quote) => mapAnnotationQuote(quote, readerId))
         .filter((quote): quote is NonNullable<typeof quote> => Boolean(quote))
         .map((quote): QuotePayload => ({

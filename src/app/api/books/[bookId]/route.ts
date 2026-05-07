@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isAdminRequest } from '@/lib/admin-auth'
 
 function canViewDrafts(request: NextRequest): boolean {
   const { searchParams } = new URL(request.url)
@@ -102,19 +103,69 @@ export async function PUT(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
+    if (!isAdminRequest(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { bookId } = await params
     const body = await request.json()
-    const { title, description, slug, isPublic, readingModeDefault } = body
+    const {
+      title,
+      description,
+      slug,
+      isPublic,
+      readingModeDefault,
+      syntheticCommentsPerChapter,
+      syntheticQuotesPerChapter,
+      syntheticReactionsPerChapter,
+      syntheticCommentsUseLlm,
+    } = body
+
+    const clampSyntheticCount = (value: unknown): number | undefined => {
+      if (!Number.isFinite(value)) {
+        return undefined
+      }
+
+      return Math.max(0, Math.min(20, Math.round(Number(value))))
+    }
+
+    const updateData: {
+      title?: string
+      description?: string | null
+      slug?: string
+      isPublic?: boolean
+      readingModeDefault?: string
+      syntheticCommentsPerChapter?: number
+      syntheticQuotesPerChapter?: number
+      syntheticReactionsPerChapter?: number
+      syntheticCommentsUseLlm?: boolean
+    } = {}
+
+    if (title !== undefined) updateData.title = title
+    if (description !== undefined) updateData.description = description
+    if (slug !== undefined) updateData.slug = slug
+    if (isPublic !== undefined) updateData.isPublic = isPublic
+    if (readingModeDefault !== undefined) updateData.readingModeDefault = readingModeDefault
+    if (syntheticCommentsUseLlm !== undefined) updateData.syntheticCommentsUseLlm = Boolean(syntheticCommentsUseLlm)
+
+    const commentsMinimum = clampSyntheticCount(syntheticCommentsPerChapter)
+    if (commentsMinimum !== undefined) {
+      updateData.syntheticCommentsPerChapter = commentsMinimum
+    }
+
+    const quotesMinimum = clampSyntheticCount(syntheticQuotesPerChapter)
+    if (quotesMinimum !== undefined) {
+      updateData.syntheticQuotesPerChapter = quotesMinimum
+    }
+
+    const reactionsMinimum = clampSyntheticCount(syntheticReactionsPerChapter)
+    if (reactionsMinimum !== undefined) {
+      updateData.syntheticReactionsPerChapter = reactionsMinimum
+    }
 
     const book = await db.book.update({
       where: { id: bookId },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(slug !== undefined && { slug }),
-        ...(isPublic !== undefined && { isPublic }),
-        ...(readingModeDefault !== undefined && { readingModeDefault }),
-      },
+      data: updateData,
     })
 
     return NextResponse.json(book)

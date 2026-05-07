@@ -38,7 +38,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const [annotationReactions, legacyReactions] = await Promise.all([
+    const chapterVariant = await db.chapterVariant.findUnique({
+      where: { id: chapterVariantId },
+      select: {
+        chapterId: true,
+        chapter: {
+          select: {
+            book: {
+              select: {
+                syntheticReactionsPerChapter: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (!chapterVariant) {
+      return NextResponse.json({ error: 'Chapter variant not found' }, { status: 404 })
+    }
+
+    const [annotationReactions, realChapterReactionCount, legacyReactions] = await Promise.all([
       db.annotation.findMany({
         where: {
           kind: 'reaction',
@@ -48,9 +68,18 @@ export async function GET(request: NextRequest) {
         },
         select: {
           emoji: true,
+          isSynthetic: true,
           readerId: true,
         },
         orderBy: { createdAt: 'desc' },
+      }),
+      db.annotation.count({
+        where: {
+          chapterId: chapterVariant.chapterId,
+          kind: 'reaction',
+          status: 'active',
+          isSynthetic: false,
+        },
       }),
       db.reaction.findMany({
         where: {
@@ -65,8 +94,12 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
+    const visibleAnnotationReactions = realChapterReactionCount >= chapterVariant.chapter.book.syntheticReactionsPerChapter
+      ? annotationReactions.filter((reaction) => !reaction.isSynthetic)
+      : annotationReactions
+
     return NextResponse.json(groupReactions([
-      ...annotationReactions.map((reaction) => ({
+      ...visibleAnnotationReactions.map((reaction) => ({
         emoji: reaction.emoji || '👍',
         readerId: reaction.readerId,
       })),

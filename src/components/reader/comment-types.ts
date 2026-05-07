@@ -17,6 +17,7 @@ export interface ReaderComment {
   readerId: string
   username: string
   body: string
+  isSynthetic?: boolean
   createdAt: string
   selectedText?: string | null
   paragraphId?: string | null
