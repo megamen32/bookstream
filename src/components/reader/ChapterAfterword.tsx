@@ -55,7 +55,7 @@ export default function ChapterAfterword({
   showCommentsAfterChapter = true,
   onOpenComments,
 }: ChapterAfterwordProps) {
-  const { readerId, showCommunityAnnotations } = useReaderStore()
+  const { readerId, showCommunityAnnotations, username } = useReaderStore()
   const [commentVoteOverrides, setCommentVoteOverrides] = useState<Record<string, VoteState>>({})
   const [quoteVoteOverrides, setQuoteVoteOverrides] = useState<Record<string, VoteState>>({})
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -104,9 +104,10 @@ export default function ChapterAfterword({
         : 'chapter-afterword--quiet'
       : 'chapter-afterword--compact',
   ].join(' ')
-  const likesLabel = stats.reactionsCount > 0
-    ? formatCount(stats.reactionsCount, 'лайк', 'лайка')
-    : null
+  const likesLabel = formatCount(stats.reactionsCount, 'лайк', 'лайка')
+  const composerAvatar = readerId
+    ? (username.trim().charAt(0).toUpperCase() || '•')
+    : '⋯'
 
   if (!showCommentsAfterChapter) {
     return (
@@ -224,19 +225,25 @@ export default function ChapterAfterword({
             <div className="chapter-afterword__subtitle">
               {formatCount(stats.commentsCount, 'комментарий', 'комментария')}
               {stats.quotesCount > 0 ? ` · ${formatCount(stats.quotesCount, 'цитата', 'цитаты')}` : ''}
-              {likesLabel ? ` · ${likesLabel}` : ''}
+              {stats.reactionsCount > 0 ? ` · ${likesLabel}` : ''}
             </div>
           </div>
-
-          <button
-            type="button"
-            className="chapter-afterword__open-button"
-            onClick={() => onOpenComments?.(chapterId, null)}
-          >
-            <MessageSquare size={14} />
-            Написать комментарий
-          </button>
         </div>
+
+        <button
+          type="button"
+          className="chapter-afterword__composer"
+          onClick={() => onOpenComments?.(chapterId, null)}
+        >
+          <span className="chapter-afterword__composer-avatar" aria-hidden="true">
+            {composerAvatar}
+          </span>
+          <span className="chapter-afterword__composer-copy">
+            <span className="chapter-afterword__composer-placeholder">
+              Введите комментарий
+            </span>
+          </span>
+        </button>
 
         {comments.length > 0 ? (
           <div className="chapter-afterword__comments">

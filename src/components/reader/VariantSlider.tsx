@@ -20,6 +20,8 @@ interface VariantSliderProps {
   variantPresets?: Record<string, VariantPresetMeta>
   /** Currently generating variant type (shows spinner) */
   generatingVariant?: string | null
+  /** Layout for the variant list. */
+  layout?: 'row' | 'stacked'
 }
 
 const BUILTIN_INFO: Record<string, { label: string; emoji: string }> = {
@@ -31,6 +33,7 @@ export default function VariantSlider({
   generatedVariants,
   variantPresets = {},
   generatingVariant = null,
+  layout = 'row',
 }: VariantSliderProps) {
   const { variantType, setVariantType } = useReaderStore()
 
@@ -67,14 +70,15 @@ export default function VariantSlider({
     <div
       className="reader-variant-slider"
       style={{
-        display: 'flex',
+        display: layout === 'row' ? 'flex' : 'grid',
+        flexDirection: layout === 'row' ? 'row' : 'column',
         backgroundColor: 'color-mix(in srgb, var(--r-bg-secondary) 72%, transparent)',
-        borderRadius: '9999px',
+        borderRadius: layout === 'row' ? '9999px' : '1rem',
         padding: '0.25rem',
         gap: '0.1875rem',
         border: '1px solid color-mix(in srgb, var(--r-border) 68%, transparent)',
         backdropFilter: 'blur(14px)',
-        overflowX: 'auto',
+        overflowX: layout === 'row' ? 'auto' : 'visible',
       }}
     >
       {sortedItems.map(({ type, preset, isGenerated }) => {
@@ -89,9 +93,10 @@ export default function VariantSlider({
             onClick={() => !isGenerating && handleChange(type)}
             disabled={isGenerating}
             style={{
-              flex: 1,
+              flex: layout === 'row' ? 1 : 'initial',
+              width: layout === 'row' ? 'auto' : '100%',
               padding: '0.55rem 0.8rem',
-              borderRadius: '9999px',
+              borderRadius: layout === 'row' ? '9999px' : '0.875rem',
               border: isActive
                 ? 'none'
                 : isGenerated
@@ -109,11 +114,11 @@ export default function VariantSlider({
                   ? 'var(--r-text-secondary)'
                   : 'var(--r-text-tertiary, var(--r-text-secondary))',
               transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
+              whiteSpace: layout === 'row' ? 'nowrap' : 'normal',
               minHeight: '38px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: layout === 'row' ? 'center' : 'flex-start',
               gap: '0.25rem',
               opacity: isGenerating ? 0.7 : 1,
               position: 'relative',
@@ -176,6 +181,7 @@ export default function VariantSlider({
                 style={{
                   fontSize: '0.625rem',
                   opacity: 0.7,
+                  marginLeft: layout === 'row' ? 0 : 'auto',
                 }}
               >
                 {preset.targetSizePercent}%

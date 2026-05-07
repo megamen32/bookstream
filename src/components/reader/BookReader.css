@@ -193,33 +193,6 @@
   font-weight: 650;
 }
 
-.book-reader-tap-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 10;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.book-reader-tap-zone-left {
-  left: 0;
-  width: 30%;
-}
-
-.book-reader-tap-zone-center {
-  left: 30%;
-  width: 40%;
-}
-
-.book-reader-tap-zone-right {
-  right: 0;
-  width: 30%;
-}
-
 .book-reader-hud {
   position: absolute;
   left: 50%;
@@ -240,17 +213,27 @@
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  opacity: 0;
-  transform: translate(-50%, 0.35rem) scale(0.98);
+  opacity: 0.78;
+  transform: translate(-50%, 0);
   pointer-events: none;
   transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
     opacity 0.16s ease,
     transform 0.16s ease;
 }
 
 .book-reader-hud.is-visible {
   opacity: 1;
-  transform: translate(-50%, 0) scale(1);
+  transform: translate(-50%, -0.12rem) scale(1.02);
+  background: color-mix(in srgb, var(--r-bg-secondary) 92%, transparent);
+  border-color: color-mix(in srgb, var(--r-accent) 26%, var(--r-border));
+  color: var(--r-text);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--r-accent) 9%, transparent);
 }
 
 .book-reader-hud i {
@@ -259,6 +242,20 @@
   border-radius: 999px;
   background: currentColor;
   opacity: 0.45;
+}
+
+.book-reader-hud__current,
+.book-reader-hud__total {
+  min-width: 1.1rem;
+  text-align: center;
+}
+
+.book-reader-hud__current {
+  color: var(--r-text);
+}
+
+.book-reader-hud__total {
+  opacity: 0.72;
 }
 
 .book-reader-comment-button {

@@ -15,7 +15,6 @@ import SearchPanel from '@/components/reader/SearchPanel'
 import UserActivityPanel from '@/components/reader/UserActivityPanel'
 import ReaderChrome, { type ReaderChromeOverlay } from '@/components/reader/ReaderChrome'
 import ReaderCommentsOverlay from '@/components/reader/ReaderCommentsOverlay'
-import ReaderVariantsPanel from '@/components/reader/ReaderVariantsPanel'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import type {
   FeedSectionData,
@@ -147,6 +146,7 @@ export default function ReaderPage() {
   const [generatingVariant, setGeneratingVariant] = useState<string | null>(null)
   const [chromeVisible, setChromeVisible] = useState(false)
   const [activeOverlay, setActiveOverlay] = useState<ReaderChromeOverlay>('none')
+  const [variantsExpanded, setVariantsExpanded] = useState(false)
   const [scrollProgress, setScrollProgress] = useState(0)
   const [bookmarksByChapter, setBookmarksByChapter] = useState<Record<string, string>>({})
   const [quoteTargetParagraphId, setQuoteTargetParagraphId] = useState<string | null>(null)
@@ -1097,20 +1097,24 @@ export default function ReaderPage() {
   const closeChrome = useCallback(() => {
     setChromeVisible(false)
     setActiveOverlay('none')
+    setVariantsExpanded(false)
   }, [])
 
   const openChrome = useCallback(() => {
     setChromeVisible(true)
     setActiveOverlay('none')
+    setVariantsExpanded(false)
   }, [])
 
   const openOverlay = useCallback((overlay: Exclude<ReaderChromeOverlay, 'none'>) => {
     setChromeVisible(true)
+    setVariantsExpanded(false)
     setActiveOverlay(overlay)
   }, [])
 
   const closeOverlay = useCallback(() => {
     setActiveOverlay('none')
+    setVariantsExpanded(false)
   }, [])
 
   const toggleChrome = useCallback(() => {
@@ -1118,6 +1122,7 @@ export default function ReaderPage() {
       const nextVisible = !current
       if (!nextVisible) {
         setActiveOverlay('none')
+        setVariantsExpanded(false)
       }
       return nextVisible
     })
@@ -1179,9 +1184,11 @@ export default function ReaderPage() {
     openOverlay('comments')
   }, [activeChapterId, activeOverlay, closeOverlay, commentsChapterId, openOverlay, setReplyingTo])
 
-  const handleQuickActionVariants = useCallback(() => {
-    openOverlay('variants')
-  }, [openOverlay])
+  const handleQuickActionVariants = useCallback((open: boolean) => {
+    setChromeVisible(true)
+    setActiveOverlay('quick-actions')
+    setVariantsExpanded(open)
+  }, [])
 
   const handleQuickActionSearch = useCallback(() => {
     openOverlay('search')
@@ -1266,6 +1273,10 @@ export default function ReaderPage() {
         progressPercent={progressPercent}
         readingMode={readingMode}
         hasBookmark={Boolean(currentBookmark)}
+        variantsExpanded={variantsExpanded}
+        generatedVariants={availableVariants}
+        variantPresets={variantPresets}
+        generatingVariant={generatingVariant}
         onBack={handleBackToBook}
         onClose={closeChrome}
         onOpenTOC={() => openOverlay('toc')}
@@ -1273,11 +1284,18 @@ export default function ReaderPage() {
         onOpenComments={() => handleOpenComments(activeChapterId)}
         onToggleQuickActions={() => {
           setChromeVisible(true)
-          setActiveOverlay((current) => current === 'quick-actions' ? 'none' : 'quick-actions')
+          setActiveOverlay((current) => {
+            const next = current === 'quick-actions' ? 'none' : 'quick-actions'
+            if (next !== 'quick-actions') {
+              setVariantsExpanded(false)
+            }
+            return next
+          })
         }}
         onOpenSearch={handleQuickActionSearch}
         onOpenSettings={handleQuickActionSettings}
-        onOpenVariants={handleQuickActionVariants}
+        onToggleVariants={handleQuickActionVariants}
+        onVariantChange={(nextType) => { void handleVariantSelection(nextType) }}
         onToggleReadingMode={() => { void handleQuickActionReadingMode() }}
         onGoToBookmark={() => {
           scrollToBookmark()
@@ -1394,21 +1412,6 @@ export default function ReaderPage() {
             closeOverlay()
           }
         }}
-      />
-
-      <ReaderVariantsPanel
-        open={activeOverlay === 'variants'}
-        onOpenChange={(open) => {
-          if (open) {
-            openOverlay('variants')
-          } else {
-            closeOverlay()
-          }
-        }}
-        onVariantChange={(nextType) => { void handleVariantSelection(nextType) }}
-        generatedVariants={availableVariants}
-        variantPresets={variantPresets}
-        generatingVariant={generatingVariant}
       />
     </div>
   )

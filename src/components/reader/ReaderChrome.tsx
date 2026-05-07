@@ -5,6 +5,7 @@ import {
   AlignJustify,
   BookOpen,
   ChevronLeft,
+  ChevronDown,
   Clock3,
   List,
   MessageSquare,
@@ -13,7 +14,10 @@ import {
   Sparkles,
   StretchHorizontal,
 } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import VariantSlider from './VariantSlider'
 import type { ReadingMode } from '@/lib/store'
+import type { VariantType } from '@/lib/store'
 
 export type ReaderChromeOverlay =
   | 'none'
@@ -22,8 +26,16 @@ export type ReaderChromeOverlay =
   | 'activity'
   | 'search'
   | 'settings'
-  | 'variants'
   | 'comments'
+
+interface VariantPresetMeta {
+  id?: string
+  label: string
+  emoji: string
+  description?: string
+  targetSizePercent?: number | null
+  position?: number
+}
 
 interface ReaderChromeProps {
   visible: boolean
@@ -33,6 +45,10 @@ interface ReaderChromeProps {
   progressPercent: number
   readingMode: ReadingMode
   hasBookmark: boolean
+  variantsExpanded: boolean
+  generatedVariants: string[]
+  variantPresets: Record<string, VariantPresetMeta>
+  generatingVariant?: string | null
   onBack: () => void
   onClose: () => void
   onOpenTOC: () => void
@@ -41,7 +57,8 @@ interface ReaderChromeProps {
   onToggleQuickActions: () => void
   onOpenSearch: () => void
   onOpenSettings: () => void
-  onOpenVariants: () => void
+  onToggleVariants: (open: boolean) => void
+  onVariantChange: (type: VariantType) => void
   onToggleReadingMode: () => void
   onGoToBookmark: () => void
 }
@@ -122,6 +139,10 @@ export default function ReaderChrome({
   progressPercent,
   readingMode,
   hasBookmark,
+  variantsExpanded,
+  generatedVariants,
+  variantPresets,
+  generatingVariant = null,
   onBack,
   onClose,
   onOpenTOC,
@@ -130,7 +151,8 @@ export default function ReaderChrome({
   onToggleQuickActions,
   onOpenSearch,
   onOpenSettings,
-  onOpenVariants,
+  onToggleVariants,
+  onVariantChange,
   onToggleReadingMode,
   onGoToBookmark,
 }: ReaderChromeProps): React.ReactElement | null {
@@ -236,12 +258,39 @@ export default function ReaderChrome({
               description="Найти фразу в текущем тексте"
               onClick={onOpenSearch}
             />
-            <QuickAction
-              icon={<StretchHorizontal size={17} />}
-              title="Версии текста"
-              description="Открыть переключение между вариантами"
-              onClick={onOpenVariants}
-            />
+            <Collapsible open={variantsExpanded} onOpenChange={onToggleVariants}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className={`reader-chrome__action${variantsExpanded ? ' is-expanded' : ''}`}
+                  data-reader-ignore-chrome="true"
+                >
+                  <span className="reader-chrome__action-icon">
+                    <StretchHorizontal size={17} />
+                  </span>
+                  <span className="reader-chrome__action-copy">
+                    <span className="reader-chrome__action-title">Версии текста</span>
+                    <span className="reader-chrome__action-description">
+                      Показать оригинал и сжатые варианты
+                    </span>
+                  </span>
+                  <span className="reader-chrome__action-chevron" aria-hidden="true">
+                    <ChevronDown size={16} />
+                  </span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="reader-chrome__action-variants">
+                  <VariantSlider
+                    layout="stacked"
+                    onVariantChange={onVariantChange}
+                    generatedVariants={generatedVariants}
+                    variantPresets={variantPresets}
+                    generatingVariant={generatingVariant}
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
             <QuickAction
               icon={readingMode === 'feed' ? <BookOpen size={17} /> : <AlignJustify size={17} />}
               title={readingMode === 'feed' ? 'Переключить в книгу' : 'Переключить в ленту'}

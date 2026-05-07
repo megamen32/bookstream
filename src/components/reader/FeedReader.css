@@ -185,39 +185,43 @@
   contain: layout paint;
   margin: clamp(30px, 8vw, 64px) auto 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, currentColor 6%, transparent);
-  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, rgb(139, 92, 246) 18%, currentColor 10%);
+  border-radius: 30px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, white 1%), color-mix(in srgb, var(--background) 90%, currentColor 2%));
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(139, 92, 246) 20%, transparent), transparent 28rem),
+    radial-gradient(circle at 0% 100%, color-mix(in srgb, rgb(16, 185, 129) 12%, transparent), transparent 18rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, black 18%), color-mix(in srgb, var(--background) 90%, currentColor 4%));
   box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.05),
+    0 22px 70px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(120%);
 }
 
 .chapter-afterword--rich {
   min-height: 260px;
-  padding: 18px;
+  padding: 22px;
 }
 
 .chapter-afterword--loading {
   min-height: 220px;
-  padding: 18px;
+  padding: 22px;
 }
 
 .chapter-afterword--medium {
   min-height: 210px;
-  padding: 18px;
+  padding: 22px;
 }
 
 .chapter-afterword--quiet {
   min-height: 142px;
-  padding: 20px;
+  padding: 22px;
 }
 
 .chapter-afterword--compact {
   min-height: 78px;
   border-radius: 24px;
-  background: color-mix(in srgb, var(--background) 92%, currentColor 2%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 84%, black 16%), color-mix(in srgb, var(--background) 92%, currentColor 4%));
 }
 
 .chapter-afterword__top {
@@ -236,69 +240,101 @@
 
 .chapter-afterword__title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .chapter-afterword__title {
-  font-size: clamp(1.05rem, 4.2vw, 1.4rem);
+  font-size: clamp(1.16rem, 4.2vw, 1.55rem);
   font-weight: 820;
-  line-height: 1.05;
+  line-height: 1.02;
   letter-spacing: -0.045em;
 }
 
 .chapter-afterword__subtitle {
   margin-top: 5px;
-  color: color-mix(in srgb, currentColor 50%, transparent);
+  color: color-mix(in srgb, currentColor 56%, transparent);
   font-size: 0.82rem;
   line-height: 1.25;
 }
 
-.chapter-afterword__open-button {
-  flex: 0 0 auto;
-  margin-left: auto;
-  min-height: 40px;
-  padding: 9px 14px;
-  border: 1px solid color-mix(in srgb, rgb(139, 92, 246) 22%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, rgb(139, 92, 246) 11%, transparent);
+.chapter-afterword__composer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 20px;
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: transparent;
+  box-shadow: none;
   color: inherit;
-  font-size: 0.78rem;
-  font-weight: 760;
-  white-space: nowrap;
+  text-align: left;
   transition:
-    transform 160ms ease,
-    background 160ms ease;
+    border-color 160ms ease,
+    color 160ms ease;
 }
 
-.chapter-afterword__open-button:active {
-  transform: scale(0.96);
+.chapter-afterword__composer:active {
+  border-bottom-color: color-mix(in srgb, rgb(59, 130, 246) 42%, transparent);
+}
+
+.chapter-afterword__composer-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, rgb(59, 130, 246) 72%, white 28%), color-mix(in srgb, rgb(37, 99, 235) 72%, black 28%));
+  color: white;
+  font-size: 0.84rem;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+}
+
+.chapter-afterword__composer-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.chapter-afterword__composer-placeholder {
+  color: color-mix(in srgb, currentColor 52%, transparent);
+  font-size: 1rem;
+  font-weight: 520;
+  letter-spacing: -0.01em;
 }
 
 .chapter-afterword__comments {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 18px;
 }
 
 .chapter-afterword__comment-card {
-  border-radius: 22px;
-  border-color: color-mix(in srgb, currentColor 7%, transparent);
+  border-radius: 20px;
+  border-color: color-mix(in srgb, currentColor 8%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 72%, white 1%), color-mix(in srgb, var(--background) 82%, currentColor 2%));
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 74%, black 26%), color-mix(in srgb, var(--background) 88%, currentColor 3%));
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .chapter-afterword__comment-card--lead {
-  border-color: color-mix(in srgb, rgb(139, 92, 246) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(59, 130, 246) 18%, transparent);
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, rgb(139, 92, 246) 12%, transparent), transparent 11rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 74%, white 1%), color-mix(in srgb, var(--background) 82%, currentColor 2%));
+    radial-gradient(circle at top right, color-mix(in srgb, rgb(59, 130, 246) 10%, transparent), transparent 10rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 72%, black 28%), color-mix(in srgb, var(--background) 88%, currentColor 4%));
 }
 
 .chapter-afterword__vote-button {
-  min-width: 72px;
-  border-color: color-mix(in srgb, currentColor 10%, transparent);
-  background: color-mix(in srgb, var(--background) 68%, currentColor 4%);
+  min-width: 0;
 }
 
 .chapter-afterword__reply-button {
@@ -309,8 +345,8 @@
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, rgb(139, 92, 246) 10%, transparent);
-  color: color-mix(in srgb, currentColor 78%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, currentColor 68%, transparent);
   font-size: 0.76rem;
   font-weight: 760;
   white-space: nowrap;
@@ -361,9 +397,10 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 7%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--background) 78%, currentColor 2%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 76%, black 24%), color-mix(in srgb, var(--background) 88%, currentColor 3%));
 }
 
 .chapter-afterword__quote-link {
@@ -414,15 +451,16 @@
   margin-top: 18px;
   min-height: 44px;
   border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, rgb(139, 92, 246) 10%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 74%, black 26%), color-mix(in srgb, var(--background) 88%, currentColor 3%));
   color: inherit;
   font-size: 0.86rem;
   font-weight: 760;
 }
 
 .chapter-afterword__footer-button--secondary {
-  background: color-mix(in srgb, var(--background) 70%, currentColor 3%);
+  border-color: color-mix(in srgb, rgb(59, 130, 246) 16%, currentColor 8%);
 }
 
 .chapter-afterword__quiet-orb {
@@ -433,7 +471,7 @@
   height: 132px;
   border-radius: 999px;
   background:
-    radial-gradient(circle, rgba(139, 92, 246, 0.22), transparent 68%);
+    radial-gradient(circle, rgba(139, 92, 246, 0.24), transparent 68%);
   pointer-events: none;
 }
 
@@ -710,18 +748,18 @@
 
   .chapter-afterword {
     margin-top: 36px;
-    border-radius: 26px;
+    border-radius: 28px;
   }
 
   .chapter-afterword--rich,
   .chapter-afterword--loading {
     min-height: 240px;
-    padding: 15px;
+    padding: 17px;
   }
 
   .chapter-afterword--medium {
     min-height: 200px;
-    padding: 15px;
+    padding: 17px;
   }
 
   .chapter-afterword--quiet {
@@ -736,7 +774,7 @@
     align-items: stretch;
   }
 
-  .chapter-afterword__open-button,
+  .chapter-afterword__composer,
   .chapter-afterword__reply-button,
   .chapter-afterword__vote-button {
     width: 100%;

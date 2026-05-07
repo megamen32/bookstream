@@ -49,6 +49,13 @@ interface BookReaderProps {
   onNavigate?: () => void
 }
 
+interface PointerGestureState {
+  pointerId: number
+  pointerType: string
+  clientX: number
+  clientY: number
+}
+
 export default function BookReader({
   paragraphs,
   variantId,
@@ -97,10 +104,9 @@ export default function BookReader({
   const quoteFocusAppliedRef = useRef(false)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const isSwitchingChapterRef = useRef(false)
-  const touchStartX = useRef(0)
-  const touchStartY = useRef(0)
   const prefetchNextStartedRef = useRef(false)
   const prefetchPrevStartedRef = useRef(false)
+  const pointerGestureRef = useRef<PointerGestureState | null>(null)
 
   const totalPages = Math.max(1, pages.length)
   const paragraphIndexMap = useMemo(
@@ -570,21 +576,94 @@ export default function BookReader({
     }
   }, [goNext, goPrev])
 
-  const handleTouchStart = (event: React.TouchEvent) => {
-    touchStartX.current = event.touches[0].clientX
-    touchStartY.current = event.touches[0].clientY
-  }
+  const clearPointerGesture = useCallback(() => {
+    pointerGestureRef.current = null
+  }, [])
 
-  const handleTouchEnd = (event: React.TouchEvent) => {
-    const dx = event.changedTouches[0].clientX - touchStartX.current
-    const dy = event.changedTouches[0].clientY - touchStartY.current
+  const isInteractiveTarget = useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) {
+      return false
+    }
 
-    if (Math.abs(dx) < 36) return
-    if (Math.abs(dx) < Math.abs(dy) * 1.15) return
+    return Boolean(target.closest(
+      'button, a, input, textarea, select, label, [role="dialog"], .selection-toolbar',
+    ))
+  }, [])
 
-    if (dx < 0) goNext()
-    else goPrev()
-  }
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      clearPointerGesture()
+      return
+    }
+
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    }
+  }, [clearPointerGesture])
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGestureRef.current
+    clearPointerGesture()
+
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    if (isInteractiveTarget(event.target)) {
+      return
+    }
+
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed) {
+      return
+    }
+
+    const dx = event.clientX - gesture.clientX
+    const dy = event.clientY - gesture.clientY
+    const absDx = Math.abs(dx)
+    const absDy = Math.abs(dy)
+
+    if (gesture.pointerType === 'touch' && absDx >= 36 && absDx > absDy * 1.15) {
+      if (dx < 0) {
+        goNext()
+      } else {
+        goPrev()
+      }
+      return
+    }
+
+    if (absDx > 8 || absDy > 8) {
+      return
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
+
+    if (relativeX <= 0.3) {
+      goPrev()
+      return
+    }
+
+    if (relativeX >= 0.7) {
+      goNext()
+      return
+    }
+
+    onCenterTap?.()
+  }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
+
+  const handlePointerCancel = useCallback(() => {
+    clearPointerGesture()
+  }, [clearPointerGesture])
+
+  const handlePointerLeave = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.buttons & 1) === 0) {
+      clearPointerGesture()
+    }
+  }, [clearPointerGesture])
 
   const renderParagraph = (paragraph: Paragraph) => {
     const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
@@ -685,8 +764,10 @@ export default function BookReader({
     <div
       ref={shellRef}
       className={`book-reader-shell chapter-${chapterTransition}`}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onPointerLeave={handlePointerLeave}
     >
       <div ref={viewportRef} className="book-reader-viewport">
         <div ref={pageAreaRef} className="book-reader-page-area">
@@ -745,28 +826,13 @@ export default function BookReader({
         </div>
       </div>
 
-      <button
-        className="book-reader-tap-zone book-reader-tap-zone-left"
-        aria-label="Предыдущая страница"
-        onClick={goPrev}
-      />
-
-      <button
-        className="book-reader-tap-zone book-reader-tap-zone-center"
-        aria-label="Показать элементы управления"
-        onClick={onCenterTap}
-      />
-
-      <button
-        className="book-reader-tap-zone book-reader-tap-zone-right"
-        aria-label="Следующая страница"
-        onClick={goNext}
-      />
-
-      <div className={`book-reader-hud ${showHud ? 'is-visible' : ''}`}>
-        <span>{currentPage}</span>
+      <div
+        className={`book-reader-hud ${showHud ? 'is-visible' : ''}`}
+        aria-label={`Страница ${currentPage} из ${totalPages}`}
+      >
+        <span className="book-reader-hud__current">{currentPage}</span>
         <i />
-        <span>{totalPages}</span>
+        <span className="book-reader-hud__total">{totalPages}</span>
       </div>
     </div>
   )

@@ -536,6 +536,11 @@
   border-color: color-mix(in srgb, var(--r-border) 74%, transparent);
 }
 
+.reader-chrome__action.is-expanded {
+  background: color-mix(in srgb, var(--r-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--r-accent) 22%, transparent);
+}
+
 .reader-chrome__action:disabled {
   opacity: 0.42;
   cursor: default;
@@ -571,6 +576,45 @@
   color: var(--r-text-secondary);
   font-size: 0.72rem;
   line-height: 1.35;
+}
+
+.reader-chrome__action-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  color: var(--r-text-secondary);
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+.reader-chrome__action.is-expanded .reader-chrome__action-chevron {
+  transform: rotate(180deg);
+  color: var(--r-accent);
+}
+
+.reader-chrome__action-variants {
+  padding: 0 0.86rem 0.25rem;
+  overflow: hidden;
+}
+
+.reader-chrome__action-variants[data-state='open'] {
+  animation: readerVariantsDropIn 180ms ease-out;
+}
+
+.reader-chrome__action-variants .reader-variant-slider {
+  margin-top: 0.1rem;
+}
+
+@keyframes readerVariantsDropIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.35rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .reader-comments-overlay {
