@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowUpRight, Ban } from 'lucide-react'
+import { ArrowUpRight, Ban, Reply } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import CommentVoteButton from '@/components/reader/CommentVoteButton'
 import type { ReaderComment } from '@/components/reader/comment-types'
@@ -111,9 +111,9 @@ export default function CommentCard({
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             <div
               className={cn(
                 'flex shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white',
@@ -186,27 +186,34 @@ export default function CommentCard({
             {comment.body}
           </p>
 
-          {secondaryActionLabel && onSecondaryAction ? (
-            <button
-              type="button"
-              onClick={onSecondaryAction}
-              className="mt-3 inline-flex min-h-8 items-center justify-center rounded-full bg-primary/10 px-3 text-[0.76rem] font-semibold text-foreground/80 transition-colors hover:bg-primary/15"
-            >
-              {secondaryActionLabel}
-            </button>
+          {action || onToggleVote || (secondaryActionLabel && onSecondaryAction) ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+              <div className="flex items-center gap-2">
+                {action ? action : null}
+                {!action && onToggleVote ? (
+                  <CommentVoteButton
+                    reacted={comment.reacted}
+                    upvoteCount={comment.upvoteCount}
+                    disabled={voteDisabled}
+                    onClick={onToggleVote}
+                    compact
+                  />
+                ) : null}
+              </div>
+
+              {secondaryActionLabel && onSecondaryAction ? (
+                <button
+                  type="button"
+                  onClick={onSecondaryAction}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-transparent px-3 text-[0.76rem] font-semibold text-foreground/70 transition-colors hover:border-border/70 hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Reply size={13} className="shrink-0" />
+                  {secondaryActionLabel}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
-
-        {action ? action : null}
-        {!action && onToggleVote ? (
-          <CommentVoteButton
-            reacted={comment.reacted}
-            upvoteCount={comment.upvoteCount}
-            disabled={voteDisabled}
-            onClick={onToggleVote}
-            compact
-          />
-        ) : null}
       </div>
     </article>
   )

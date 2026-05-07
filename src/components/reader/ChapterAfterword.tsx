@@ -104,6 +104,9 @@ export default function ChapterAfterword({
         : 'chapter-afterword--quiet'
       : 'chapter-afterword--compact',
   ].join(' ')
+  const likesLabel = stats.reactionsCount > 0
+    ? formatCount(stats.reactionsCount, 'лайк', 'лайка')
+    : null
 
   if (!showCommentsAfterChapter) {
     return (
@@ -221,6 +224,7 @@ export default function ChapterAfterword({
             <div className="chapter-afterword__subtitle">
               {formatCount(stats.commentsCount, 'комментарий', 'комментария')}
               {stats.quotesCount > 0 ? ` · ${formatCount(stats.quotesCount, 'цитата', 'цитаты')}` : ''}
+              {likesLabel ? ` · ${likesLabel}` : ''}
             </div>
           </div>
 
