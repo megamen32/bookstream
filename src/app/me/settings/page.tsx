@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Eye, EyeOff, KeyRound, Palette, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, KeyRound, Palette, Sparkles, UserRound } from 'lucide-react'
 import UserAreaLayout from '@/components/user/UserAreaLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -467,8 +468,16 @@ export default function UserSettingsPage(): React.ReactElement {
 
             <div className="rounded-xl border border-border/70 bg-background/80 p-4">
               <div className="text-muted-foreground">Админка</div>
-              <div className="mt-1 font-medium text-foreground">
-                {hasAdminPassword ? 'Доступна по имени читателя и паролю' : 'Пароль пока не задан'}
+              <div className="mt-1 space-y-3">
+                <div className="font-medium text-foreground">
+                  {hasAdminPassword ? 'Доступна по имени читателя и паролю' : 'Пароль пока не задан'}
+                </div>
+                <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+                  <Link href="/admin" aria-label="Перейти в админку">
+                    Перейти в админку
+                    <ArrowRight size={16} />
+                  </Link>
+                </Button>
               </div>
             </div>
 

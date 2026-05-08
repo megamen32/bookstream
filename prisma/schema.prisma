@@ -206,6 +206,23 @@ model Reader {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   authors         Author[]
+  adminLinkCodes  AdminLinkCode[]
+}
+
+model AdminLinkCode {
+  id          String   @id @default(cuid())
+  readerId    String
+  codeHash    String   @unique
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  revokedAt   DateTime?
+  reader      Reader   @relation(fields: [readerId], references: [id], onDelete: Cascade)
+
+  @@index([readerId, createdAt])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@index([revokedAt])
 }
 
 model AppSettings {

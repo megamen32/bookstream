@@ -117,7 +117,12 @@ export async function getAdminSessionReader(request: NextRequest): Promise<Admin
     return null
   }
 
-  return reader
+  return {
+    id: reader.id,
+    currentUsername: reader.currentUsername,
+    loginName: reader.loginName,
+    isMainAdmin: reader.isMainAdmin,
+  }
 }
 
 /**

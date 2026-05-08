@@ -124,7 +124,7 @@ function MobileSidebarTrigger() {
   )
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function ProtectedAdminLayout({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const router = useRouter()
   const pathname = usePathname()
@@ -145,19 +145,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       })
   }, [router])
 
-  // Don't redirect away from login page
-  const isLoginPage = pathname === '/admin/login'
-
-  if (!isLoginPage && (authenticated === null || !authenticated)) {
+  if (authenticated === null || !authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-2 border-amber-600 border-t-transparent rounded-full" />
       </div>
     )
-  }
-
-  if (isLoginPage) {
-    return <>{children}</>
   }
 
   return (
@@ -181,4 +174,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
     </SidebarProvider>
   )
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const isPublicPage = pathname === '/admin/login' || pathname === '/admin/link-device'
+
+  if (isPublicPage) {
+    return <>{children}</>
+  }
+
+  return <ProtectedAdminLayout>{children}</ProtectedAdminLayout>
 }

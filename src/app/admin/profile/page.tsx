@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import AdminLinkDeviceCard from '@/components/admin/AdminLinkDeviceCard'
 import { Save, Loader2, ShieldCheck, Sparkles, User } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { slugify } from '@/lib/slugify'
@@ -329,6 +330,8 @@ export default function AdminProfilePage() {
             </CardContent>
           </Card>
         ) : null}
+
+        <AdminLinkDeviceCard />
 
         <Card>
           <CardHeader>
