@@ -9,6 +9,7 @@ Product decisions in the app and docs should optimize for real reading, publishi
 
 BookStream is an interactive reading platform where books become living spaces for notes, quotes, comments, discussions, and multiple ways of reading.
 
+[Docs book ↓](docs/README.md)
 [Русская версия ↓](#bookstream-ru)
 
 ---
