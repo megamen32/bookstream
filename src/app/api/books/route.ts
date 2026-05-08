@@ -19,6 +19,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const authorSlug = searchParams.get('authorSlug')
+    const sort = searchParams.get('sort') === 'popular' ? 'popular' : 'latest'
+    const limitRaw = searchParams.get('limit')
+    const limit = limitRaw && Number.isFinite(Number(limitRaw))
+      ? Math.max(1, Math.min(100, Math.round(Number(limitRaw))))
+      : undefined
     const draftReaderId = await getDraftAccessReaderId(request)
     const where: Prisma.BookWhereInput = draftReaderId
       ? {
@@ -39,13 +44,19 @@ export async function GET(request: NextRequest) {
     const [books, commentCounts] = await Promise.all([
       db.book.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: sort === 'popular'
+          ? [
+              { readerStats: { _count: 'desc' } },
+              { createdAt: 'desc' },
+            ]
+          : { createdAt: 'desc' },
+        ...(limit ? { take: limit } : {}),
         include: {
           author: {
             select: { id: true, slug: true, name: true },
           },
           _count: {
-            select: { chapters: true },
+            select: { chapters: true, readerStats: true },
           },
         },
       }),
@@ -71,6 +82,7 @@ export async function GET(request: NextRequest) {
         _count: {
           ...book._count,
           comments: commentCountByBookId.get(book.id) ?? 0,
+          readers: book._count.readerStats,
         },
       })),
     )

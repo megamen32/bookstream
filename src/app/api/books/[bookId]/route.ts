@@ -120,6 +120,8 @@ export async function PUT(
       syntheticQuotesPerChapter,
       syntheticReactionsPerChapter,
       syntheticCommentsUseLlm,
+      openStatsPublic,
+      allowReaderVariantsAtOwnerExpense,
     } = body
 
     const clampSyntheticCount = (value: unknown): number | undefined => {
@@ -140,6 +142,8 @@ export async function PUT(
       syntheticQuotesPerChapter?: number
       syntheticReactionsPerChapter?: number
       syntheticCommentsUseLlm?: boolean
+      openStatsPublic?: boolean
+      allowReaderVariantsAtOwnerExpense?: boolean
     } = {}
 
     if (title !== undefined) updateData.title = title
@@ -152,6 +156,10 @@ export async function PUT(
     }
     if (readingModeDefault !== undefined) updateData.readingModeDefault = readingModeDefault
     if (syntheticCommentsUseLlm !== undefined) updateData.syntheticCommentsUseLlm = Boolean(syntheticCommentsUseLlm)
+    if (openStatsPublic !== undefined) updateData.openStatsPublic = Boolean(openStatsPublic)
+    if (allowReaderVariantsAtOwnerExpense !== undefined) {
+      updateData.allowReaderVariantsAtOwnerExpense = Boolean(allowReaderVariantsAtOwnerExpense)
+    }
 
     const commentsMinimum = clampSyntheticCount(syntheticCommentsPerChapter)
     if (commentsMinimum !== undefined) {
@@ -226,6 +234,14 @@ export async function DELETE(
 
     await db.$transaction(async (tx) => {
       await tx.readingProgress.deleteMany({
+        where: { bookId },
+      })
+
+      await tx.bookReaderStat.deleteMany({
+        where: { bookId },
+      })
+
+      await tx.chapterReaderStat.deleteMany({
         where: { bookId },
       })
 

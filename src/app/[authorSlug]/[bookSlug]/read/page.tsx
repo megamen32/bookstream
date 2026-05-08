@@ -40,6 +40,7 @@ import {
   saveProgressUpdate,
 } from '@/lib/offline-client'
 import type { OfflineProgressRecord, VariantPresetRecord } from '@/lib/offline-types'
+import { READING_STATS_HEARTBEAT_SECONDS } from '@/lib/reading-stats'
 
 interface BookData {
   id: string
@@ -64,6 +65,7 @@ interface RestoreRequest {
 }
 
 const BOOKMARKS_KEY = 'bookstream-bookmarks'
+const READING_ACTIVITY_WINDOW_MS = 20_000
 
 function loadBookmarks(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -169,11 +171,15 @@ export default function ReaderPage() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeChapterRef = useRef<string | null>(null)
   const variantTypeRef = useRef<VariantType>('original')
+  const scrollProgressRef = useRef(0)
   const quoteTargetParagraphIdRef = useRef<string | null>(null)
   const quoteTargetParagraphEndIdRef = useRef<string | null>(null)
   const chapterSectionCacheRef = useRef(new Map<string, FeedSectionData>())
   const chapterSectionRequestRef = useRef(new Map<string, Promise<FeedSectionData | null>>())
   const feedWindowPrefetchRef = useRef(new Set<string>())
+  const statsOpenSentRef = useRef(false)
+  const lastActivityAtRef = useRef(Date.now())
+  const lastStatsDispatchAtRef = useRef(Date.now())
 
   const setSearchContentNode = useCallback((node: HTMLDivElement | null) => {
     searchContentRef.current = node
@@ -212,9 +218,136 @@ export default function ReaderPage() {
   }, [variantType])
 
   useEffect(() => {
+    scrollProgressRef.current = scrollProgress
+  }, [scrollProgress])
+
+  useEffect(() => {
     quoteTargetParagraphIdRef.current = quoteTargetParagraphId
     quoteTargetParagraphEndIdRef.current = quoteTargetParagraphEndId
   }, [quoteTargetParagraphEndId, quoteTargetParagraphId])
+
+  const markReaderActivity = useCallback((): void => {
+    lastActivityAtRef.current = Date.now()
+  }, [])
+
+  const dispatchReadingStats = useCallback((
+    eventType: 'open' | 'heartbeat',
+    options?: { keepalive?: boolean; preferBeacon?: boolean },
+  ): void => {
+    if (!readerId || !bookId || !activeChapterRef.current || typeof navigator === 'undefined' || navigator.onLine === false) {
+      return
+    }
+
+    const now = Date.now()
+    const progressPercent = scrollProgressRef.current
+
+    if (eventType === 'heartbeat') {
+      const recentlyActive = now - lastActivityAtRef.current <= READING_ACTIVITY_WINDOW_MS
+      if (!recentlyActive) {
+        return
+      }
+    }
+
+    const secondsDelta = eventType === 'heartbeat'
+      ? Math.max(0, Math.min(READING_STATS_HEARTBEAT_SECONDS, Math.round((now - lastStatsDispatchAtRef.current) / 1000)))
+      : 0
+
+    if (eventType === 'heartbeat' && secondsDelta <= 0) {
+      return
+    }
+
+    lastStatsDispatchAtRef.current = now
+
+    const payload = JSON.stringify({
+      readerId,
+      bookId,
+      chapterId: activeChapterRef.current,
+      eventType,
+      secondsDelta,
+      progressPercent,
+    })
+
+    if (options?.preferBeacon && typeof navigator.sendBeacon === 'function') {
+      navigator.sendBeacon('/api/reading-stats', new Blob([payload], { type: 'application/json' }))
+      return
+    }
+
+    void fetch('/api/reading-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: options?.keepalive,
+    }).catch((error) => {
+      console.error('Failed to record reading stats:', error)
+    })
+  }, [bookId, readerId])
+
+  useEffect(() => {
+    statsOpenSentRef.current = false
+    lastActivityAtRef.current = Date.now()
+    lastStatsDispatchAtRef.current = Date.now()
+  }, [bookId, readerId])
+
+  useEffect(() => {
+    if (!bookId || !readerId || !activeChapterId || statsOpenSentRef.current || typeof navigator === 'undefined' || navigator.onLine === false) {
+      return
+    }
+
+    statsOpenSentRef.current = true
+    markReaderActivity()
+    dispatchReadingStats('open')
+  }, [activeChapterId, bookId, dispatchReadingStats, markReaderActivity, readerId])
+
+  useEffect(() => {
+    if (!bookId || !readerId) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      dispatchReadingStats('heartbeat')
+    }, READING_STATS_HEARTBEAT_SECONDS * 1000)
+
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') {
+        dispatchReadingStats('heartbeat', { keepalive: true, preferBeacon: true })
+        return
+      }
+
+      markReaderActivity()
+      lastStatsDispatchAtRef.current = Date.now()
+    }
+
+    const handlePageHide = (): void => {
+      dispatchReadingStats('heartbeat', { keepalive: true, preferBeacon: true })
+    }
+
+    const handleInteraction = (): void => {
+      markReaderActivity()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', handlePageHide)
+    window.addEventListener('beforeunload', handlePageHide)
+    window.addEventListener('pointerdown', handleInteraction, { passive: true })
+    window.addEventListener('keydown', handleInteraction)
+    window.addEventListener('wheel', handleInteraction, { passive: true })
+    window.addEventListener('touchstart', handleInteraction, { passive: true })
+
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('beforeunload', handlePageHide)
+      window.removeEventListener('pointerdown', handleInteraction)
+      window.removeEventListener('keydown', handleInteraction)
+      window.removeEventListener('wheel', handleInteraction)
+      window.removeEventListener('touchstart', handleInteraction)
+    }
+  }, [bookId, dispatchReadingStats, markReaderActivity, readerId])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -532,6 +665,8 @@ export default function ReaderPage() {
   const saveReadingProgress = useCallback((targetChapterId: string, progress: number): void => {
     if (!bookId || !readerId) return
 
+    markReaderActivity()
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
@@ -553,10 +688,12 @@ export default function ReaderPage() {
         console.error('Failed to save progress:', error)
       }
     }, 1200)
-  }, [bookId, readerId])
+  }, [bookId, markReaderActivity, readerId])
 
   const saveReadingMode = useCallback(async (nextMode: ReadingMode): Promise<void> => {
     if (!bookId || !readerId || !activeChapterId) return
+
+    markReaderActivity()
 
     try {
       await saveProgressUpdate({
@@ -573,7 +710,7 @@ export default function ReaderPage() {
     } catch (error) {
       console.error('Failed to save reading mode:', error)
     }
-  }, [activeChapterId, bookId, readerId, scrollProgress, variantType])
+  }, [activeChapterId, bookId, markReaderActivity, readerId, scrollProgress, variantType])
 
   useEffect(() => {
     return () => {
@@ -948,6 +1085,7 @@ export default function ReaderPage() {
   }, [activeChapterId, bookData, feedSections, fetchSingleChapter, prefetchFeedWindow, readingMode, variantType])
 
   const handleActiveChapterChange = useCallback((nextChapterId: string, progress: number, fromScroll: boolean): void => {
+    markReaderActivity()
     setActiveChapterId((current) => current === nextChapterId ? current : nextChapterId)
     setChapterId(nextChapterId)
     setScrollProgress(progress)
@@ -966,7 +1104,7 @@ export default function ReaderPage() {
         setAvailableVariants(activeFeedSection.chapter.variants.map((variant) => variant.variantType))
       }
     }
-  }, [feedSections, saveReadingProgress, setChapterId])
+  }, [feedSections, markReaderActivity, saveReadingProgress, setChapterId])
 
   const loadMoreNext = useCallback(async (): Promise<void> => {
     if (!bookId || !feedHasMoreNext || feedLoadingNext || feedSections.length === 0) return
@@ -1023,12 +1161,46 @@ export default function ReaderPage() {
 
       setGeneratingVariant(newType)
       try {
-        const response = await fetch(`/api/chapters/${activeChapterId}/summarize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ presetIds: [preset.id] }),
-        })
+        const attemptGeneration = async (useReaderLlm: boolean): Promise<Response> => await fetch(
+          `/api/chapters/${activeChapterId}/summarize`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              presetIds: [preset.id],
+              requesterReaderId: readerId,
+              useReaderLlm,
+            }),
+          }
+        )
+
+        let response = await attemptGeneration(false)
         if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as {
+            error?: string
+            requiresReaderLlmConsent?: boolean
+            missingReaderLlmConfig?: boolean
+          }
+
+          if (payload.requiresReaderLlmConsent) {
+            const confirmed = window.confirm('Владелец книги не оплачивает генерацию. Использовать ваши LLM-настройки и сгенерировать вариант за ваш счёт?')
+            if (!confirmed) {
+              return
+            }
+
+            response = await attemptGeneration(true)
+          } else if (payload.missingReaderLlmConfig) {
+            window.alert(payload.error || 'Для генерации нужны ваши LLM-настройки в профиле.')
+            return
+          } else {
+            console.error('Failed to generate variant:', payload.error || response.statusText)
+            return
+          }
+        }
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as { error?: string }
+          console.error('Failed to generate variant:', payload.error || response.statusText)
           return
         }
       } catch (error) {
@@ -1060,6 +1232,7 @@ export default function ReaderPage() {
     feedSections,
     readingMode,
     replaceFeedSections,
+    readerId,
     scrollProgress,
     setVariantType,
     variantPresets,

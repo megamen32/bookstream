@@ -21,7 +21,7 @@ interface Book {
   description: string | null
   coverUrl: string | null
   author: { id: string; slug: string; name: string }
-  _count: { chapters: number }
+  _count: { chapters: number; readers?: number }
 }
 
 function formatChapterLabel(count: number): string {
@@ -30,6 +30,7 @@ function formatChapterLabel(count: number): string {
 
 export default function HomePage() {
   const [books, setBooks] = useState<Book[]>([])
+  const [popularBooks, setPopularBooks] = useState<Book[]>([])
   const [authors, setAuthors] = useState<Author[]>([])
   const [loading, setLoading] = useState(true)
   const [offlineCatalog, setOfflineCatalog] = useState(false)
@@ -47,17 +48,29 @@ export default function HomePage() {
         const localBooks = await getOfflineCatalogBooks()
         const canUseOfflineOnly = nextOffline
         let resolvedBooks = localBooks as Book[]
+        let resolvedPopularBooks = (localBooks as Book[]).slice(0, 8)
 
         if (!canUseOfflineOnly) {
-          const res = await fetch('/api/books')
-          if (res.ok) {
-            const data = await res.json()
+          const [latestRes, popularRes] = await Promise.all([
+            fetch('/api/books?sort=latest'),
+            fetch('/api/books?sort=popular&limit=8'),
+          ])
+
+          if (latestRes.ok) {
+            const data = await latestRes.json()
             if (Array.isArray(data)) {
               resolvedBooks = data as Book[]
               setOfflineCatalog(false)
             }
           } else if (localBooks.length > 0) {
             setOfflineCatalog(true)
+          }
+
+          if (popularRes.ok) {
+            const data = await popularRes.json()
+            if (Array.isArray(data)) {
+              resolvedPopularBooks = data as Book[]
+            }
           }
         } else if (localBooks.length > 0) {
           setOfflineCatalog(true)
@@ -71,6 +84,7 @@ export default function HomePage() {
         if (isCancelled) return
 
         setBooks(resolvedBooks)
+        setPopularBooks(resolvedPopularBooks)
         const authorMap = new Map<string, Author>()
         resolvedBooks.forEach((book: Book) => {
           authorMap.set(book.author.slug, {
@@ -85,6 +99,7 @@ export default function HomePage() {
         const localBooks = await getOfflineCatalogBooks()
         if (!isCancelled) {
           setBooks(localBooks as Book[])
+          setPopularBooks((localBooks as Book[]).slice(0, 8))
           setOfflineCatalog(localBooks.length > 0)
           const authorMap = new Map<string, Author>()
           localBooks.forEach((book) => {
@@ -158,6 +173,61 @@ export default function HomePage() {
           </div>
         ) : books.length > 0 ? (
           <>
+            <section className="mt-10">
+              <div className="mb-5">
+                <h3 className="text-2xl font-semibold text-white">Популярное</h3>
+                <p className="mt-1 text-sm text-white/60">
+                  Книги, которые чаще всего открывают в режиме чтения.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                {popularBooks.map((book) => (
+                  <Link
+                    key={`popular-${book.id}`}
+                    href={`/${book.author.slug}/${book.slug}`}
+                    className="group block h-full"
+                  >
+                    <article className="poster-card h-full rounded-[2rem] border border-emerald-300/12 p-3 transition duration-300 hover:-translate-y-1 hover:border-emerald-200/20 hover:bg-white/10">
+                      <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/25">
+                        <div className="poster-sheen pointer-events-none absolute inset-0 z-10 opacity-60" />
+                        <div className="absolute left-3 top-3 z-20 inline-flex items-center rounded-full border border-emerald-300/20 bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-100">
+                          {(book._count.readers ?? 0)} читателей
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 z-10 h-24 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+                        <BookCoverArtwork
+                          title={book.title}
+                          slug={book.slug}
+                          coverUrl={book.coverUrl}
+                          className="aspect-[3/4] w-full"
+                          titleClassName="px-6 text-2xl"
+                        />
+                      </div>
+
+                      <div className="px-1 pb-1 pt-4">
+                        <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/50">
+                          {book.author.name}
+                        </p>
+                        <h4 className="mt-2 line-clamp-2 text-lg font-semibold leading-tight text-white">
+                          {book.title}
+                        </h4>
+                        <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/60">
+                          {book.description || 'Описание не указано.'}
+                        </p>
+                        <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                          <span className="text-white/48">{formatChapterLabel(book._count.chapters)}</span>
+                          <span className="inline-flex items-center gap-2 font-medium text-emerald-200 transition group-hover:text-emerald-100">
+                            Открыть
+                            <ArrowRight size={16} />
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
             <section className="mt-10">
               <div className="mb-5">
                 <h3 className="text-2xl font-semibold text-white">Последние книги</h3>

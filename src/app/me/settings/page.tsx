@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Eye, EyeOff, KeyRound, Palette, UserRound } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Palette, Sparkles, UserRound } from 'lucide-react'
 import UserAreaLayout from '@/components/user/UserAreaLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,11 @@ import { useReaderStore, type AccentTheme } from '@/lib/store'
 
 interface ReaderMetaResponse {
   hasPassword?: boolean
+  llmBaseUrl?: string | null
+  llmModel?: string | null
+  hasCustomLlmConfig?: boolean
+  hasEffectiveLlmConfig?: boolean
+  llmConfigSource?: 'custom' | 'main-admin-default' | 'none'
 }
 
 export default function UserSettingsPage(): React.ReactElement {
@@ -31,7 +36,12 @@ export default function UserSettingsPage(): React.ReactElement {
   const [draftAccentTheme, setDraftAccentTheme] = useState<AccentTheme>('sky')
   const [draftPassword, setDraftPassword] = useState('')
   const [draftPasswordConfirm, setDraftPasswordConfirm] = useState('')
+  const [draftLlmApiKey, setDraftLlmApiKey] = useState('')
+  const [draftLlmBaseUrl, setDraftLlmBaseUrl] = useState('')
+  const [draftLlmModel, setDraftLlmModel] = useState('')
   const [hasAdminPassword, setHasAdminPassword] = useState(false)
+  const [hasEffectiveLlmConfig, setHasEffectiveLlmConfig] = useState(false)
+  const [llmConfigSource, setLlmConfigSource] = useState<'custom' | 'main-admin-default' | 'none'>('none')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -80,6 +90,8 @@ export default function UserSettingsPage(): React.ReactElement {
         const data = await response.json() as ReaderMetaResponse | null
         if (active) {
           setHasAdminPassword(Boolean(data?.hasPassword))
+          setHasEffectiveLlmConfig(Boolean(data?.hasEffectiveLlmConfig))
+          setLlmConfigSource(data?.llmConfigSource || 'none')
         }
       } catch {
         // Reader meta is informative only.
@@ -115,6 +127,18 @@ export default function UserSettingsPage(): React.ReactElement {
 
     if (draftPassword !== draftPasswordConfirm) {
       setError('Подтверждение пароля не совпадает.')
+      setSaved(false)
+      return
+    }
+
+    const llmFieldsProvided = Boolean(
+      draftLlmApiKey.trim() || draftLlmBaseUrl.trim() || draftLlmModel.trim()
+    )
+    if (
+      llmFieldsProvided &&
+      (!draftLlmApiKey.trim() || !draftLlmBaseUrl.trim() || !draftLlmModel.trim())
+    ) {
+      setError('Для LLM нужно заполнить сразу api key, base url и model.')
       setSaved(false)
       return
     }
@@ -155,6 +179,31 @@ export default function UserSettingsPage(): React.ReactElement {
         setHasAdminPassword(true)
         setDraftPassword('')
         setDraftPasswordConfirm('')
+      }
+
+      if (llmFieldsProvided || (hasEffectiveLlmConfig && !draftLlmApiKey.trim() && !draftLlmBaseUrl.trim() && !draftLlmModel.trim())) {
+        const llmResponse = await fetch('/api/readers/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readerId,
+            apiKey: draftLlmApiKey,
+            baseUrl: draftLlmBaseUrl,
+            model: draftLlmModel,
+          }),
+        })
+
+        const payload = await llmResponse.json() as {
+          error?: string
+          hasEffectiveLlmConfig?: boolean
+          llmConfigSource?: 'custom' | 'main-admin-default' | 'none'
+        }
+        if (!llmResponse.ok) {
+          throw new Error(payload.error || 'Не удалось сохранить LLM настройки')
+        }
+        setHasEffectiveLlmConfig(Boolean(payload.hasEffectiveLlmConfig))
+        setLlmConfigSource(payload.llmConfigSource || 'none')
+        setDraftLlmApiKey('')
       }
 
       setUsername(trimmedUsername)
@@ -205,6 +254,63 @@ export default function UserSettingsPage(): React.ReactElement {
               <p className="text-xs text-muted-foreground">
                 Логин в админку всегда совпадает с этим именем.
               </p>
+            </div>
+
+            <div className="space-y-4 rounded-2xl border border-border/70 bg-muted/30 p-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Sparkles size={16} />
+                  LLM для генерации вариантов
+                </div>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Эти данные используются, если вам нужно генерировать варианты книги за свой счёт.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Статус: {hasEffectiveLlmConfig ? `настроено (${llmConfigSource})` : 'не настроено'}
+                </p>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="llm-api-key">API key</Label>
+                  <Input
+                    id="llm-api-key"
+                    type="password"
+                    value={draftLlmApiKey}
+                    onChange={(event) => {
+                      setDraftLlmApiKey(event.target.value)
+                      setSaved(false)
+                    }}
+                    placeholder="sk-..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="llm-base-url">Base URL</Label>
+                  <Input
+                    id="llm-base-url"
+                    value={draftLlmBaseUrl}
+                    onChange={(event) => {
+                      setDraftLlmBaseUrl(event.target.value)
+                      setSaved(false)
+                    }}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="llm-model">Model</Label>
+                  <Input
+                    id="llm-model"
+                    value={draftLlmModel}
+                    onChange={(event) => {
+                      setDraftLlmModel(event.target.value)
+                      setSaved(false)
+                    }}
+                    placeholder="gpt-4.1-mini"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4 rounded-2xl border border-border/70 bg-muted/30 p-4">
@@ -363,6 +469,13 @@ export default function UserSettingsPage(): React.ReactElement {
               <div className="text-muted-foreground">Админка</div>
               <div className="mt-1 font-medium text-foreground">
                 {hasAdminPassword ? 'Доступна по имени читателя и паролю' : 'Пароль пока не задан'}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-background/80 p-4">
+              <div className="text-muted-foreground">LLM</div>
+              <div className="mt-1 font-medium text-foreground">
+                {hasEffectiveLlmConfig ? `Готово (${llmConfigSource})` : 'Не настроено'}
               </div>
             </div>
 

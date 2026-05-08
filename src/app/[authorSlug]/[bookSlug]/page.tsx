@@ -37,13 +37,36 @@ interface Book {
   title: string
   description: string | null
   coverUrl: string | null
+  openStatsPublic: boolean
   author: Author
   chapters: Chapter[]
   _count: { comments: number }
 }
 
+interface PublicBookStats {
+  book: {
+    uniqueReaders: number
+    totalReadSeconds: number
+    avgReadSeconds: number
+    avgProgressPercent: number
+    completionRatePercent: number
+  }
+}
+
 function formatChapterLabel(count: number): string {
   return `${count} ${count === 1 ? 'глава' : 'глав'}`
+}
+
+function formatDurationLabel(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds))
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+
+  if (hours > 0) {
+    return `${hours} ч ${minutes} мин`
+  }
+
+  return `${minutes} мин`
 }
 
 export default function BookCoverPage() {
@@ -55,6 +78,7 @@ export default function BookCoverPage() {
   const [downloaded, setDownloaded] = useState(false)
   const [downloadPending, setDownloadPending] = useState(false)
   const [offlineError, setOfflineError] = useState<string | null>(null)
+  const [stats, setStats] = useState<PublicBookStats | null>(null)
   const { readerId, loadFromStorage } = useReaderStore()
 
   useEffect(() => {
@@ -64,8 +88,18 @@ export default function BookCoverPage() {
       try {
         const res = await fetch(`/api/books/${bookSlug}?authorSlug=${authorSlug}`)
         if (res.ok) {
-          const data = await res.json()
+          const data = await res.json() as Book
           setBook(data)
+
+          if (data.openStatsPublic) {
+            const statsRes = await fetch(`/api/books/${data.id}/stats`)
+            if (statsRes.ok) {
+              const statsData = await statsRes.json() as PublicBookStats
+              setStats(statsData)
+            }
+          } else {
+            setStats(null)
+          }
         }
       } catch (error) {
         console.error('Failed to fetch book:', error)
@@ -300,6 +334,43 @@ export default function BookCoverPage() {
         </section>
 
         <section className="mt-8 rounded-[2rem] border border-black/5 bg-white p-3 text-slate-950 shadow-[0_20px_80px_rgba(15,23,42,0.2)] sm:p-5">
+          {book.openStatsPublic && stats ? (
+            <div className="mb-5 rounded-[1.5rem] border border-emerald-200/60 bg-emerald-50/80 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-700">
+                    Открытая статистика
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-950">Как читают эту книгу</h2>
+                </div>
+                <p className="text-sm text-slate-600">
+                  Только общая картина по книге, без раскрытия статистики по главам.
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[1.25rem] border border-white/60 bg-white/80 p-4">
+                  <div className="text-2xl font-semibold text-slate-950">{stats.book.uniqueReaders}</div>
+                  <div className="mt-1 text-sm text-slate-600">читателей открыли книгу</div>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/60 bg-white/80 p-4">
+                  <div className="text-2xl font-semibold text-slate-950">
+                    {formatDurationLabel(stats.book.avgReadSeconds)}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">среднее время чтения</div>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/60 bg-white/80 p-4">
+                  <div className="text-2xl font-semibold text-slate-950">{stats.book.avgProgressPercent}%</div>
+                  <div className="mt-1 text-sm text-slate-600">средний прогресс</div>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/60 bg-white/80 p-4">
+                  <div className="text-2xl font-semibold text-slate-950">{stats.book.completionRatePercent}%</div>
+                  <div className="mt-1 text-sm text-slate-600">дочитывают до конца</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <BookHighlightsPanel
             authorSlug={authorSlug}
             bookSlug={bookSlug}

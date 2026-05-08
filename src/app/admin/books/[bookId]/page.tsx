@@ -35,6 +35,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   ArrowLeft,
+  BarChart3,
   BookOpen,
   Check,
   Loader2,
@@ -85,6 +86,8 @@ interface BookData {
   slug: string
   description: string | null
   coverUrl: string | null
+  openStatsPublic: boolean
+  allowReaderVariantsAtOwnerExpense: boolean
   syntheticCommentsPerChapter: number
   syntheticQuotesPerChapter: number
   syntheticReactionsPerChapter: number
@@ -97,6 +100,28 @@ interface BookData {
   readingModeDefault: string
   chapters: Chapter[]
   _count: { comments: number }
+}
+
+interface ChapterStatsSummary {
+  chapterId: string
+  title: string
+  position: number
+  uniqueReaders: number
+  totalReadSeconds: number
+  avgProgressPercent: number
+  completionRatePercent: number
+}
+
+interface BookStatsResponse {
+  book: {
+    uniqueReaders: number
+    totalReadSeconds: number
+    avgReadSeconds: number
+    avgProgressPercent: number
+    completionRatePercent: number
+  }
+  chapters: ChapterStatsSummary[]
+  topChapters: ChapterStatsSummary[]
 }
 
 interface AdminSettingsPayload {
@@ -125,6 +150,18 @@ const variantTabs: Array<{ value: string; label: string; placeholder: string }> 
     placeholder: 'Здесь будет краткая смысловая выжимка главы…',
   },
 ]
+
+function formatDurationLabel(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds))
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+
+  if (hours > 0) {
+    return `${hours} ч ${minutes} мин`
+  }
+
+  return `${minutes} мин`
+}
 
 export default function BookEditorPage() {
   const params = useParams()
@@ -158,7 +195,10 @@ export default function BookEditorPage() {
   const [editIsPublic, setEditIsPublic] = useState(false)
   const [editReadingMode, setEditReadingMode] = useState('feed')
   const [savingBook, setSavingBook] = useState(false)
+  const [activePrimaryTab, setActivePrimaryTab] = useState<'editor' | 'stats'>('editor')
   const [seedingEngagement, setSeedingEngagement] = useState(false)
+  const [bookStats, setBookStats] = useState<BookStatsResponse | null>(null)
+  const [loadingBookStats, setLoadingBookStats] = useState(true)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
   const [savingCover, setSavingCover] = useState(false)
@@ -167,6 +207,8 @@ export default function BookEditorPage() {
   const [editSyntheticQuotesPerChapter, setEditSyntheticQuotesPerChapter] = useState(1)
   const [editSyntheticReactionsPerChapter, setEditSyntheticReactionsPerChapter] = useState(5)
   const [editSyntheticCommentsUseLlm, setEditSyntheticCommentsUseLlm] = useState(false)
+  const [editOpenStatsPublic, setEditOpenStatsPublic] = useState(false)
+  const [editAllowReaderVariantsAtOwnerExpense, setEditAllowReaderVariantsAtOwnerExpense] = useState(false)
   const [allowUserPublishing, setAllowUserPublishing] = useState(true)
   const [isMainAdmin, setIsMainAdmin] = useState(false)
   const visibleRevisionHistory = selectedChapterId ? revisionHistory : []
@@ -202,6 +244,8 @@ export default function BookEditorPage() {
       setEditSyntheticQuotesPerChapter(data.syntheticQuotesPerChapter)
       setEditSyntheticReactionsPerChapter(data.syntheticReactionsPerChapter)
       setEditSyntheticCommentsUseLlm(data.syntheticCommentsUseLlm)
+      setEditOpenStatsPublic(data.openStatsPublic)
+      setEditAllowReaderVariantsAtOwnerExpense(data.allowReaderVariantsAtOwnerExpense)
       setSelectedChapterId(selectedExists ? selectedChapterId : data.chapters[0]?.id ?? null)
     } catch (error) {
       console.error('Error fetching book:', error)
@@ -211,13 +255,33 @@ export default function BookEditorPage() {
     }
   }, [bookId, selectedChapterId, toast])
 
+  const fetchBookStats = useCallback(async (): Promise<void> => {
+    setLoadingBookStats(true)
+
+    try {
+      const response = await fetch(`/api/books/${bookId}/stats`)
+      if (!response.ok) {
+        throw new Error('stats fetch failed')
+      }
+
+      const payload = (await response.json()) as BookStatsResponse
+      setBookStats(payload)
+    } catch (error) {
+      console.error('Error fetching book stats:', error)
+      setBookStats(null)
+    } finally {
+      setLoadingBookStats(false)
+    }
+  }, [bookId])
+
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       void fetchBook()
+      void fetchBookStats()
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [fetchBook])
+  }, [fetchBook, fetchBookStats])
 
   useEffect(() => {
     let active = true
@@ -282,7 +346,9 @@ export default function BookEditorPage() {
       editSyntheticCommentsPerChapter !== book.syntheticCommentsPerChapter ||
       editSyntheticQuotesPerChapter !== book.syntheticQuotesPerChapter ||
       editSyntheticReactionsPerChapter !== book.syntheticReactionsPerChapter ||
-      editSyntheticCommentsUseLlm !== book.syntheticCommentsUseLlm)
+      editSyntheticCommentsUseLlm !== book.syntheticCommentsUseLlm ||
+      editAllowReaderVariantsAtOwnerExpense !== book.allowReaderVariantsAtOwnerExpense ||
+      editOpenStatsPublic !== book.openStatsPublic)
   const effectiveCoverPreview = coverPreviewUrl || book?.coverUrl || null
 
   const clampSyntheticCount = useCallback((value: number): number => {
@@ -485,6 +551,8 @@ export default function BookEditorPage() {
           syntheticQuotesPerChapter: clampSyntheticCount(editSyntheticQuotesPerChapter),
           syntheticReactionsPerChapter: clampSyntheticCount(editSyntheticReactionsPerChapter),
           syntheticCommentsUseLlm: editSyntheticCommentsUseLlm,
+          allowReaderVariantsAtOwnerExpense: editAllowReaderVariantsAtOwnerExpense,
+          openStatsPublic: editOpenStatsPublic,
         }),
       })
 
@@ -500,7 +568,7 @@ export default function BookEditorPage() {
     } finally {
       setSavingBook(false)
     }
-  }, [bookId, clampSyntheticCount, editDescription, editIsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
+  }, [bookId, clampSyntheticCount, editAllowReaderVariantsAtOwnerExpense, editDescription, editIsPublic, editOpenStatsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
 
   const handleSeedSyntheticEngagement = useCallback(async (): Promise<void> => {
     setSeedingEngagement(true)
@@ -528,6 +596,7 @@ export default function BookEditorPage() {
         description: `Комментарии: ${payload.generated?.comments ?? 0} · Цитаты: ${payload.generated?.quotes ?? 0} · Реакции: ${payload.generated?.reactions ?? 0}`,
       })
       await fetchBook()
+      await fetchBookStats()
     } catch (error) {
       toast({
         title: 'Ошибка генерации активности',
@@ -537,7 +606,7 @@ export default function BookEditorPage() {
     } finally {
       setSeedingEngagement(false)
     }
-  }, [bookId, fetchBook, toast])
+  }, [bookId, fetchBook, fetchBookStats, toast])
 
   const replaceCoverPreview = useCallback((nextPreviewUrl: string | null): void => {
     setCoverPreviewUrl((currentPreviewUrl) => {
@@ -667,6 +736,7 @@ export default function BookEditorPage() {
 
       setActiveVariant('original')
       await fetchBook()
+      await fetchBookStats()
       setSelectedChapterId(chapter.id)
 
       toast({
@@ -708,6 +778,7 @@ export default function BookEditorPage() {
       setDeleteDialogOpen(false)
       setActiveVariant('original')
       await fetchBook()
+      await fetchBookStats()
       setSelectedChapterId(fallbackChapterId)
 
       toast({
@@ -890,8 +961,58 @@ export default function BookEditorPage() {
                       ? 'Можно переключать между черновиком и публичной книгой.'
                       : 'Главный админ отключил публикацию для обычных пользователей. Эта книга останется приватной и будет видна только вам.'
                   }
+                  beforeFields={(
+                    <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                      <Label htmlFor="book-open-stats" className="items-start gap-3">
+                        <Checkbox
+                          id="book-open-stats"
+                          checked={editOpenStatsPublic}
+                          onCheckedChange={(checked) => setEditOpenStatsPublic(checked === true)}
+                          disabled={savingBook}
+                          className="mt-0.5"
+                        />
+                        <span className="space-y-1">
+                          <span className="block text-sm font-medium">
+                            Открытая статистика
+                          </span>
+                          <span className="block text-sm text-muted-foreground">
+                            Показывать читателям агрегаты по книге: популярность, среднее время чтения и прогресс.
+                          </span>
+                        </span>
+                      </Label>
+                    </div>
+                  )}
                   disabled={savingBook || !canPublishThisBook}
                 />
+
+                <Card className="border-border/60">
+                  <CardHeader className="space-y-2">
+                    <CardTitle className="text-base">Варианты для читателей</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Для публичной книги недостающие варианты могут создаваться лениво по запросу читателя.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <Label htmlFor="book-owner-sponsored-variants" className="items-start gap-3">
+                      <Checkbox
+                        id="book-owner-sponsored-variants"
+                        checked={editAllowReaderVariantsAtOwnerExpense}
+                        onCheckedChange={(checked) => setEditAllowReaderVariantsAtOwnerExpense(checked === true)}
+                        disabled={savingBook}
+                        className="mt-0.5"
+                      />
+                      <span className="space-y-1">
+                        <span className="block text-sm font-medium">
+                          Генерировать варианты читателям за счёт владельца
+                        </span>
+                        <span className="block text-sm text-muted-foreground">
+                          Если выключено, читателю будет предложено использовать свои LLM-настройки. Если включено,
+                          генерация идёт через LLM владельца книги.
+                        </span>
+                      </span>
+                    </Label>
+                  </CardContent>
+                </Card>
 
                 <Card className="border-border/60">
                   <CardHeader className="space-y-2">
@@ -1063,11 +1184,173 @@ export default function BookEditorPage() {
       <div
         className={cn(
           'grid gap-6',
-          chaptersPanelVisible ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'
+          activePrimaryTab === 'editor' && chaptersPanelVisible ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'
         )}
       >
+        <div className="lg:col-span-full">
+          <Tabs
+            value={activePrimaryTab}
+            onValueChange={(value) => {
+              if (value === 'editor' || value === 'stats') {
+                setActivePrimaryTab(value)
+                if (value === 'stats') {
+                  void fetchBookStats()
+                }
+              }
+            }}
+          >
+            <TabsList className="rounded-full">
+              <TabsTrigger value="editor" className="rounded-full">
+                <BookOpen className="mr-2 h-4 w-4" />
+                Редактор
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="rounded-full">
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Статистика
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
         <main className="min-w-0 space-y-4">
-          {selectedChapter ? (
+          {activePrimaryTab === 'stats' ? (
+            <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base">Статистика чтения</CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Статистика собирается по реальным открытиям reader и heartbeat-событиям во время активного чтения.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      void fetchBookStats()
+                    }}
+                    disabled={loadingBookStats}
+                  >
+                    {loadingBookStats ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                    )}
+                    Обновить
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                    <div className="text-3xl font-semibold">{bookStats?.book.uniqueReaders ?? 0}</div>
+                    <div className="mt-2 text-sm text-muted-foreground">уникальных читателей</div>
+                  </div>
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                    <div className="text-3xl font-semibold">
+                      {formatDurationLabel(bookStats?.book.totalReadSeconds ?? 0)}
+                    </div>
+                    <div className="mt-2 text-sm text-muted-foreground">суммарное время чтения</div>
+                  </div>
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                    <div className="text-3xl font-semibold">
+                      {formatDurationLabel(bookStats?.book.avgReadSeconds ?? 0)}
+                    </div>
+                    <div className="mt-2 text-sm text-muted-foreground">среднее время на читателя</div>
+                  </div>
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                    <div className="text-3xl font-semibold">{bookStats?.book.avgProgressPercent ?? 0}%</div>
+                    <div className="mt-2 text-sm text-muted-foreground">средний прогресс</div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">Главы</div>
+                        <div className="text-xs text-muted-foreground">
+                          Читаемость, время и дочитывания по каждой главе.
+                        </div>
+                      </div>
+                      {loadingBookStats ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                    </div>
+
+                    <div className="space-y-3">
+                      {bookStats?.chapters.map((chapterStat) => (
+                        <div
+                          key={chapterStat.chapterId}
+                          className="grid gap-3 rounded-2xl border border-border/50 bg-background/60 p-4 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.7fr))]"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">
+                              Глава {chapterStat.position + 1}
+                            </div>
+                            <div className="mt-1 truncate text-sm text-muted-foreground">
+                              {chapterStat.title}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-semibold">{chapterStat.uniqueReaders}</div>
+                            <div className="text-xs text-muted-foreground">читателей</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-semibold">
+                              {formatDurationLabel(chapterStat.totalReadSeconds)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">время</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-semibold">{chapterStat.avgProgressPercent}%</div>
+                            <div className="text-xs text-muted-foreground">прогресс</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-semibold">{chapterStat.completionRatePercent}%</div>
+                            <div className="text-xs text-muted-foreground">дочитывают</div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {!loadingBookStats && (bookStats?.chapters.length ?? 0) === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-sm text-muted-foreground">
+                          Пока нет данных о чтении этой книги.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
+                    <div className="text-sm font-medium">Топ глав</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Список строится по уникальным читателям.
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {bookStats?.topChapters.map((chapterStat) => (
+                        <div
+                          key={`top-${chapterStat.chapterId}`}
+                          className="rounded-2xl border border-border/50 bg-background/60 p-4"
+                        >
+                          <div className="text-sm font-medium">
+                            Глава {chapterStat.position + 1}
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                            {chapterStat.title}
+                          </div>
+                          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{chapterStat.uniqueReaders} читателей</span>
+                            <span>{chapterStat.completionRatePercent}% дочитывают</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : selectedChapter ? (
             <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1217,7 +1500,7 @@ export default function BookEditorPage() {
         <aside
           className={cn(
             'w-full',
-            chaptersPanelVisible ? 'block' : 'hidden',
+            activePrimaryTab === 'editor' && chaptersPanelVisible ? 'block' : 'hidden',
             'lg:sticky lg:top-6 lg:self-start'
           )}
         >

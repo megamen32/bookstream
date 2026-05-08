@@ -234,6 +234,22 @@ export async function DELETE(
         },
       })
 
+      await tx.chapterReaderStat.deleteMany({
+        where: {
+          chapterId: ownedChapter.id,
+        },
+      })
+
+      await tx.bookReaderStat.updateMany({
+        where: {
+          bookId: chapter.bookId,
+          lastChapterId: ownedChapter.id,
+        },
+        data: {
+          lastChapterId: null,
+        },
+      })
+
       if (variantIds.length > 0) {
         await tx.reaction.deleteMany({
           where: {

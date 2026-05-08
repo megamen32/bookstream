@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hasAdminLogin } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
+import { summarizeReaderLlmConfig } from '@/lib/llm'
 
 interface ReaderMutationBody {
   id?: string
@@ -13,6 +14,11 @@ interface ReaderResponse {
   loginName: string | null
   hasPassword: boolean
   isMainAdmin: boolean
+  llmBaseUrl: string | null
+  llmModel: string | null
+  hasCustomLlmConfig: boolean
+  hasEffectiveLlmConfig: boolean
+  llmConfigSource: 'custom' | 'main-admin-default' | 'none'
 }
 
 // POST /api/readers — Create or update reader
@@ -36,6 +42,9 @@ export async function POST(request: NextRequest) {
         loginName: true,
         passwordHash: true,
         isMainAdmin: true,
+        llmApiKey: true,
+        llmBaseUrl: true,
+        llmModel: true,
       },
     })
 
@@ -75,8 +84,13 @@ export async function POST(request: NextRequest) {
         loginName: true,
         passwordHash: true,
         isMainAdmin: true,
+        llmApiKey: true,
+        llmBaseUrl: true,
+        llmModel: true,
       },
     })
+
+    const llmSummary = summarizeReaderLlmConfig(reader)
 
     const payload: ReaderResponse = {
       id: reader.id,
@@ -84,6 +98,11 @@ export async function POST(request: NextRequest) {
       loginName: reader.loginName,
       hasPassword: Boolean(reader.passwordHash),
       isMainAdmin: reader.isMainAdmin,
+      llmBaseUrl: llmSummary.baseUrl,
+      llmModel: llmSummary.model,
+      hasCustomLlmConfig: llmSummary.hasCustomConfig,
+      hasEffectiveLlmConfig: llmSummary.hasEffectiveConfig,
+      llmConfigSource: llmSummary.source,
     }
 
     return NextResponse.json(payload, { status: 201 })
@@ -117,6 +136,9 @@ export async function GET(request: NextRequest) {
         loginName: true,
         passwordHash: true,
         isMainAdmin: true,
+        llmApiKey: true,
+        llmBaseUrl: true,
+        llmModel: true,
       },
     })
 
@@ -124,12 +146,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(null)
     }
 
+    const llmSummary = summarizeReaderLlmConfig(reader)
     const payload: ReaderResponse = {
       id: reader.id,
       currentUsername: reader.currentUsername,
       loginName: reader.loginName,
       hasPassword: Boolean(reader.passwordHash),
       isMainAdmin: reader.isMainAdmin,
+      llmBaseUrl: llmSummary.baseUrl,
+      llmModel: llmSummary.model,
+      hasCustomLlmConfig: llmSummary.hasCustomConfig,
+      hasEffectiveLlmConfig: llmSummary.hasEffectiveConfig,
+      llmConfigSource: llmSummary.source,
     }
 
     return NextResponse.json(payload)

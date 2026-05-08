@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOwnedBook } from '@/lib/admin-ownership'
+import { resolveReaderLlmConfig } from '@/lib/llm'
 import { db } from '@/lib/db'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 import {
@@ -44,6 +45,16 @@ export async function POST(
     if (!ownedBook) {
       return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
     }
+    const ownerReader = await db.reader.findUnique({
+      where: { id: adminReader.id },
+      select: {
+        isMainAdmin: true,
+        llmApiKey: true,
+        llmBaseUrl: true,
+        llmModel: true,
+      },
+    })
+    const ownerLlm = ownerReader ? resolveReaderLlmConfig(ownerReader) : null
 
     const book = await db.book.findUnique({
       where: { id: ownedBook.id },
@@ -152,12 +163,17 @@ export async function POST(
       )
 
       const llmPayload = book.syntheticCommentsUseLlm && (missingComments > 0 || missingReactions > 0)
-        ? await buildLlmSyntheticCommentPayload({
-            bookTitle: book.title,
-            chapter,
-            commentCount: missingComments,
-            reactionCount: missingReactions,
-          })
+        ? ownerLlm
+          ? await buildLlmSyntheticCommentPayload({
+              bookTitle: book.title,
+              chapter,
+              commentCount: missingComments,
+              reactionCount: missingReactions,
+              llmConfig: ownerLlm.config,
+            })
+          : (() => {
+              throw new Error('У владельца книги не настроены LLM данные для синтетической генерации')
+            })()
         : null
 
       const comments = buildSyntheticComments(book.title, chapter, missingComments).map((comment, index) => ({

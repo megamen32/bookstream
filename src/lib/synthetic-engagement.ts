@@ -1,4 +1,4 @@
-import { createChatCompletion } from '@/lib/llm'
+import { createChatCompletion, type LlmConfig } from '@/lib/llm'
 
 interface SyntheticReaderProfile {
   readerId: string
@@ -341,6 +341,7 @@ export async function buildLlmSyntheticCommentPayload(params: {
   chapter: SyntheticChapter
   commentCount: number
   reactionCount: number
+  llmConfig: LlmConfig
 }): Promise<LlmSyntheticCommentPayload> {
   const targets = buildTargets(params.chapter)
   if (targets.length === 0) {
@@ -374,7 +375,7 @@ export async function buildLlmSyntheticCommentPayload(params: {
         ].join('\n'),
       },
     ],
-  })
+  }, params.llmConfig)
 
   const parsed = JSON.parse(stripCodeFence(completion)) as Partial<LlmSyntheticCommentPayload>
   const comments = Array.isArray(parsed.comments)

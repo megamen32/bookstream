@@ -4,9 +4,9 @@ import { getAdminSessionReader } from '@/lib/admin-auth'
 import { ensureVariantParagraphs } from '@/lib/chapter-variants'
 import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import { db } from '@/lib/db'
-import { createChatCompletion } from '@/lib/llm'
+import { createChatCompletion, resolveReaderLlmConfig, summarizeReaderLlmConfig, type LlmConfig } from '@/lib/llm'
 
-async function callLLM(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callLLM(systemPrompt: string, userPrompt: string, llmConfig: LlmConfig): Promise<string> {
   return createChatCompletion({
     messages: [
       { role: 'system', content: systemPrompt },
@@ -14,7 +14,7 @@ async function callLLM(systemPrompt: string, userPrompt: string): Promise<string
     ],
     temperature: 0.3,
     maxTokens: 4000,
-  })
+  }, llmConfig)
 }
 
 async function upsertVariant(
@@ -126,9 +126,177 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const body = await request.json().catch(() => ({})) as {
+      requesterReaderId?: string
+      useReaderLlm?: boolean
+      variantType?: string
+      presetIds?: string[]
+      variants?: Array<{ type: string; prompt: string }>
+    }
     const adminReader = await getAdminSessionReader(request)
     if (!adminReader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      const { id } = await params
+
+      const chapter = await db.chapter.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          book: {
+            select: {
+              id: true,
+              isPublic: true,
+              allowReaderVariantsAtOwnerExpense: true,
+              author: {
+                select: {
+                  owner: {
+                    select: {
+                      id: true,
+                      isMainAdmin: true,
+                      llmApiKey: true,
+                      llmBaseUrl: true,
+                      llmModel: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          variants: {
+            where: { variantType: 'original' },
+            take: 1,
+            select: {
+              id: true,
+              contentHtml: true,
+              paragraphs: { orderBy: { position: 'asc' } },
+            },
+          },
+        },
+      })
+
+      if (!chapter?.book.isPublic) {
+        return NextResponse.json({ error: 'Глава не найдена' }, { status: 404 })
+      }
+
+      const original = chapter.variants[0]
+      if (!original) {
+        return NextResponse.json({ error: 'Оригинальный текст не найден' }, { status: 404 })
+      }
+
+      const owner = chapter.book.author.owner
+      const ownerLlm = owner ? resolveReaderLlmConfig(owner) : null
+
+      let effectiveLlmConfig: LlmConfig | null = null
+
+      if (chapter.book.allowReaderVariantsAtOwnerExpense) {
+        if (!ownerLlm) {
+          return NextResponse.json(
+            { error: 'Владелец книги ещё не настроил LLM для генерации вариантов.' },
+            { status: 409 }
+          )
+        }
+        effectiveLlmConfig = ownerLlm.config
+      } else {
+        if (!body.requesterReaderId) {
+          return NextResponse.json(
+            { error: 'readerId is required when owner-sponsored generation is disabled' },
+            { status: 400 }
+          )
+        }
+
+        const requester = await db.reader.findUnique({
+          where: { id: body.requesterReaderId },
+          select: {
+            id: true,
+            isMainAdmin: true,
+            llmApiKey: true,
+            llmBaseUrl: true,
+            llmModel: true,
+          },
+        })
+
+        if (!requester) {
+          return NextResponse.json({ error: 'Читатель не найден' }, { status: 404 })
+        }
+
+        const readerLlmSummary = summarizeReaderLlmConfig(requester)
+        if (!readerLlmSummary.hasEffectiveConfig) {
+          return NextResponse.json(
+            {
+              error: 'У вас не настроены LLM данные для генерации. Откройте настройки профиля и заполните api key, base url и model.',
+              missingReaderLlmConfig: true,
+            },
+            { status: 409 }
+          )
+        }
+
+        if (!body.useReaderLlm) {
+          return NextResponse.json(
+            {
+              error: 'Генерация будет использована за ваш счёт. Нужно подтверждение.',
+              requiresReaderLlmConsent: true,
+              readerLlmConfigured: true,
+            },
+            { status: 409 }
+          )
+        }
+
+        effectiveLlmConfig = resolveReaderLlmConfig(requester)?.config || null
+      }
+
+      if (!effectiveLlmConfig) {
+        return NextResponse.json({ error: 'LLM конфигурация недоступна' }, { status: 409 })
+      }
+
+      const requestedVariantType =
+        typeof body.variantType === 'string' ? body.variantType.trim() : ''
+      const originalParagraphs = await ensureVariantParagraphs(db, original.id, original.contentHtml)
+      const plainText = originalParagraphs.map((paragraph) => paragraph.text).join('\n\n')
+      const wordCount = plainText.split(/\s+/).length
+
+      if (plainText.length < 50) {
+        return NextResponse.json({ error: 'Текст слишком короткий для обработки' }, { status: 400 })
+      }
+
+      let variantDefs: Array<{ type: string; prompt: string }> = []
+      if (requestedVariantType) {
+        variantDefs = await buildVariantDefinition(requestedVariantType, wordCount)
+      } else if (body.presetIds && Array.isArray(body.presetIds)) {
+        const presets = await db.variantPreset.findMany({
+          where: { id: { in: body.presetIds } },
+          orderBy: { position: 'asc' },
+        })
+
+        variantDefs = presets.map((preset) => {
+          let prompt = preset.systemPromptTemplate
+          if (preset.targetSizePercent != null && prompt.includes('{word_count}')) {
+            const targetWords = Math.round((wordCount * preset.targetSizePercent) / 100)
+            prompt = prompt.replace(/\{word_count\}/g, String(targetWords))
+          }
+          return { type: preset.slug, prompt }
+        })
+      } else if (body.variants && Array.isArray(body.variants)) {
+        variantDefs = body.variants.map((variant) => ({
+          type: variant.type,
+          prompt: variant.prompt,
+        }))
+      } else {
+        variantDefs = await buildVariantDefinition('', wordCount)
+      }
+
+      const results = await Promise.all(
+        variantDefs.map(async ({ type, prompt }) => {
+          const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`, effectiveLlmConfig)
+          const saved = await upsertVariant(chapter.id, type, result, false)
+          return { type, ...saved }
+        })
+      )
+
+      return NextResponse.json({
+        success: true,
+        originalWordCount: wordCount,
+        generated: results,
+      })
     }
 
     const { id } = await params
@@ -137,7 +305,6 @@ export async function POST(
       return NextResponse.json({ error: 'Глава не найдена' }, { status: 404 })
     }
 
-    const body = await request.json().catch(() => ({}))
     const requestedVariantType =
       typeof body.variantType === 'string' ? body.variantType.trim() : ''
 
@@ -195,10 +362,24 @@ export async function POST(
       variantDefs = await buildVariantDefinition('', wordCount)
     }
 
+    const ownerReader = await db.reader.findUnique({
+      where: { id: adminReader.id },
+      select: {
+        isMainAdmin: true,
+        llmApiKey: true,
+        llmBaseUrl: true,
+        llmModel: true,
+      },
+    })
+    const ownerLlm = ownerReader ? resolveReaderLlmConfig(ownerReader) : null
+    if (!ownerLlm) {
+      throw new Error('У владельца книги не настроены LLM данные')
+    }
+
     // 3. Generate all in parallel
     const results = await Promise.all(
       variantDefs.map(async ({ type, prompt }) => {
-        const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`)
+        const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`, ownerLlm.config)
         const saved = await upsertVariant(ownedChapter.id, type, result, false)
         return { type, ...saved }
       })

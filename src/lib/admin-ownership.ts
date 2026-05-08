@@ -81,7 +81,7 @@ export async function getOwnedBook(readerId: string, bookId: string): Promise<{
   id: string
   slug: string
   authorId: string
-}> {
+} | null> {
   const book = await db.book.findFirst({
     where: {
       id: bookId,
@@ -109,7 +109,7 @@ export async function getOwnedBook(readerId: string, bookId: string): Promise<{
 export async function getOwnedChapter(readerId: string, chapterId: string): Promise<{
   id: string
   bookId: string
-}> {
+} | null> {
   const chapter = await db.chapter.findFirst({
     where: {
       id: chapterId,

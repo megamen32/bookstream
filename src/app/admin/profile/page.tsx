@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Save, Loader2, ShieldCheck, User } from 'lucide-react'
+import { Save, Loader2, ShieldCheck, Sparkles, User } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { slugify } from '@/lib/slugify'
 
@@ -24,6 +24,7 @@ interface AdminSettingsPayload {
     allowUserPublishing: boolean
   }
   reader: {
+    id: string
     isMainAdmin: boolean
   }
 }
@@ -41,6 +42,13 @@ export default function AdminProfilePage() {
   const [isMainAdmin, setIsMainAdmin] = useState(false)
   const [allowUserPublishing, setAllowUserPublishing] = useState(true)
   const [savingSettings, setSavingSettings] = useState(false)
+  const [readerId, setReaderId] = useState('')
+  const [llmApiKey, setLlmApiKey] = useState('')
+  const [llmBaseUrl, setLlmBaseUrl] = useState('')
+  const [llmModel, setLlmModel] = useState('')
+  const [hasEffectiveLlmConfig, setHasEffectiveLlmConfig] = useState(false)
+  const [llmConfigSource, setLlmConfigSource] = useState<'custom' | 'main-admin-default' | 'none'>('none')
+  const [savingLlm, setSavingLlm] = useState(false)
 
   const { toast } = useToast()
 
@@ -76,11 +84,42 @@ export default function AdminProfilePage() {
           return
         }
 
+        setReaderId(payload.reader.id)
         setIsMainAdmin(payload.reader.isMainAdmin)
         setAllowUserPublishing(payload.settings.allowUserPublishing)
       })
       .catch(console.error)
   }, [])
+
+  useEffect(() => {
+    if (!readerId) {
+      return
+    }
+
+    fetch(`/api/readers?id=${encodeURIComponent(readerId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          return null
+        }
+        return await res.json() as {
+          llmBaseUrl?: string | null
+          llmModel?: string | null
+          hasEffectiveLlmConfig?: boolean
+          llmConfigSource?: 'custom' | 'main-admin-default' | 'none'
+        } | null
+      })
+      .then((payload) => {
+        if (!payload) {
+          return
+        }
+
+        setLlmBaseUrl(payload.llmBaseUrl || '')
+        setLlmModel(payload.llmModel || '')
+        setHasEffectiveLlmConfig(Boolean(payload.hasEffectiveLlmConfig))
+        setLlmConfigSource(payload.llmConfigSource || 'none')
+      })
+      .catch(console.error)
+  }, [readerId])
 
   const handleNameChange = (value: string) => {
     setName(value)
@@ -162,6 +201,59 @@ export default function AdminProfilePage() {
     }
   }
 
+  const handleSaveLlm = async (): Promise<void> => {
+    if (!readerId) {
+      return
+    }
+
+    const llmFieldsProvided = Boolean(llmApiKey.trim() || llmBaseUrl.trim() || llmModel.trim())
+    if (llmFieldsProvided && (!llmApiKey.trim() || !llmBaseUrl.trim() || !llmModel.trim())) {
+      toast({
+        title: 'Ошибка',
+        description: 'Для LLM нужно заполнить сразу api key, base url и model.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setSavingLlm(true)
+
+    try {
+      const response = await fetch('/api/readers/llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerId,
+          apiKey: llmApiKey,
+          baseUrl: llmBaseUrl,
+          model: llmModel,
+        }),
+      })
+
+      const payload = await response.json() as {
+        error?: string
+        hasEffectiveLlmConfig?: boolean
+        llmConfigSource?: 'custom' | 'main-admin-default' | 'none'
+      }
+      if (!response.ok) {
+        throw new Error(payload.error || 'Не удалось сохранить LLM настройки')
+      }
+
+      setHasEffectiveLlmConfig(Boolean(payload.hasEffectiveLlmConfig))
+      setLlmConfigSource(payload.llmConfigSource || 'none')
+      setLlmApiKey('')
+      toast({ title: 'LLM настройки сохранены' })
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: error instanceof Error ? error.message : 'Не удалось сохранить LLM настройки',
+        variant: 'destructive',
+      })
+    } finally {
+      setSavingLlm(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4 md:p-6 lg:p-8 max-w-2xl mx-auto">
@@ -237,6 +329,54 @@ export default function AdminProfilePage() {
             </CardContent>
           </Card>
         ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4" />
+              LLM
+            </CardTitle>
+            <CardDescription>
+              Эти данные используются для генерации вариантов ваших книг. У главного админа при пустых полях остаются системные env-настройки, у остальных дефолтов нет.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-xs text-muted-foreground">
+              Статус: {hasEffectiveLlmConfig ? `настроено (${llmConfigSource})` : 'не настроено'}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-llm-api-key">API key</Label>
+              <Input
+                id="profile-llm-api-key"
+                type="password"
+                value={llmApiKey}
+                onChange={(event) => setLlmApiKey(event.target.value)}
+                placeholder="sk-..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-llm-base-url">Base URL</Label>
+              <Input
+                id="profile-llm-base-url"
+                value={llmBaseUrl}
+                onChange={(event) => setLlmBaseUrl(event.target.value)}
+                placeholder="https://api.openai.com/v1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-llm-model">Model</Label>
+              <Input
+                id="profile-llm-model"
+                value={llmModel}
+                onChange={(event) => setLlmModel(event.target.value)}
+                placeholder="gpt-4.1-mini"
+              />
+            </div>
+            <Button type="button" variant="outline" onClick={() => void handleSaveLlm()} disabled={savingLlm}>
+              {savingLlm ? 'Сохранение...' : 'Сохранить LLM настройки'}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Profile form */}
         <Card>

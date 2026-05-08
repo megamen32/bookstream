@@ -6,33 +6,41 @@ interface ChatCompletionParams {
   maxTokens?: number
 }
 
-interface LlmConfig {
+export interface LlmConfig {
   apiKey: string
   baseUrl: string
   model: string
 }
 
+export interface ReaderLlmConfigShape {
+  isMainAdmin?: boolean
+  llmApiKey?: string | null
+  llmBaseUrl?: string | null
+  llmModel?: string | null
+}
+
+export type LlmConfigSource = 'custom' | 'main-admin-default' | 'none'
+
+export interface ReaderLlmSummary {
+  hasCustomConfig: boolean
+  hasEffectiveConfig: boolean
+  baseUrl: string | null
+  model: string | null
+  source: LlmConfigSource
+}
+
 /**
- * Reads required LLM configuration from environment variables.
+ * Reads the default environment LLM configuration when it is fully defined.
  *
- * @returns Validated API key, base URL, and model name.
- * @throws Error when any required variable is missing.
+ * @returns Validated API key, base URL, and model name, or `null` when env config is incomplete.
  */
-function getLlmConfig(): LlmConfig {
-  const apiKey = process.env.LLM_API_KEY
-  const baseUrl = process.env.LLM_BASE_URL
-  const model = process.env.LLM_MODEL
+export function getEnvironmentLlmConfig(): LlmConfig | null {
+  const apiKey = process.env.LLM_API_KEY?.trim()
+  const baseUrl = process.env.LLM_BASE_URL?.trim()
+  const model = process.env.LLM_MODEL?.trim()
 
-  if (!apiKey) {
-    throw new Error('Missing required environment variable: LLM_API_KEY')
-  }
-
-  if (!baseUrl) {
-    throw new Error('Missing required environment variable: LLM_BASE_URL')
-  }
-
-  if (!model) {
-    throw new Error('Missing required environment variable: LLM_MODEL')
+  if (!apiKey || !baseUrl || !model) {
+    return null
   }
 
   return {
@@ -43,32 +51,96 @@ function getLlmConfig(): LlmConfig {
 }
 
 /**
- * Builds an OpenAI-compatible SDK client using provider configuration from env.
+ * Resolves effective LLM settings for a reader.
  *
- * @returns Configured SDK client and selected model name.
- * @throws Error when any required variable is missing.
+ * Custom values always win. The environment fallback is available only to the main admin.
+ *
+ * @param reader Reader row or partial reader settings.
+ * @returns Effective config plus its source, or `null` when nothing usable exists.
  */
-function getLlmClient(): { client: OpenAI; model: string } {
-  const { apiKey, baseUrl, model } = getLlmConfig()
+export function resolveReaderLlmConfig(reader: ReaderLlmConfigShape): {
+  config: LlmConfig
+  source: Exclude<LlmConfigSource, 'none'>
+} | null {
+  const customApiKey = reader.llmApiKey?.trim()
+  const customBaseUrl = reader.llmBaseUrl?.trim()
+  const customModel = reader.llmModel?.trim()
+
+  if (customApiKey && customBaseUrl && customModel) {
+    return {
+      config: {
+        apiKey: customApiKey,
+        baseUrl: customBaseUrl.replace(/\/+$/, ''),
+        model: customModel,
+      },
+      source: 'custom',
+    }
+  }
+
+  if (reader.isMainAdmin) {
+    const fallback = getEnvironmentLlmConfig()
+    if (fallback) {
+      return {
+        config: fallback,
+        source: 'main-admin-default',
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Builds a UI-friendly summary of a reader's LLM availability without exposing the API key.
+ *
+ * @param reader Reader row or partial reader settings.
+ * @returns Summary for settings screens and generation preflight checks.
+ */
+export function summarizeReaderLlmConfig(reader: ReaderLlmConfigShape): ReaderLlmSummary {
+  const resolved = resolveReaderLlmConfig(reader)
 
   return {
-    client: new OpenAI({
-      apiKey,
-      baseURL: baseUrl,
-    }),
-    model,
+    hasCustomConfig: Boolean(reader.llmApiKey?.trim() && reader.llmBaseUrl?.trim() && reader.llmModel?.trim()),
+    hasEffectiveConfig: Boolean(resolved),
+    baseUrl: resolved?.config.baseUrl || null,
+    model: resolved?.config.model || null,
+    source: resolved?.source || 'none',
   }
 }
 
 /**
- * Sends a chat completion request to the configured OpenAI-compatible provider.
+ * Builds an OpenAI-compatible SDK client for the given config.
+ *
+ * @param config Effective provider configuration.
+ * @returns Configured SDK client and selected model name.
+ */
+function getLlmClient(config: LlmConfig): { client: OpenAI; model: string } {
+  return {
+    client: new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl,
+    }),
+    model: config.model,
+  }
+}
+
+/**
+ * Sends a chat completion request to an OpenAI-compatible provider.
+ *
+ * When `config` is omitted, the function falls back to the default environment config.
  *
  * @param params Chat messages and completion tuning values.
+ * @param config Effective provider configuration.
  * @returns Assistant text content.
  * @throws Error when the SDK request fails or the provider returns an empty payload.
  */
-export async function createChatCompletion(params: ChatCompletionParams): Promise<string> {
-  const { client, model } = getLlmClient()
+export async function createChatCompletion(params: ChatCompletionParams, config?: LlmConfig): Promise<string> {
+  const effectiveConfig = config || getEnvironmentLlmConfig()
+  if (!effectiveConfig) {
+    throw new Error('LLM configuration is missing')
+  }
+
+  const { client, model } = getLlmClient(effectiveConfig)
 
   const completion = await client.chat.completions.create({
     model,
