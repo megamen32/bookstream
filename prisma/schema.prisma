@@ -12,9 +12,13 @@ model Author {
   slug      String   @unique
   name      String
   bio       String?
+  ownerReaderId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   books     Book[]
+  owner     Reader?  @relation(fields: [ownerReaderId], references: [id])
+
+  @@index([ownerReaderId])
 }
 
 model Book {
@@ -188,8 +192,11 @@ model AnnotationVote {
 model Reader {
   id              String   @id @default(cuid())
   currentUsername String
+  loginName       String?  @unique
+  passwordHash    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  authors         Author[]
 }
 
 model ReadingProgress {

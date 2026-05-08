@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getOwnedChapter } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { ensureVariantParagraphs } from '@/lib/chapter-variants'
 import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import { db } from '@/lib/db'
@@ -124,7 +126,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
+    const ownedChapter = await getOwnedChapter(adminReader.id, id)
+    if (!ownedChapter) {
+      return NextResponse.json({ error: 'Глава не найдена' }, { status: 404 })
+    }
+
     const body = await request.json().catch(() => ({}))
     const requestedVariantType =
       typeof body.variantType === 'string' ? body.variantType.trim() : ''
@@ -132,7 +144,7 @@ export async function POST(
     // 1. Find original variant
     const original = await db.chapterVariant.findUnique({
       where: {
-        chapterId_variantType: { chapterId: id, variantType: 'original' },
+        chapterId_variantType: { chapterId: ownedChapter.id, variantType: 'original' },
       },
       include: { paragraphs: { orderBy: { position: 'asc' } } },
     })
@@ -187,7 +199,7 @@ export async function POST(
     const results = await Promise.all(
       variantDefs.map(async ({ type, prompt }) => {
         const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`)
-        const saved = await upsertVariant(id, type, result, false)
+        const saved = await upsertVariant(ownedChapter.id, type, result, false)
         return { type, ...saved }
       })
     )

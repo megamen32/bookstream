@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
+import { getOwnedChapter } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 
-function canViewDrafts(request: NextRequest): boolean {
+async function canViewDrafts(request: NextRequest): Promise<boolean> {
   const { searchParams } = new URL(request.url)
-  if (searchParams.get('includeDrafts') === '1') {
-    return true
-  }
-
-  const referer = request.headers.get('referer')
-  if (!referer) {
+  if (searchParams.get('includeDrafts') !== '1') {
     return false
   }
 
-  try {
-    return new URL(referer).pathname.startsWith('/admin')
-  } catch {
-    return false
-  }
+  return Boolean(await getAdminSessionReader(request))
 }
 
 function hasReadableChapterContent(contentHtml: string): boolean {
@@ -30,10 +23,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
     const { id } = await params
     const { searchParams } = new URL(request.url)
     const variantType = searchParams.get('variantType') || 'original'
-    const includeDrafts = canViewDrafts(request)
+    const includeDrafts = await canViewDrafts(request)
 
     const chapter = await db.chapter.findUnique({
       where: { id },
@@ -48,6 +42,7 @@ export async function GET(
               select: {
                 slug: true,
                 name: true,
+                ownerReaderId: true,
               },
             },
             chapters: {
@@ -75,6 +70,9 @@ export async function GET(
     }
 
     if (!includeDrafts && !chapter.book.isPublic) {
+      return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
+    }
+    if (includeDrafts && chapter.book.author.ownerReaderId !== adminReader?.id) {
       return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
     }
 
@@ -160,7 +158,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
+    const ownedChapter = await getOwnedChapter(adminReader.id, id)
+    if (!ownedChapter) {
+      return NextResponse.json({ error: 'Глава не найдена' }, { status: 404 })
+    }
+
     const body = await request.json()
     const { title } = body as { title?: string }
 
@@ -169,7 +177,7 @@ export async function PUT(
     }
 
     const chapter = await db.chapter.update({
-      where: { id },
+      where: { id: ownedChapter.id },
       data: { title: title.trim() },
     })
 
@@ -181,13 +189,23 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
+    const ownedChapter = await getOwnedChapter(adminReader.id, id)
+    if (!ownedChapter) {
+      return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
+    }
+
     const chapter = await db.chapter.findUnique({
-      where: { id },
+      where: { id: ownedChapter.id },
       select: {
         id: true,
         bookId: true,
@@ -206,13 +224,13 @@ export async function DELETE(
 
     await db.$transaction(async (tx) => {
       await tx.annotation.deleteMany({
-        where: { chapterId: id },
+        where: { chapterId: ownedChapter.id },
       })
 
       await tx.readingProgress.deleteMany({
         where: {
           bookId: chapter.bookId,
-          chapterId: id,
+          chapterId: ownedChapter.id,
         },
       })
 
@@ -237,7 +255,7 @@ export async function DELETE(
       }
 
       await tx.chapter.delete({
-        where: { id },
+        where: { id: ownedChapter.id },
       })
 
       // Keep chapter positions dense so reader navigation and ordering remain stable.

@@ -1,21 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  ADMIN_COOKIE_NAME,
+  createAdminSessionValue,
+  getAdminSessionCookieOptions,
+} from '@/lib/admin-auth'
+import { db } from '@/lib/db'
+import { verifyPassword } from '@/lib/password-auth'
 
 export async function POST(request: NextRequest) {
-  const { password } = await request.json()
+  const body = await request.json() as { username?: string; password?: string }
+  const username = body.username?.trim()
+  const password = body.password?.trim()
 
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'
-
-  if (password === adminPassword) {
-    const response = NextResponse.json({ success: true })
-    response.cookies.set('bookstream_admin', 'authenticated', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/',
-    })
-    return response
+  if (!username || !password) {
+    return NextResponse.json({ error: 'Имя и пароль обязательны' }, { status: 400 })
   }
 
-  return NextResponse.json({ error: 'Неверный пароль' }, { status: 401 })
+  const reader = await db.reader.findUnique({
+    where: { loginName: username },
+    select: {
+      id: true,
+      currentUsername: true,
+      loginName: true,
+      passwordHash: true,
+    },
+  })
+
+  if (!reader?.passwordHash || !verifyPassword(password, reader.passwordHash)) {
+    return NextResponse.json({ error: 'Неверное имя или пароль' }, { status: 401 })
+  }
+
+  const response = NextResponse.json({
+    success: true,
+    reader: {
+      id: reader.id,
+      currentUsername: reader.currentUsername,
+      loginName: reader.loginName,
+    },
+  })
+  response.cookies.set(
+    ADMIN_COOKIE_NAME,
+    createAdminSessionValue(reader.id),
+    getAdminSessionCookieOptions()
+  )
+  return response
 }

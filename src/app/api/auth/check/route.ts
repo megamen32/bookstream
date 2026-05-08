@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 
 export async function GET(request: NextRequest) {
-  const session = request.cookies.get('bookstream_admin')
+  const reader = await getAdminSessionReader(request)
 
-  if (session?.value === 'authenticated') {
-    return NextResponse.json({ authenticated: true })
+  if (reader) {
+    return NextResponse.json({
+      authenticated: true,
+      reader,
+    })
   }
 
   return NextResponse.json({ authenticated: false }, { status: 401 })

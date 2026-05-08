@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
+import { slugify } from '@/lib/slugify'
 import { cn } from '@/lib/utils'
 
 const BOOK_ACCEPTED_EXTENSIONS = ['.docx', '.md', '.txt'] as const
@@ -31,25 +32,6 @@ interface ImportPreview {
   title: string | null
   description: string | null
   coverDataUrl: string | null
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[а-яё]/g, (match) => {
-      const map: Record<string, string> = {
-        а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo',
-        ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm',
-        н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u',
-        ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch',
-        ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-      }
-      return map[match] || match
-    })
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim()
 }
 
 function buildBookPreviewPath(authorSlug: string, bookSlug: string): string {

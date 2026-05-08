@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildOwnedBookWhere, getOwnedBook } from '@/lib/admin-ownership'
 import { db } from '@/lib/db'
-import { isAdminRequest } from '@/lib/admin-auth'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 
-function canViewDrafts(request: NextRequest): boolean {
+async function getDraftAccessReaderId(request: NextRequest): Promise<string | null> {
   const { searchParams } = new URL(request.url)
-  if (searchParams.get('includeDrafts') === '1') {
-    return true
+  if (searchParams.get('includeDrafts') !== '1') {
+    return null
   }
 
-  const referer = request.headers.get('referer')
-  if (!referer) {
-    return false
-  }
-
-  try {
-    return new URL(referer).pathname.startsWith('/admin')
-  } catch {
-    return false
-  }
+  const adminReader = await getAdminSessionReader(request)
+  return adminReader?.id || null
 }
 
 export async function GET(
@@ -28,7 +21,7 @@ export async function GET(
     const { bookId } = await params
     const { searchParams } = new URL(request.url)
     const authorSlug = searchParams.get('authorSlug')
-    const includeDrafts = canViewDrafts(request)
+    const draftReaderId = await getDraftAccessReaderId(request)
 
     let book
 
@@ -44,7 +37,7 @@ export async function GET(
         where: {
           authorId: author.id,
           slug: bookId,
-          ...(includeDrafts ? {} : { isPublic: true }),
+          ...(draftReaderId ? buildOwnedBookWhere(draftReaderId) : { isPublic: true }),
         },
         include: {
           author: true,
@@ -60,7 +53,7 @@ export async function GET(
       book = await db.book.findFirst({
         where: {
           id: bookId,
-          ...(includeDrafts ? {} : { isPublic: true }),
+          ...(draftReaderId ? buildOwnedBookWhere(draftReaderId) : { isPublic: true }),
         },
         include: {
           author: true,
@@ -103,11 +96,17 @@ export async function PUT(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
-    if (!isAdminRequest(request)) {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Book not found' }, { status: 404 })
+    }
+
     const body = await request.json()
     const {
       title,
@@ -164,7 +163,7 @@ export async function PUT(
     }
 
     const book = await db.book.update({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       data: updateData,
     })
 
@@ -179,15 +178,25 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { bookId } = await params
     const book = await db.book.findUnique({
       where: { id: bookId },
       select: {
         id: true,
+        author: {
+          select: {
+            ownerReaderId: true,
+          },
+        },
         chapters: {
           select: {
             id: true,
@@ -200,6 +209,9 @@ export async function DELETE(
     })
 
     if (!book) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+    if (book.author.ownerReaderId !== adminReader.id) {
       return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
     }
 
@@ -223,6 +235,20 @@ export async function DELETE(
         })
 
         await tx.paragraph.deleteMany({
+          where: {
+            chapterVariantId: { in: variantIds },
+          },
+        })
+
+        await tx.chapterVariantRevisionParagraph.deleteMany({
+          where: {
+            revision: {
+              chapterVariantId: { in: variantIds },
+            },
+          },
+        })
+
+        await tx.chapterVariantRevision.deleteMany({
           where: {
             chapterVariantId: { in: variantIds },
           },

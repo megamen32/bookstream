@@ -234,7 +234,7 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
       endOffset: range.endOffset,
     })
     setActiveParagraphIds(selectedParagraphIds)
-  }, [containerRef])
+  }, [containerRef, variantId])
 
   const clearSelection = useCallback(() => {
     setTimeout(() => {

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getOwnedBook } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import {
@@ -42,7 +44,17 @@ export async function POST(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
     const formData = await request.formData()
     const file = formData.get('file')
     const cover = formData.get('cover')
@@ -60,7 +72,7 @@ export async function POST(
     }
 
     const book = await db.book.findUnique({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       select: {
         id: true,
         slug: true,
@@ -98,7 +110,7 @@ export async function POST(
       const chapterTitle = chapterParts[index].title || `Глава ${index + 1}`
       const chapter = await db.chapter.create({
         data: {
-          bookId,
+          bookId: ownedBook.id,
           title: chapterTitle,
           position: index,
           level: chapterParts[index].level,

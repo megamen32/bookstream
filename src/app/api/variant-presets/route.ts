@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 
 /**
@@ -26,6 +27,11 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { slug, label, emoji, description, targetSizePercent, systemPromptTemplate, position } = body
 

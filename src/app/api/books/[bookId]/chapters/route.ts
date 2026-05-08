@@ -1,12 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server'
+import { getOwnedBook } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
+import { db } from '@/lib/db'
 
 interface CreateChapterBody {
-  title?: string;
+  title?: string
 }
 
 function getDefaultChapterTitle(position: number): string {
-  return `Новая глава ${position + 1}`;
+  return `Новая глава ${position + 1}`
 }
 
 // GET /api/books/[bookId]/chapters — List chapters for a book (ordered by position)
@@ -15,23 +17,31 @@ export async function GET(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
-    const { bookId } = await params;
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-    // Verify book exists
+    const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Book not found' }, { status: 404 })
+    }
+
     const book = await db.book.findUnique({
-      where: { id: bookId },
-    });
+      where: { id: ownedBook.id },
+    })
 
     if (!book) {
       return NextResponse.json(
         { error: 'Book not found' },
         { status: 404 }
-      );
+      )
     }
 
     const [chapters, commentCounts] = await Promise.all([
       db.chapter.findMany({
-        where: { bookId },
+        where: { bookId: ownedBook.id },
         orderBy: { position: 'asc' },
         include: {
           variants: {
@@ -57,7 +67,7 @@ export async function GET(
           _all: true,
         },
       }),
-    ]);
+    ])
 
     const commentCountByChapterId = new Map(
       commentCounts.map((entry) => [entry.chapterId, entry._count._all]),
@@ -70,13 +80,13 @@ export async function GET(
           comments: commentCountByChapterId.get(chapter.id) ?? 0,
         },
       })),
-    );
+    )
   } catch (error) {
-    console.error('Error listing chapters:', error);
+    console.error('Error listing chapters:', error)
     return NextResponse.json(
       { error: 'Failed to list chapters' },
       { status: 500 }
-    );
+    )
   }
 }
 
@@ -86,39 +96,49 @@ export async function POST(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
-    const { bookId } = await params;
-    const body = (await request.json()) as CreateChapterBody;
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Book not found' }, { status: 404 })
+    }
+
+    const body = (await request.json()) as CreateChapterBody
 
     const book = await db.book.findUnique({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       select: { id: true },
-    });
+    })
 
     if (!book) {
       return NextResponse.json(
         { error: 'Book not found' },
         { status: 404 }
-      );
+      )
     }
 
     const lastChapter = await db.chapter.findFirst({
-      where: { bookId },
+      where: { bookId: ownedBook.id },
       orderBy: { position: 'desc' },
       select: { position: true },
-    });
+    })
 
-    const position = lastChapter ? lastChapter.position + 1 : 0;
-    const title = body.title?.trim() || getDefaultChapterTitle(position);
+    const position = lastChapter ? lastChapter.position + 1 : 0
+    const title = body.title?.trim() || getDefaultChapterTitle(position)
 
     const chapter = await db.$transaction(async (tx) => {
       const createdChapter = await tx.chapter.create({
         data: {
-          bookId,
+          bookId: ownedBook.id,
           title,
           position,
         },
         include: { variants: true },
-      });
+      })
 
       const originalVariant = await tx.chapterVariant.create({
         data: {
@@ -126,20 +146,20 @@ export async function POST(
           variantType: 'original',
           contentHtml: '',
         },
-      });
+      })
 
       return {
         ...createdChapter,
         variants: [originalVariant],
-      };
-    });
+      }
+    })
 
-    return NextResponse.json(chapter, { status: 201 });
+    return NextResponse.json(chapter, { status: 201 })
   } catch (error) {
-    console.error('Error creating chapter:', error);
+    console.error('Error creating chapter:', error)
     return NextResponse.json(
       { error: 'Failed to create chapter' },
       { status: 500 }
-    );
+    )
   }
 }

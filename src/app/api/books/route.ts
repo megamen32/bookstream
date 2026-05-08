@@ -1,35 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server';
-import type { Prisma } from '@prisma/client';
-import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
+import { buildOwnedBookWhere } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
+import { db } from '@/lib/db'
 
-function canViewDrafts(request: NextRequest): boolean {
-  const { searchParams } = new URL(request.url);
-  if (searchParams.get('includeDrafts') === '1') {
-    return true;
+async function getDraftAccessReaderId(request: NextRequest): Promise<string | null> {
+  const { searchParams } = new URL(request.url)
+  if (searchParams.get('includeDrafts') !== '1') {
+    return null
   }
 
-  const referer = request.headers.get('referer');
-  if (!referer) {
-    return false;
-  }
-
-  try {
-    return new URL(referer).pathname.startsWith('/admin');
-  } catch {
-    return false;
-  }
+  const adminReader = await getAdminSessionReader(request)
+  return adminReader?.id || null
 }
 
 // GET /api/books — List books (with author info). Query params: authorSlug
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const authorSlug = searchParams.get('authorSlug');
-    const includeDrafts = canViewDrafts(request);
-    const where: Prisma.BookWhereInput = {
-      ...(authorSlug ? { author: { slug: authorSlug } } : {}),
-      ...(includeDrafts ? {} : { isPublic: true }),
-    };
+    const { searchParams } = new URL(request.url)
+    const authorSlug = searchParams.get('authorSlug')
+    const draftReaderId = await getDraftAccessReaderId(request)
+    const where: Prisma.BookWhereInput = draftReaderId
+      ? {
+          ...(authorSlug
+            ? {
+                author: {
+                  slug: authorSlug,
+                  ownerReaderId: draftReaderId,
+                },
+              }
+            : buildOwnedBookWhere(draftReaderId)),
+        }
+      : {
+          ...(authorSlug ? { author: { slug: authorSlug } } : {}),
+          isPublic: true,
+        }
 
     const [books, commentCounts] = await Promise.all([
       db.book.findMany({
@@ -54,11 +59,11 @@ export async function GET(request: NextRequest) {
           _all: true,
         },
       }),
-    ]);
+    ])
 
     const commentCountByBookId = new Map(
       commentCounts.map((entry) => [entry.bookId, entry._count._all]),
-    );
+    )
 
     return NextResponse.json(
       books.map((book) => ({
@@ -68,39 +73,46 @@ export async function GET(request: NextRequest) {
           comments: commentCountByBookId.get(book.id) ?? 0,
         },
       })),
-    );
+    )
   } catch (error) {
-    console.error('Error listing books:', error);
+    console.error('Error listing books:', error)
     return NextResponse.json(
       { error: 'Failed to list books' },
       { status: 500 }
-    );
+    )
   }
 }
 
 // POST /api/books — Create book
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { authorSlug, slug, title, description, readingModeDefault } = body;
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { authorSlug, slug, title, description, readingModeDefault } = body
 
     if (!authorSlug || !slug || !title) {
       return NextResponse.json(
         { error: 'authorSlug, slug, and title are required' },
         { status: 400 }
-      );
+      )
     }
 
-    // Find the author
-    const author = await db.author.findUnique({
-      where: { slug: authorSlug },
-    });
+    const author = await db.author.findFirst({
+      where: {
+        slug: authorSlug,
+        ownerReaderId: adminReader.id,
+      },
+    })
 
     if (!author) {
       return NextResponse.json(
-        { error: 'Author not found' },
+        { error: 'Author not found or does not belong to you' },
         { status: 404 }
-      );
+      )
     }
 
     const book = await db.book.create({
@@ -116,9 +128,9 @@ export async function POST(request: NextRequest) {
           select: { id: true, slug: true, name: true },
         },
       },
-    });
+    })
 
-    return NextResponse.json(book, { status: 201 });
+    return NextResponse.json(book, { status: 201 })
   } catch (error: unknown) {
     if (
       error &&
@@ -129,12 +141,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Book with this slug already exists for this author' },
         { status: 409 }
-      );
+      )
     }
-    console.error('Error creating book:', error);
+    console.error('Error creating book:', error)
     return NextResponse.json(
       { error: 'Failed to create book' },
       { status: 500 }
-    );
+    )
   }
 }

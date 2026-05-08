@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getOwnedBook } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 import { persistImportedBookCover } from '@/lib/book-import'
 
@@ -37,7 +39,17 @@ export async function PUT(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
     const formData = await request.formData()
     const cover = formData.get('cover')
 
@@ -53,7 +65,7 @@ export async function PUT(
     }
 
     const book = await db.book.findUnique({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       select: { id: true, slug: true },
     })
 
@@ -73,7 +85,7 @@ export async function PUT(
     }
 
     const updatedBook = await db.book.update({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       data: { coverUrl },
       select: { id: true, coverUrl: true },
     })

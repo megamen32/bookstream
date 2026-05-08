@@ -10,6 +10,7 @@ import { BookOpen, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 export default function AdminLoginPage() {
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -25,7 +26,7 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       })
 
       if (res.ok) {
@@ -53,11 +54,23 @@ export default function AdminLoginPage() {
             Bookstream
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Введите пароль для входа в панель управления
+            Логин это ваше имя читателя. Пароль задаётся в настройках профиля.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">Имя читателя</Label>
+              <Input
+                id="username"
+                placeholder="Например, внимательный читатель"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="h-11"
+                autoFocus
+              />
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="password">Пароль</Label>
               <Input
@@ -67,7 +80,6 @@ export default function AdminLoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-11"
-                autoFocus
               />
             </div>
 
@@ -78,7 +90,7 @@ export default function AdminLoginPage() {
             <Button
               type="submit"
               className="w-full h-11 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium shadow-md"
-              disabled={loading || !password}
+              disabled={loading || !username.trim() || !password}
             >
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Войти

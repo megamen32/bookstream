@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { buildImportedBookPreview } from '@/lib/book-import'
 
 export async function POST(request: NextRequest) {
   try {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const formData = await request.formData()
     const file = formData.get('file')
 

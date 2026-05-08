@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
 import { mapAnnotationComment, mapAnnotationQuote, sortCommentsByTop, sortQuotesByTop } from '@/lib/annotations'
+import { buildOwnedBookWhere } from '@/lib/admin-ownership'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 
 interface RouteParams {
   bookId: string
 }
 
-function canViewDrafts(request: NextRequest): boolean {
+async function getDraftAccessReaderId(request: NextRequest): Promise<string | null> {
   const { searchParams } = new URL(request.url)
-  if (searchParams.get('includeDrafts') === '1') {
-    return true
+  if (searchParams.get('includeDrafts') !== '1') {
+    return null
   }
 
-  const referer = request.headers.get('referer')
-  if (!referer) {
-    return false
-  }
-
-  try {
-    return new URL(referer).pathname.startsWith('/admin')
-  } catch {
-    return false
-  }
+  const adminReader = await getAdminSessionReader(request)
+  return adminReader?.id || null
 }
 
 function normalizeWindowParam(value: string | null, fallback: number): number {
@@ -44,7 +38,7 @@ export async function GET(
     const before = normalizeWindowParam(searchParams.get('before'), 1)
     const after = normalizeWindowParam(searchParams.get('after'), 1)
     const previewLimit = normalizeWindowParam(searchParams.get('previewLimit'), 3) || 3
-    const includeDrafts = canViewDrafts(request)
+    const draftReaderId = await getDraftAccessReaderId(request)
 
     if (!anchorChapterId) {
       return NextResponse.json({ error: 'anchorChapterId is required' }, { status: 400 })
@@ -53,7 +47,7 @@ export async function GET(
     const book = await db.book.findFirst({
       where: {
         id: bookId,
-        ...(includeDrafts ? {} : { isPublic: true }),
+        ...(draftReaderId ? buildOwnedBookWhere(draftReaderId) : { isPublic: true }),
       },
       select: {
         id: true,

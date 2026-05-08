@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getOwnedBook } from '@/lib/admin-ownership'
 import { db } from '@/lib/db'
-import { isAdminRequest } from '@/lib/admin-auth'
+import { getAdminSessionReader } from '@/lib/admin-auth'
 import {
   buildSyntheticChapterPlan,
   buildSyntheticComments,
@@ -33,13 +34,19 @@ export async function POST(
   { params }: { params: Promise<RouteParams> },
 ) {
   try {
-    if (!isAdminRequest(request)) {
+    const adminReader = await getAdminSessionReader(request)
+    if (!adminReader) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { bookId } = await params
+    const ownedBook = await getOwnedBook(adminReader.id, bookId)
+    if (!ownedBook) {
+      return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
     const book = await db.book.findUnique({
-      where: { id: bookId },
+      where: { id: ownedBook.id },
       select: {
         id: true,
         title: true,
