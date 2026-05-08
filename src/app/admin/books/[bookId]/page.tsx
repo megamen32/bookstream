@@ -73,6 +73,16 @@ interface ChapterVariant {
   headRevisionId?: string | null
 }
 
+interface VariantPreset {
+  id: string
+  slug: string
+  label: string
+  emoji: string
+  description: string
+  targetSizePercent: number | null
+  position: number
+}
+
 interface VariantRevisionSummary {
   id: string
   revisionNumber: number
@@ -133,7 +143,13 @@ interface AdminSettingsPayload {
   }
 }
 
-const variantTabs: Array<{ value: string; label: string; placeholder: string }> = [
+interface VariantTab {
+  value: string
+  label: string
+  placeholder: string
+}
+
+const DEFAULT_VARIANT_TABS: Array<VariantTab> = [
   {
     value: 'original',
     label: 'Оригинал',
@@ -150,6 +166,49 @@ const variantTabs: Array<{ value: string; label: string; placeholder: string }> 
     placeholder: 'Здесь будет краткая смысловая выжимка главы…',
   },
 ]
+
+function buildVariantTabs(
+  variantPresets: VariantPreset[],
+  chapterVariants: ChapterVariant[],
+): VariantTab[] {
+  const tabs: VariantTab[] = [DEFAULT_VARIANT_TABS[0]]
+  const knownVariantTypes = new Set<string>(['original'])
+
+  if (variantPresets.length > 0) {
+    for (const preset of variantPresets) {
+      if (knownVariantTypes.has(preset.slug) || preset.slug === 'original') {
+        continue
+      }
+
+      tabs.push({
+        value: preset.slug,
+        label: preset.label,
+        placeholder: `Здесь будет версия «${preset.label}»…`,
+      })
+      knownVariantTypes.add(preset.slug)
+    }
+  } else {
+    for (const defaultTab of DEFAULT_VARIANT_TABS.slice(1)) {
+      tabs.push(defaultTab)
+      knownVariantTypes.add(defaultTab.value)
+    }
+  }
+
+  for (const chapterVariant of chapterVariants) {
+    if (knownVariantTypes.has(chapterVariant.variantType)) {
+      continue
+    }
+
+    tabs.push({
+      value: chapterVariant.variantType,
+      label: chapterVariant.variantType,
+      placeholder: `Здесь будет версия «${chapterVariant.variantType}»…`,
+    })
+    knownVariantTypes.add(chapterVariant.variantType)
+  }
+
+  return tabs
+}
 
 function formatDurationLabel(totalSeconds: number): string {
   const safeSeconds = Math.max(0, Math.round(totalSeconds))
@@ -169,6 +228,7 @@ export default function BookEditorPage() {
   const { toast } = useToast()
 
   const [book, setBook] = useState<BookData | null>(null)
+  const [variantPresets, setVariantPresets] = useState<VariantPreset[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null)
   const [activeVariant, setActiveVariant] = useState('original')
@@ -255,6 +315,21 @@ export default function BookEditorPage() {
     }
   }, [bookId, selectedChapterId, toast])
 
+  const fetchVariantPresets = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch('/api/variant-presets')
+
+      if (!res.ok) {
+        return
+      }
+
+      const data = (await res.json()) as { presets?: VariantPreset[] }
+      setVariantPresets(Array.isArray(data.presets) ? data.presets : [])
+    } catch (error) {
+      console.error('Error fetching variant presets:', error)
+    }
+  }, [])
+
   const fetchBookStats = useCallback(async (): Promise<void> => {
     setLoadingBookStats(true)
 
@@ -306,16 +381,30 @@ export default function BookEditorPage() {
     }
 
     void loadAdminSettings()
+    void fetchVariantPresets()
 
     return () => {
       active = false
     }
-  }, [])
+  }, [fetchVariantPresets])
 
   const selectedChapter = book?.chapters.find((chapter) => chapter.id === selectedChapterId)
   const currentVariant = selectedChapter?.variants.find(
     (variant) => variant.variantType === activeVariant
   )
+  const visibleVariantTabs = buildVariantTabs(variantPresets, selectedChapter?.variants ?? [])
+  const visibleVariantTypesKey = visibleVariantTabs.map((tab) => tab.value).join('|')
+  const activeTab = visibleVariantTabs.find((tab) => tab.value === activeVariant)
+
+  useEffect(() => {
+    if (visibleVariantTabs.length === 0) {
+      return
+    }
+
+    if (!visibleVariantTabs.some((tab) => tab.value === activeVariant)) {
+      setActiveVariant(visibleVariantTabs[0]?.value ?? 'original')
+    }
+  }, [activeVariant, visibleVariantTypesKey])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -331,8 +420,6 @@ export default function BookEditorPage() {
 
     return () => window.cancelAnimationFrame(frameId)
   }, [currentVariant?.id, currentVariant?.contentHtml, selectedChapter?.title])
-
-  const activeTab = variantTabs.find((tab) => tab.value === activeVariant)
   const chapterHasChanges =
     editChapterTitle !== initialChapterTitle || editContent !== initialChapterContent
   const canPublishThisBook = isMainAdmin || allowUserPublishing
@@ -511,13 +598,18 @@ export default function BookEditorPage() {
       return
     }
 
+    const generateAllVariants = activeVariant === 'original'
     setGenerating(true)
 
     try {
+      const payload = generateAllVariants
+        ? {}
+        : { variantType: activeVariant }
+
       const res = await fetch(`/api/chapters/${selectedChapterId}/summarize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variantType: activeVariant }),
+        body: JSON.stringify(payload),
       })
 
       if (!res.ok) {
@@ -526,7 +618,11 @@ export default function BookEditorPage() {
 
       toast({ title: 'Готово', description: 'Варианты сгенерированы' })
       await fetchBook()
-      setActiveVariant('clean')
+      setActiveVariant(
+        generateAllVariants
+          ? visibleVariantTabs.find((tab) => tab.value !== 'original')?.value ?? 'original'
+          : activeVariant,
+      )
     } catch {
       toast({ title: 'Ошибка генерации', variant: 'destructive' })
     } finally {
@@ -1376,6 +1472,31 @@ export default function BookEditorPage() {
                       )}
                       Удалить
                     </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent>
+                <Tabs value={activeVariant} onValueChange={setActiveVariant}>
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <TabsList className="flex min-w-0 flex-1 flex-wrap rounded-full">
+                      {visibleVariantTabs.map((tab) => {
+                        const hasVariant = selectedChapter.variants.some(
+                          (variant) => variant.variantType === tab.value
+                        )
+
+                        return (
+                          <TabsTrigger
+                            key={tab.value}
+                            value={tab.value}
+                            className="rounded-full text-xs sm:text-sm"
+                          >
+                            {tab.label}
+                            {hasVariant && <Check className="ml-1 h-3 w-3 text-emerald-600" />}
+                          </TabsTrigger>
+                        )
+                      })}
+                    </TabsList>
 
                     <Button
                       variant="outline"
@@ -1384,41 +1505,20 @@ export default function BookEditorPage() {
                         setGenerateDialogOpen(true)
                       }}
                       disabled={generating}
-                      className="w-fit rounded-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                      className="shrink-0 rounded-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                     >
                       {generating ? (
                         <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       ) : (
                         <Sparkles className="mr-1 h-3 w-3" />
                       )}
-                      Сгенерировать AI
+                      {activeVariant === 'original'
+                        ? 'Сгенерировать AI все варианты'
+                        : `ИИ генерировать ${activeTab?.label || activeVariant}`}
                     </Button>
                   </div>
-                </div>
-              </CardHeader>
 
-              <CardContent>
-                <Tabs value={activeVariant} onValueChange={setActiveVariant}>
-                  <TabsList className="mb-4 rounded-full">
-                    {variantTabs.map((tab) => {
-                      const hasVariant = selectedChapter.variants.some(
-                        (variant) => variant.variantType === tab.value
-                      )
-
-                      return (
-                        <TabsTrigger
-                          key={tab.value}
-                          value={tab.value}
-                          className="rounded-full text-xs sm:text-sm"
-                        >
-                          {tab.label}
-                          {hasVariant && <Check className="ml-1 h-3 w-3 text-emerald-600" />}
-                        </TabsTrigger>
-                      )
-                    })}
-                  </TabsList>
-
-                  {variantTabs.map((tab) => (
+                  {visibleVariantTabs.map((tab) => (
                     <TabsContent key={tab.value} value={tab.value} className="mt-0">
                       <BookTextEditor
                         value={activeVariant === tab.value ? editContent : ''}
@@ -1620,15 +1720,26 @@ export default function BookEditorPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-emerald-600" />
-              Сгенерировать только эту версию?
+              {activeVariant === 'original'
+                ? 'Сгенерировать все варианты?'
+                : 'Сгенерировать только эту версию?'}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
-                Будет обновлена только версия <strong>{activeTab?.label || activeVariant}</strong>.
+                {activeVariant === 'original'
+                  ? 'Будут обновлены все варианты из шаблонов.'
+                  : <>Будет обновлена только версия <strong>{activeTab?.label || activeVariant}</strong>.</>}
               </span>
-              {currentVariant?.editedByAuthor && (
+              {activeVariant !== 'original' && currentVariant?.editedByAuthor && (
                 <span className="block text-destructive">
                   Сейчас в этой версии есть авторские правки. Генерация перезапишет их.
+                </span>
+              )}
+              {activeVariant === 'original' && selectedChapter?.variants.some(
+                (variant) => variant.variantType !== 'original' && variant.editedByAuthor
+              ) && (
+                <span className="block text-destructive">
+                  В некоторых вариантах уже есть авторские правки. Генерация перезапишет их.
                 </span>
               )}
             </AlertDialogDescription>
