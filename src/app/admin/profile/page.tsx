@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Save, Loader2, User } from 'lucide-react'
+import { Save, Loader2, ShieldCheck, User } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { slugify } from '@/lib/slugify'
 
@@ -16,6 +17,15 @@ interface Author {
   name: string
   slug: string
   bio: string | null
+}
+
+interface AdminSettingsPayload {
+  settings: {
+    allowUserPublishing: boolean
+  }
+  reader: {
+    isMainAdmin: boolean
+  }
 }
 
 export default function AdminProfilePage() {
@@ -28,6 +38,9 @@ export default function AdminProfilePage() {
   const [slug, setSlug] = useState('')
   const [bio, setBio] = useState('')
   const [nameChanged, setNameChanged] = useState(false)
+  const [isMainAdmin, setIsMainAdmin] = useState(false)
+  const [allowUserPublishing, setAllowUserPublishing] = useState(true)
+  const [savingSettings, setSavingSettings] = useState(false)
 
   const { toast } = useToast()
 
@@ -48,6 +61,25 @@ export default function AdminProfilePage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/admin/settings')
+      .then(async (res) => {
+        if (!res.ok) {
+          return null
+        }
+        return await res.json() as AdminSettingsPayload
+      })
+      .then((payload) => {
+        if (!payload) {
+          return
+        }
+
+        setIsMainAdmin(payload.reader.isMainAdmin)
+        setAllowUserPublishing(payload.settings.allowUserPublishing)
+      })
+      .catch(console.error)
   }, [])
 
   const handleNameChange = (value: string) => {
@@ -88,6 +120,45 @@ export default function AdminProfilePage() {
       toast({ title: 'Ошибка сохранения', variant: 'destructive' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePublishingToggle = async (checked: boolean): Promise<void> => {
+    if (!isMainAdmin) {
+      return
+    }
+
+    setSavingSettings(true)
+
+    try {
+      const response = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          allowUserPublishing: checked,
+        }),
+      })
+
+      const payload = await response.json() as { error?: string; settings?: { allowUserPublishing: boolean } }
+      if (!response.ok || !payload.settings) {
+        throw new Error(payload.error || 'Не удалось обновить правила публикации')
+      }
+
+      setAllowUserPublishing(payload.settings.allowUserPublishing)
+      toast({
+        title: 'Правила публикации обновлены',
+        description: payload.settings.allowUserPublishing
+          ? 'Обычные пользователи снова могут публиковать книги.'
+          : 'Обычные пользователи теперь могут загружать книги только как приватные черновики.',
+      })
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: error instanceof Error ? error.message : 'Не удалось обновить правила публикации',
+        variant: 'destructive',
+      })
+    } finally {
+      setSavingSettings(false)
     }
   }
 
@@ -132,6 +203,40 @@ export default function AdminProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {isMainAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck className="h-4 w-4" />
+                Главный админ
+              </CardTitle>
+              <CardDescription>
+                Здесь задаётся, могут ли обычные пользователи публиковать книги, или только хранить их приватно у себя.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Разрешить публикацию пользователям</div>
+                  <p className="text-xs text-muted-foreground">
+                    Если выключить, новые и отредактированные пользовательские книги будут оставаться приватными и видимыми только их владельцам.
+                  </p>
+                </div>
+                <Switch
+                  checked={allowUserPublishing}
+                  onCheckedChange={(checked) => {
+                    void handlePublishingToggle(checked)
+                  }}
+                  disabled={savingSettings}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Текущее состояние: {allowUserPublishing ? 'публикация разрешена' : 'публикация выключена для обычных пользователей'}.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* Profile form */}
         <Card>

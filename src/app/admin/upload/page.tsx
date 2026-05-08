@@ -34,6 +34,15 @@ interface ImportPreview {
   coverDataUrl: string | null
 }
 
+interface AdminSettingsPayload {
+  settings: {
+    allowUserPublishing: boolean
+  }
+  reader: {
+    isMainAdmin: boolean
+  }
+}
+
 function buildBookPreviewPath(authorSlug: string, bookSlug: string): string {
   const safeAuthorSlug = authorSlug.trim() || 'author'
   const safeBookSlug = bookSlug.trim() || 'book-slug'
@@ -74,6 +83,8 @@ export default function AdminUploadPage() {
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
   const [suggestedCoverDataUrl, setSuggestedCoverDataUrl] = useState<string | null>(null)
+  const [allowUserPublishing, setAllowUserPublishing] = useState(true)
+  const [isMainAdmin, setIsMainAdmin] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [creating, setCreating] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -118,6 +129,35 @@ export default function AdminUploadPage() {
 
     void loadAuthors()
   }, [toast])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadAdminSettings(): Promise<void> {
+      try {
+        const response = await fetch('/api/admin/settings')
+        if (!response.ok) {
+          return
+        }
+
+        const payload = (await response.json()) as AdminSettingsPayload
+        if (!active) {
+          return
+        }
+
+        setAllowUserPublishing(payload.settings.allowUserPublishing)
+        setIsMainAdmin(payload.reader.isMainAdmin)
+      } catch {
+        // Settings only change the explanatory copy on this screen.
+      }
+    }
+
+    void loadAdminSettings()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => (
     () => {
@@ -424,6 +464,7 @@ export default function AdminUploadPage() {
   const authorReady = authorMode === 'new'
     ? Boolean(newAuthorName.trim() && newAuthorSlug.trim())
     : Boolean(authorSlug)
+  const uploadsStayPrivate = !isMainAdmin && !allowUserPublishing
   const bookPreviewPath = buildBookPreviewPath(
     authorMode === 'new' ? newAuthorSlug : authorSlug,
     slug,
@@ -580,7 +621,11 @@ export default function AdminUploadPage() {
         />
 
         <BookMetadataSection
-          description="Пустые поля мы пытаемся заполнить из загруженного файла"
+          description={
+            uploadsStayPrivate
+              ? 'Пустые поля мы пытаемся заполнить из загруженного файла. Главный админ отключил публикацию для обычных пользователей, поэтому эта книга останется приватной и будет видна только вам.'
+              : 'Пустые поля мы пытаемся заполнить из загруженного файла'
+          }
           idPrefix="upload-book"
           titleValue={title}
           onTitleChange={handleTitleChange}

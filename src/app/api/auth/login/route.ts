@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       currentUsername: true,
       loginName: true,
       passwordHash: true,
+      isMainAdmin: true,
     },
   })
 
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
       id: reader.id,
       currentUsername: reader.currentUsername,
       loginName: reader.loginName,
+      isMainAdmin: reader.isMainAdmin,
     },
   })
   response.cookies.set(

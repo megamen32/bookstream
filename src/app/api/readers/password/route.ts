@@ -49,23 +49,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const existingMainAdmin = await db.reader.findFirst({
+      where: {
+        isMainAdmin: true,
+      },
+      select: {
+        id: true,
+      },
+    })
+
+    const shouldBecomeMainAdmin = !existingMainAdmin || existingMainAdmin.id === readerId
+
     const reader = await db.reader.upsert({
       where: { id: readerId },
       update: {
         currentUsername,
         loginName: currentUsername,
         passwordHash: hashPassword(password),
+        ...(shouldBecomeMainAdmin ? { isMainAdmin: true } : {}),
       },
       create: {
         id: readerId,
         currentUsername,
         loginName: currentUsername,
         passwordHash: hashPassword(password),
+        isMainAdmin: shouldBecomeMainAdmin,
       },
       select: {
         id: true,
         currentUsername: true,
         loginName: true,
+        isMainAdmin: true,
       },
     })
 

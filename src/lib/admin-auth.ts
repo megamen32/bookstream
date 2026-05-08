@@ -10,6 +10,7 @@ export interface AdminSessionReader {
   id: string
   currentUsername: string
   loginName: string
+  isMainAdmin: boolean
 }
 
 /**
@@ -108,6 +109,7 @@ export async function getAdminSessionReader(request: NextRequest): Promise<Admin
       id: true,
       currentUsername: true,
       loginName: true,
+      isMainAdmin: true,
     },
   })
 

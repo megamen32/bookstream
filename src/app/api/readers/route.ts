@@ -12,6 +12,7 @@ interface ReaderResponse {
   currentUsername: string
   loginName: string | null
   hasPassword: boolean
+  isMainAdmin: boolean
 }
 
 // POST /api/readers — Create or update reader
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
         id: true,
         loginName: true,
         passwordHash: true,
+        isMainAdmin: true,
       },
     })
 
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
         currentUsername: true,
         loginName: true,
         passwordHash: true,
+        isMainAdmin: true,
       },
     })
 
@@ -80,6 +83,7 @@ export async function POST(request: NextRequest) {
       currentUsername: reader.currentUsername,
       loginName: reader.loginName,
       hasPassword: Boolean(reader.passwordHash),
+      isMainAdmin: reader.isMainAdmin,
     }
 
     return NextResponse.json(payload, { status: 201 })
@@ -112,6 +116,7 @@ export async function GET(request: NextRequest) {
         currentUsername: true,
         loginName: true,
         passwordHash: true,
+        isMainAdmin: true,
       },
     })
 
@@ -124,6 +129,7 @@ export async function GET(request: NextRequest) {
       currentUsername: reader.currentUsername,
       loginName: reader.loginName,
       hasPassword: Boolean(reader.passwordHash),
+      isMainAdmin: reader.isMainAdmin,
     }
 
     return NextResponse.json(payload)

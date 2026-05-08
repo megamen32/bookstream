@@ -27,6 +27,7 @@ export interface BookMetadataSectionProps {
   isPublic?: boolean
   onIsPublicChange?: (value: boolean) => void
   showVisibility?: boolean
+  visibilityNote?: string
   disabled?: boolean
   beforeFields?: ReactNode
 }
@@ -55,6 +56,7 @@ export function BookMetadataSection({
   isPublic,
   onIsPublicChange,
   showVisibility = false,
+  visibilityNote,
   disabled = false,
   beforeFields,
 }: BookMetadataSectionProps) {
@@ -130,21 +132,24 @@ export function BookMetadataSection({
         </div>
 
         {showVisibility && typeof isPublic === 'boolean' && onIsPublicChange ? (
-          <div className="flex items-center gap-3 rounded-xl border px-3 py-3">
-            <Switch checked={isPublic} onCheckedChange={onIsPublicChange} disabled={disabled} />
-            <Label className="text-sm">
-              {isPublic ? (
-                <span className="flex items-center gap-1.5">
-                  <Eye className="h-3.5 w-3.5" />
-                  Публичная
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <EyeOff className="h-3.5 w-3.5" />
-                  Черновик
-                </span>
-              )}
-            </Label>
+          <div className="space-y-2 rounded-xl border px-3 py-3">
+            <div className="flex items-center gap-3">
+              <Switch checked={isPublic} onCheckedChange={onIsPublicChange} disabled={disabled} />
+              <Label className="text-sm">
+                {isPublic ? (
+                  <span className="flex items-center gap-1.5">
+                    <Eye className="h-3.5 w-3.5" />
+                    Публичная
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <EyeOff className="h-3.5 w-3.5" />
+                    Черновик
+                  </span>
+                )}
+              </Label>
+            </div>
+            {visibilityNote ? <p className="text-xs text-muted-foreground">{visibilityNote}</p> : null}
           </div>
         ) : null}
       </CardContent>

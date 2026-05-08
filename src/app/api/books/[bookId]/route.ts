@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAppSettings } from '@/lib/app-settings'
 import { buildOwnedBookWhere, getOwnedBook } from '@/lib/admin-ownership'
 import { db } from '@/lib/db'
 import { getAdminSessionReader } from '@/lib/admin-auth'
@@ -106,6 +107,7 @@ export async function PUT(
     if (!ownedBook) {
       return NextResponse.json({ error: 'Book not found' }, { status: 404 })
     }
+    const settings = await getAppSettings()
 
     const body = await request.json()
     const {
@@ -143,7 +145,11 @@ export async function PUT(
     if (title !== undefined) updateData.title = title
     if (description !== undefined) updateData.description = description
     if (slug !== undefined) updateData.slug = slug
-    if (isPublic !== undefined) updateData.isPublic = isPublic
+    if (isPublic !== undefined) {
+      updateData.isPublic = adminReader.isMainAdmin || settings.allowUserPublishing
+        ? isPublic
+        : false
+    }
     if (readingModeDefault !== undefined) updateData.readingModeDefault = readingModeDefault
     if (syntheticCommentsUseLlm !== undefined) updateData.syntheticCommentsUseLlm = Boolean(syntheticCommentsUseLlm)
 

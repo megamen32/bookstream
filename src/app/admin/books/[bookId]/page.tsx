@@ -99,6 +99,15 @@ interface BookData {
   _count: { comments: number }
 }
 
+interface AdminSettingsPayload {
+  settings: {
+    allowUserPublishing: boolean
+  }
+  reader: {
+    isMainAdmin: boolean
+  }
+}
+
 const variantTabs: Array<{ value: string; label: string; placeholder: string }> = [
   {
     value: 'original',
@@ -158,6 +167,8 @@ export default function BookEditorPage() {
   const [editSyntheticQuotesPerChapter, setEditSyntheticQuotesPerChapter] = useState(1)
   const [editSyntheticReactionsPerChapter, setEditSyntheticReactionsPerChapter] = useState(5)
   const [editSyntheticCommentsUseLlm, setEditSyntheticCommentsUseLlm] = useState(false)
+  const [allowUserPublishing, setAllowUserPublishing] = useState(true)
+  const [isMainAdmin, setIsMainAdmin] = useState(false)
   const visibleRevisionHistory = selectedChapterId ? revisionHistory : []
   const visibleLoadingHistory = selectedChapterId ? loadingHistory : false
 
@@ -208,6 +219,35 @@ export default function BookEditorPage() {
     return () => window.cancelAnimationFrame(frameId)
   }, [fetchBook])
 
+  useEffect(() => {
+    let active = true
+
+    async function loadAdminSettings(): Promise<void> {
+      try {
+        const response = await fetch('/api/admin/settings')
+        if (!response.ok) {
+          return
+        }
+
+        const payload = (await response.json()) as AdminSettingsPayload
+        if (!active) {
+          return
+        }
+
+        setAllowUserPublishing(payload.settings.allowUserPublishing)
+        setIsMainAdmin(payload.reader.isMainAdmin)
+      } catch {
+        // Settings are only needed to explain publishing restrictions in the UI.
+      }
+    }
+
+    void loadAdminSettings()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   const selectedChapter = book?.chapters.find((chapter) => chapter.id === selectedChapterId)
   const currentVariant = selectedChapter?.variants.find(
     (variant) => variant.variantType === activeVariant
@@ -231,6 +271,7 @@ export default function BookEditorPage() {
   const activeTab = variantTabs.find((tab) => tab.value === activeVariant)
   const chapterHasChanges =
     editChapterTitle !== initialChapterTitle || editContent !== initialChapterContent
+  const canPublishThisBook = isMainAdmin || allowUserPublishing
   const bookInfoHasChanges =
     book !== null &&
     (editTitle !== book.title ||
@@ -844,7 +885,12 @@ export default function BookEditorPage() {
                   isPublic={editIsPublic}
                   onIsPublicChange={setEditIsPublic}
                   showVisibility
-                  disabled={savingBook}
+                  visibilityNote={
+                    canPublishThisBook
+                      ? 'Можно переключать между черновиком и публичной книгой.'
+                      : 'Главный админ отключил публикацию для обычных пользователей. Эта книга останется приватной и будет видна только вам.'
+                  }
+                  disabled={savingBook || !canPublishThisBook}
                 />
 
                 <Card className="border-border/60">

@@ -29,6 +29,7 @@ model Book {
   coverUrl           String?
   authorId           String
   readingModeDefault String            @default("feed")
+  openStatsPublic    Boolean           @default(false)
   syntheticCommentsPerChapter Int      @default(3)
   syntheticQuotesPerChapter   Int      @default(1)
   syntheticReactionsPerChapter Int     @default(5)
@@ -40,6 +41,7 @@ model Book {
   chapters           Chapter[]
   annotations        Annotation[]
   readingProgress    ReadingProgress[]
+  readerStats        BookReaderStat[]
 
   @@unique([authorId, slug])
 }
@@ -55,6 +57,7 @@ model Chapter {
   book      Book             @relation(fields: [bookId], references: [id])
   variants  ChapterVariant[]
   annotations Annotation[]
+  readerStats ChapterReaderStat[]
 
   @@unique([bookId, position])
 }
@@ -194,9 +197,17 @@ model Reader {
   currentUsername String
   loginName       String?  @unique
   passwordHash    String?
+  isMainAdmin     Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   authors         Author[]
+}
+
+model AppSettings {
+  id                  String   @id
+  allowUserPublishing Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model ReadingProgress {
@@ -213,6 +224,41 @@ model ReadingProgress {
   book          Book     @relation(fields: [bookId], references: [id])
 
   @@unique([readerId, bookId])
+}
+
+model BookReaderStat {
+  id                     String   @id @default(cuid())
+  bookId                 String
+  readerId               String
+  firstOpenedAt          DateTime @default(now())
+  lastOpenedAt           DateTime @default(now())
+  totalReadSeconds       Int      @default(0)
+  furthestProgressPercent Float   @default(0)
+  lastChapterId          String?
+  completedChaptersCount Int      @default(0)
+  isCompleted            Boolean  @default(false)
+  book                   Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([bookId, readerId])
+  @@index([bookId])
+}
+
+model ChapterReaderStat {
+  id                     String   @id @default(cuid())
+  bookId                 String
+  chapterId              String
+  readerId               String
+  firstOpenedAt          DateTime @default(now())
+  lastOpenedAt           DateTime @default(now())
+  totalReadSeconds       Int      @default(0)
+  furthestProgressPercent Float   @default(0)
+  isCompleted            Boolean  @default(false)
+  book                   Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter                Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, readerId])
+  @@index([bookId])
+  @@index([chapterId])
 }
 
 /// Presets for text variant generation.
