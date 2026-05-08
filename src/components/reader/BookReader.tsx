@@ -57,6 +57,16 @@ interface PointerGestureState {
   clientY: number
 }
 
+interface PageParagraphBlock {
+  paragraph: Paragraph
+  startOffset: number
+  endOffset: number
+  isContinuationStart: boolean
+  isContinuationEnd: boolean
+}
+
+type ReaderPage = PageParagraphBlock[]
+
 export default function BookReader({
   paragraphs,
   variantId,
@@ -96,7 +106,7 @@ export default function BookReader({
   const activePageRef = useRef<HTMLDivElement>(null)
 
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 })
-  const [pages, setPages] = useState<Paragraph[][]>([])
+  const [pages, setPages] = useState<ReaderPage[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [showHud, setShowHud] = useState(false)
   const [selectionHighlights, setSelectionHighlights] = useState<SelectionAnnotationRange[]>([])
@@ -287,8 +297,8 @@ export default function BookReader({
     if (!measureRef.current || pageSize.width <= 0 || pageSize.height <= 0) return
 
     const measure = measureRef.current
-    const result: Paragraph[][] = []
-    let current: Paragraph[] = []
+    const result: ReaderPage[] = []
+    let currentPageBlocks: ReaderPage = []
     let isFirstPage = true
 
     const makeChapterHeaderNode = (): HTMLElement => {
@@ -311,7 +321,11 @@ export default function BookReader({
       }
     }
 
-    const makeParagraphNode = (paragraph: Paragraph) => {
+    const makeParagraphNode = (
+      paragraph: Paragraph,
+      startOffset = 0,
+      endOffset = paragraph.text.length,
+    ): HTMLElement => {
       const wrapper = document.createElement('section')
       wrapper.className = 'book-reader-paragraph-shell'
 
@@ -319,29 +333,32 @@ export default function BookReader({
       article.className = 'book-reader-paragraph'
       article.style.textAlign = paragraph.textAlign ?? 'justify'
 
-      if (paragraph.indentPx) {
+      if (paragraph.indentPx && startOffset === 0) {
         article.style.paddingInlineStart = `${Math.min(paragraph.indentPx, 72)}px`
       }
 
       const p = document.createElement('p')
 
-      if (paragraph.html) {
+      const isWholeParagraph = startOffset === 0 && endOffset >= paragraph.text.length
+      if (isWholeParagraph && paragraph.html) {
         p.innerHTML = paragraph.html
       } else {
-        p.textContent = paragraph.text
+        p.textContent = paragraph.text.slice(startOffset, endOffset)
       }
 
       article.appendChild(p)
       wrapper.appendChild(article)
 
       /**
-       * The rendered paragraph includes a reaction bar on wider viewports.
-       * It must be included in measurement too, otherwise page splitting
-       * underestimates the real height and the bottom of the content gets cut off.
+       * Для измерения учитываем reaction bar только на целых абзацах или последних кусках.
+       * Иначе длинный абзац искусственно раздувается на каждой странице.
        */
-      if (window.matchMedia('(min-width: 768px)').matches) {
+      const shouldMeasureReactionBar =
+        window.matchMedia('(min-width: 768px)').matches &&
+        endOffset >= paragraph.text.length
+      if (shouldMeasureReactionBar) {
         const reactionBar = document.createElement('div')
-        reactionBar.className = 'reaction-bar items-center gap-1 pt-2 md:flex md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100'
+        reactionBar.className = 'reaction-bar'
         reactionBar.style.display = 'flex'
         reactionBar.style.visibility = 'hidden'
         reactionBar.style.pointerEvents = 'none'
@@ -353,42 +370,143 @@ export default function BookReader({
     }
 
     const commitPage = (): void => {
-      if (current.length > 0 || isFirstPage) {
-        result.push(current)
-        current = []
-        isFirstPage = false
-        resetMeasure()
+      result.push(currentPageBlocks)
+      currentPageBlocks = []
+      isFirstPage = false
+      resetMeasure()
+    }
+
+    const fitsCurrentPage = (node: HTMLElement): boolean => {
+      measure.appendChild(node)
+      const fits = measure.scrollHeight <= pageSize.height
+      measure.removeChild(node)
+      return fits
+    }
+
+    const appendBlockToMeasure = (block: PageParagraphBlock): void => {
+      measure.appendChild(
+        makeParagraphNode(
+          block.paragraph,
+          block.startOffset,
+          block.endOffset,
+        ),
+      )
+    }
+
+    const rebuildMeasureFromCurrentPage = (): void => {
+      resetMeasure()
+      for (const block of currentPageBlocks) {
+        appendBlockToMeasure(block)
       }
+    }
+
+    const findLargestFittingEndOffset = (
+      paragraph: Paragraph,
+      startOffset: number,
+    ): number => {
+      let low = startOffset + 1
+      let high = paragraph.text.length
+      let best = startOffset
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2)
+        const node = makeParagraphNode(paragraph, startOffset, mid)
+        const fits = fitsCurrentPage(node)
+
+        if (fits) {
+          best = mid
+          low = mid + 1
+        } else {
+          high = mid - 1
+        }
+      }
+
+      /**
+       * Не режем прямо посреди слова, если есть нормальная граница.
+       */
+      if (best > startOffset) {
+        const candidate = paragraph.text.slice(startOffset, best)
+        const lastSpace = Math.max(
+          candidate.lastIndexOf(' '),
+          candidate.lastIndexOf('\n'),
+          candidate.lastIndexOf('\t'),
+        )
+        const minUsefulLength = 24
+        if (lastSpace >= minUsefulLength) {
+          return startOffset + lastSpace + 1
+        }
+      }
+
+      return best
     }
 
     resetMeasure()
 
     for (const paragraph of paragraphs) {
-      const node = makeParagraphNode(paragraph)
-      measure.appendChild(node)
+      let startOffset = 0
 
-      const tooTall = measure.scrollHeight > pageSize.height
+      while (startOffset < paragraph.text.length) {
+        rebuildMeasureFromCurrentPage()
 
-      if (tooTall) {
-        measure.removeChild(node)
-        commitPage()
+        const wholeNode = makeParagraphNode(paragraph, startOffset, paragraph.text.length)
+        if (fitsCurrentPage(wholeNode)) {
+          const block: PageParagraphBlock = {
+            paragraph,
+            startOffset,
+            endOffset: paragraph.text.length,
+            isContinuationStart: startOffset > 0,
+            isContinuationEnd: false,
+          }
+          currentPageBlocks.push(block)
+          appendBlockToMeasure(block)
+          break
+        }
 
-        current.push(paragraph)
-        measure.appendChild(makeParagraphNode(paragraph))
-      } else {
-        current.push(paragraph)
-      }
+        const endOffset = findLargestFittingEndOffset(paragraph, startOffset)
 
-      /**
-       * Если один абзац сам по себе выше страницы, он всё равно останется на странице.
-       * Иначе бесконечно резать текст нельзя без отдельного алгоритма line-breaking.
-       */
-      if (measure.scrollHeight > pageSize.height && current.length === 1) {
+        /**
+         * Если на текущую страницу вообще ничего не помещается,
+         * закрываем страницу и пробуем этот же кусок на новой.
+         */
+        if (endOffset <= startOffset) {
+          if (currentPageBlocks.length > 0) {
+            commitPage()
+            continue
+          }
+
+          /**
+           * Крайний fallback: если даже пустая страница не может вместить
+           * одну букву из-за слишком большой шапки/стилей, кладём минимальный кусок,
+           * чтобы не попасть в бесконечный цикл.
+           */
+          const forcedEndOffset = Math.min(startOffset + 1, paragraph.text.length)
+          currentPageBlocks.push({
+            paragraph,
+            startOffset,
+            endOffset: forcedEndOffset,
+            isContinuationStart: startOffset > 0,
+            isContinuationEnd: forcedEndOffset < paragraph.text.length,
+          })
+          startOffset = forcedEndOffset
+          commitPage()
+          continue
+        }
+
+        currentPageBlocks.push({
+          paragraph,
+          startOffset,
+          endOffset,
+          isContinuationStart: startOffset > 0,
+          isContinuationEnd: endOffset < paragraph.text.length,
+        })
+        startOffset = endOffset
         commitPage()
       }
     }
 
-    commitPage()
+    if (currentPageBlocks.length > 0 || result.length === 0) {
+      result.push(currentPageBlocks)
+    }
 
     setPages(result.length > 0 ? result : [[]])
 
@@ -406,8 +524,8 @@ export default function BookReader({
     if (!highlightParagraphId || quoteFocusAppliedRef.current || pages.length === 0) return
 
     const targetPageIndex = pages.findIndex((page) =>
-      page.some((paragraph) =>
-        paragraph.id === highlightParagraphId || paragraph.id === highlightParagraphEndId,
+      page.some((block) =>
+        block.paragraph.id === highlightParagraphId || block.paragraph.id === highlightParagraphEndId,
       ),
     )
 
@@ -685,23 +803,37 @@ export default function BookReader({
     }
   }, [clearPointerGesture])
 
-  const renderParagraph = (paragraph: Paragraph) => {
+  const renderParagraphBlock = (block: PageParagraphBlock) => {
+    const { paragraph, startOffset, endOffset, isContinuationStart, isContinuationEnd } = block
     const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
-    const ranges = getTextRangesForParagraph(paragraph.id)
-    const hasSelectionHighlight = ranges.length > 0
-    const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
-    const canRenderRichParagraph = !hasSelectionHighlight && Boolean(paragraph.html)
-
+    const paragraphRanges = getTextRangesForParagraph(paragraph.id)
+      .map((range) => ({
+        ...range,
+        startOffset: Math.max(range.startOffset, startOffset) - startOffset,
+        endOffset: Math.min(range.endOffset, endOffset) - startOffset,
+      }))
+      .filter((range) => range.endOffset > range.startOffset)
+    const visibleText = paragraph.text.slice(startOffset, endOffset)
+    const hasSelectionHighlight = paragraphRanges.length > 0
+    const textSegments = splitTextByAnnotationRanges(visibleText, paragraphRanges)
+    const canRenderRichParagraph =
+      !hasSelectionHighlight &&
+      Boolean(paragraph.html) &&
+      startOffset === 0 &&
+      endOffset >= paragraph.text.length
+    const shouldShowReactionBar = endOffset >= paragraph.text.length
     return (
       <section
-        key={paragraph.stableKey || paragraph.id}
+        key={`${paragraph.stableKey || paragraph.id}-${startOffset}-${endOffset}`}
         className={[
           'book-reader-paragraph-shell',
           isQuoteTarget ? 'is-quote-target' : '',
           hasSelectionHighlight ? 'has-user-mark' : '',
+          isContinuationStart ? 'is-continuation-start' : '',
+          isContinuationEnd ? 'is-continuation-end' : '',
         ].join(' ')}
       >
-        {isQuoteTarget && (
+        {isQuoteTarget && startOffset === 0 && (
           <span className="book-reader-quote-pill">
             Цитата
           </span>
@@ -710,10 +842,13 @@ export default function BookReader({
         <article
           data-paragraph-id={paragraph.id}
           data-stable-key={paragraph.stableKey}
+          data-start-offset={startOffset}
+          data-end-offset={endOffset}
           className="book-reader-paragraph"
           style={{
             textAlign: paragraph.textAlign ?? 'justify',
-            paddingInlineStart: paragraph.indentPx
+            paddingInlineStart:
+              paragraph.indentPx && startOffset === 0
               ? `${Math.min(paragraph.indentPx, 72)}px`
               : undefined,
           }}
@@ -725,7 +860,7 @@ export default function BookReader({
               {textSegments.map((segment, index) =>
                 segment.highlighted ? (
                   <span
-                    key={`${paragraph.id}-hl-${index}`}
+                    key={`${paragraph.id}-hl-${startOffset}-${index}`}
                     className="bookstream-inline-annotation"
                   >
                     <span className="bookstream-word-highlight">
@@ -734,7 +869,7 @@ export default function BookReader({
 
                     {segment.badges.map((badge, badgeIndex) => (
                       <span
-                        key={`${paragraph.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
+                        key={`${paragraph.id}-badge-${startOffset}-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
                         className="bookstream-inline-annotation-badge"
                         data-kind={badge.kind}
                         title={
@@ -754,7 +889,7 @@ export default function BookReader({
                     ))}
                   </span>
                 ) : (
-                  <span key={`${paragraph.id}-txt-${index}`}>
+                  <span key={`${paragraph.id}-txt-${startOffset}-${index}`}>
                     {segment.text}
                   </span>
                 ),
@@ -763,11 +898,13 @@ export default function BookReader({
           )}
         </article>
 
-        <ReactionBar
-          paragraphId={paragraph.id}
-          variantId={variantId}
-          showOnMobile={showMobileReactionBar}
-        />
+        {shouldShowReactionBar && (
+          <ReactionBar
+            paragraphId={paragraph.id}
+            variantId={variantId}
+            showOnMobile={showMobileReactionBar}
+          />
+        )}
       </section>
     )
   }
@@ -829,7 +966,7 @@ export default function BookReader({
                   data-variant-type={variantType}
                 >
                   {pageIndex === 0 && renderChapterHeader()}
-                  {page.map(renderParagraph)}
+                  {page.map(renderParagraphBlock)}
 
                   {pageIndex === pages.length - 1 && (
                     <footer className="book-reader-end">

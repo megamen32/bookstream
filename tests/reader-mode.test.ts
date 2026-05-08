@@ -3,10 +3,37 @@ import { describe, it } from 'node:test'
 import { resolveInitialReadingMode } from '../src/lib/reader-mode.ts'
 
 describe('reader mode selection', () => {
+  it('prefers the mode encoded in the URL', () => {
+    assert.equal(
+      resolveInitialReadingMode({
+        bookDefaultMode: 'feed',
+        urlReadingMode: 'feed',
+        storedReadingMode: 'book',
+        hasStoredReadingMode: true,
+        progressReadingMode: 'book',
+      }),
+      'feed',
+    )
+  })
+
+  it('keeps the mode encoded in the URL even for quote-target params', () => {
+    assert.equal(
+      resolveInitialReadingMode({
+        bookDefaultMode: 'feed',
+        urlReadingMode: 'feed',
+        storedReadingMode: 'book',
+        hasStoredReadingMode: true,
+        progressReadingMode: 'book',
+      }),
+      'feed',
+    )
+  })
+
   it('prefers the locally stored mode over stale server progress', () => {
     assert.equal(
       resolveInitialReadingMode({
         bookDefaultMode: 'feed',
+        urlReadingMode: null,
         storedReadingMode: 'feed',
         hasStoredReadingMode: true,
         progressReadingMode: 'book',
@@ -19,6 +46,7 @@ describe('reader mode selection', () => {
     assert.equal(
       resolveInitialReadingMode({
         bookDefaultMode: 'feed',
+        urlReadingMode: null,
         storedReadingMode: null,
         hasStoredReadingMode: false,
         progressReadingMode: 'book',
@@ -31,6 +59,7 @@ describe('reader mode selection', () => {
     assert.equal(
       resolveInitialReadingMode({
         bookDefaultMode: 'feed',
+        urlReadingMode: null,
         storedReadingMode: null,
         hasStoredReadingMode: false,
         progressReadingMode: null,
@@ -39,16 +68,4 @@ describe('reader mode selection', () => {
     )
   })
 
-  it('forces book mode for quote-target links', () => {
-    assert.equal(
-      resolveInitialReadingMode({
-        bookDefaultMode: 'feed',
-        storedReadingMode: 'feed',
-        hasStoredReadingMode: true,
-        progressReadingMode: 'feed',
-        forceBookMode: true,
-      }),
-      'book',
-    )
-  })
 })

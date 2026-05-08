@@ -60,6 +60,11 @@
   padding: 0;
 }
 
+.book-reader-page,
+.book-reader-page-inner {
+  overflow: hidden;
+}
+
 .chapter-next .book-reader-pages-track,
 .chapter-prev .book-reader-pages-track {
   opacity: 0.72;
@@ -73,6 +78,22 @@
   padding: 0;
   border-radius: 0.55rem;
   box-sizing: border-box;
+}
+
+.book-reader-paragraph-shell.is-continuation-start {
+  margin-top: 0;
+}
+
+.book-reader-paragraph-shell.is-continuation-start .book-reader-paragraph p {
+  text-indent: 0;
+}
+
+.book-reader-paragraph-shell.is-continuation-end {
+  margin-bottom: 0;
+}
+
+.book-reader-paragraph-shell.is-continuation-end .reaction-bar {
+  display: none;
 }
 
 .book-reader-paragraph-shell.has-user-mark {
@@ -103,6 +124,10 @@
 .book-reader-paragraph p {
   margin: 0;
   max-width: 100%;
+  break-inside: auto;
+  page-break-inside: auto;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .book-reader-paragraph * {

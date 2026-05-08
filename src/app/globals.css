@@ -998,7 +998,6 @@
 }
 
 .book-reader article {
-  break-inside: avoid;
   margin-bottom: 1em;
   text-align: justify;
   hyphens: auto;

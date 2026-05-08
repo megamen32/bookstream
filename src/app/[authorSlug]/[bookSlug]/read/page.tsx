@@ -29,7 +29,6 @@ import {
 import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
-  shouldForceBookModeFromQuoteTarget,
 } from '@/lib/reader-location'
 
 interface BookData {
@@ -628,6 +627,7 @@ export default function ReaderPage() {
         const queryParams = new URLSearchParams(window.location.search)
         const urlChapter = queryParams.get('chapter')
         const urlVariant = queryParams.get('variant')
+        const urlMode = queryParams.get('mode') as ReadingMode | null
         const urlParagraph = queryParams.get('paragraph')
         const urlParagraphEnd = queryParams.get('paragraphEnd')
         const urlStartOffsetRaw = queryParams.get('startOffset')
@@ -645,15 +645,10 @@ export default function ReaderPage() {
 
         const targetMode = resolveInitialReadingMode({
           bookDefaultMode: book.readingModeDefault || 'feed',
+          urlReadingMode: urlMode === 'book' || urlMode === 'feed' ? urlMode : null,
           storedReadingMode: hasStoredReadingMode ? storedReadingMode : null,
           hasStoredReadingMode,
           progressReadingMode,
-          forceBookMode: shouldForceBookModeFromQuoteTarget({
-            paragraph: urlParagraph,
-            paragraphEnd: urlParagraphEnd,
-            startOffsetRaw: urlStartOffsetRaw,
-            endOffsetRaw: urlEndOffsetRaw,
-          }),
         })
 
         setQuoteTargetParagraphId(urlParagraph)
@@ -759,13 +754,14 @@ export default function ReaderPage() {
       paragraphEndId: quoteTargetParagraphEndId,
       startOffset: quoteTargetStartOffset,
       endOffset: quoteTargetEndOffset,
+      readingMode,
     })
     const nextHref = nextSearch ? `${currentUrl.pathname}?${nextSearch}` : currentUrl.pathname
     const currentHref = `${currentUrl.pathname}${currentUrl.search}`
     if (nextHref !== currentHref) {
       window.history.replaceState(window.history.state, '', nextHref)
     }
-  }, [activeChapterId, quoteTargetEndOffset, quoteTargetParagraphEndId, quoteTargetParagraphId, quoteTargetStartOffset, variantType])
+  }, [activeChapterId, quoteTargetEndOffset, quoteTargetParagraphEndId, quoteTargetParagraphId, quoteTargetStartOffset, readingMode, variantType])
 
   useEffect(() => {
     if (!hasResolvedInitialLocation.current || !bookData || !readerId) {
@@ -1065,9 +1061,10 @@ export default function ReaderPage() {
     const searchParams = new URLSearchParams()
     searchParams.set('chapter', targetChapterId)
     searchParams.set('variant', variantType)
+    searchParams.set('mode', readingMode)
 
     return `/${authorSlug}/${bookSlug}/read?${searchParams.toString()}`
-  }, [authorSlug, bookSlug, variantType])
+  }, [authorSlug, bookSlug, readingMode, variantType])
 
   const prefetchNextChapter = useCallback((): void => {
     if (!bookData || !activeChapterId) return

@@ -8,28 +8,11 @@ export interface ReaderLocationQueryParams {
 export interface ReaderLocationState {
   chapterId: string
   variantType: string
+  readingMode: string
   paragraphId: string | null
   paragraphEndId: string | null
   startOffset: number | null
   endOffset: number | null
-}
-
-/**
- * Returns whether a reader URL targets a precise quote or fragment.
- *
- * Quote-target links should open the paged reader, because the compact feed
- * view makes quote navigation feel detached from the anchored fragment.
- *
- * @param queryParams Reader query parameters extracted from the URL.
- * @returns True when the URL should force book mode.
- */
-export function shouldForceBookModeFromQuoteTarget(queryParams: ReaderLocationQueryParams): boolean {
-  return Boolean(
-    queryParams.paragraph
-    || queryParams.paragraphEnd
-    || queryParams.startOffsetRaw
-    || queryParams.endOffsetRaw,
-  )
 }
 
 /**
@@ -42,6 +25,8 @@ export function buildReaderLocationSearch(state: ReaderLocationState): string {
   const params = new URLSearchParams()
   params.set('chapter', state.chapterId)
   params.set('variant', state.variantType)
+  params.set('mode', state.readingMode)
+  const hasParagraphAnchor = Boolean(state.paragraphId || state.paragraphEndId)
 
   if (state.paragraphId) {
     params.set('paragraph', state.paragraphId)
@@ -51,11 +36,11 @@ export function buildReaderLocationSearch(state: ReaderLocationState): string {
     params.set('paragraphEnd', state.paragraphEndId)
   }
 
-  if (Number.isFinite(state.startOffset)) {
+  if (hasParagraphAnchor && Number.isFinite(state.startOffset)) {
     params.set('startOffset', String(state.startOffset))
   }
 
-  if (Number.isFinite(state.endOffset)) {
+  if (hasParagraphAnchor && Number.isFinite(state.endOffset)) {
     params.set('endOffset', String(state.endOffset))
   }
 
