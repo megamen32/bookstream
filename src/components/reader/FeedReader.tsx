@@ -537,11 +537,6 @@ export default function FeedReader({
       return
     }
 
-    const selection = window.getSelection()
-    if (selection && !selection.isCollapsed) {
-      return
-    }
-
     const dx = event.clientX - gesture.clientX
     const dy = event.clientY - gesture.clientY
     const absDx = Math.abs(dx)
@@ -555,7 +550,14 @@ export default function FeedReader({
       return
     }
 
-    onSurfaceTap()
+    window.setTimeout(() => {
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed) {
+        return
+      }
+
+      onSurfaceTap()
+    }, 0)
   }, [clearPointerGesture, isInteractiveTarget, onSurfaceTap])
 
   const handlePointerCancel = useCallback(() => {

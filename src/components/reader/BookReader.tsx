@@ -388,7 +388,14 @@ export default function BookReader({
         reactionBar.style.display = 'flex'
         reactionBar.style.visibility = 'hidden'
         reactionBar.style.pointerEvents = 'none'
-        reactionBar.style.minHeight = '1.9rem'
+        /**
+         * Keep the measurement placeholder in sync with the rendered desktop
+         * reaction bar. If the placeholder is shorter than the real bar, the
+         * paginator overfills the page and the last text line gets clipped.
+         */
+        reactionBar.style.boxSizing = 'border-box'
+        reactionBar.style.paddingTop = '0.5rem'
+        reactionBar.style.minHeight = '2.4rem'
         wrapper.appendChild(reactionBar)
       }
 

@@ -1394,7 +1394,7 @@ export default function ReaderPage() {
 
   return (
     <div
-      className="reader-wrapper reader-shell flex min-h-[100svh] flex-col overflow-hidden"
+      className="reader-wrapper reader-shell flex h-[100svh] min-h-[100svh] flex-col overflow-hidden"
       data-reader-theme={theme}
       style={themeVars as React.CSSProperties}
     >
@@ -1457,8 +1457,8 @@ export default function ReaderPage() {
         showTrigger={false}
       />
 
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex' }}>
-        <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex' }}>
+        <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex' }}>
           {readingMode === 'feed' ? (
             <FeedReader
               sections={feedSections}
