@@ -61,14 +61,18 @@ model ChapterVariant {
   variantType    String      @default("original")
   contentHtml    String
   editedByAuthor Boolean     @default(false)
+  headRevisionId String?      @unique
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   chapter        Chapter     @relation(fields: [chapterId], references: [id])
   paragraphs     Paragraph[]
   reactions      Reaction[]
   annotations    Annotation[]
+  revisions      ChapterVariantRevision[] @relation("VariantRevisionHistory")
+  headRevision   ChapterVariantRevision?  @relation("VariantHeadRevision", fields: [headRevisionId], references: [id], onDelete: SetNull)
 
   @@unique([chapterId, variantType])
+  @@index([headRevisionId])
 }
 
 model Paragraph {
@@ -81,6 +85,36 @@ model Paragraph {
   reactions        Reaction[]
 
   @@unique([chapterVariantId, position])
+}
+
+model ChapterVariantRevision {
+  id              String                         @id @default(cuid())
+  chapterVariantId String
+  revisionNumber  Int
+  parentRevisionId String?
+  contentHtml     String
+  source          String                         @default("manual")
+  createdAt       DateTime                       @default(now())
+  chapterVariant  ChapterVariant                 @relation("VariantRevisionHistory", fields: [chapterVariantId], references: [id], onDelete: Cascade)
+  parentRevision  ChapterVariantRevision?        @relation("VariantRevisionParent", fields: [parentRevisionId], references: [id], onDelete: SetNull)
+  childRevisions  ChapterVariantRevision[]       @relation("VariantRevisionParent")
+  paragraphs      ChapterVariantRevisionParagraph[]
+  headForVariant  ChapterVariant?                @relation("VariantHeadRevision")
+
+  @@unique([chapterVariantId, revisionNumber])
+  @@index([chapterVariantId, createdAt])
+}
+
+model ChapterVariantRevisionParagraph {
+  id          String                 @id @default(cuid())
+  revisionId  String
+  stableKey   String
+  position    Int
+  text        String
+  revision    ChapterVariantRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, position])
+  @@index([revisionId, stableKey])
 }
 
 model Reaction {
@@ -105,6 +139,8 @@ model Annotation {
   bookId           String
   chapterId        String
   chapterVariantId String?
+  sourceRevisionId String?
+  resolvedRevisionId String?
   variantType      String           @default("original")
   readerId         String
   username         String
@@ -116,6 +152,12 @@ model Annotation {
   selectedText     String?
   paragraphId      String?
   endParagraphId   String?
+  startStableKey   String?
+  endStableKey     String?
+  anchorPrefix     String?
+  anchorSuffix     String?
+  anchorStatus     String           @default("exact")
+  anchorScore      Float            @default(1)
   startOffset      Int              @default(0)
   endOffset        Int              @default(0)
   createdAt        DateTime         @default(now())
@@ -129,6 +171,8 @@ model Annotation {
   @@index([chapterId, kind])
   @@index([readerId, kind])
   @@index([chapterVariantId])
+  @@index([resolvedRevisionId])
+  @@index([sourceRevisionId])
 }
 
 model AnnotationVote {

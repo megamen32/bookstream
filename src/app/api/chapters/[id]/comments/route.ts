@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
-  buildAnnotationSelection,
   mapAnnotationComment,
   sortCommentsByTop,
 } from '@/lib/annotations'
+import { buildAnnotationAnchorFromSelection, resolveAnnotationVariantContext } from '@/lib/chapter-revisions'
 import { limitSyntheticItems } from '@/lib/synthetic-visibility'
 
 export async function GET(
@@ -104,12 +104,26 @@ export async function POST(
       )
     }
 
-    const selection = buildAnnotationSelection(quotes?.[0] ?? {})
+    const variantContext = quotes?.[0]
+      ? await resolveAnnotationVariantContext(db, {
+          chapterVariantId: typeof quotes[0].chapterVariantId === 'string' ? quotes[0].chapterVariantId : null,
+          chapterId: id,
+          variantType:
+            typeof quotes[0].variantType === 'string' && quotes[0].variantType.length > 0
+              ? quotes[0].variantType
+              : 'original',
+        })
+      : null
+    const selection = quotes?.[0] && variantContext
+      ? buildAnnotationAnchorFromSelection(variantContext, quotes[0])
+      : null
     const comment = await db.annotation.create({
       data: {
         bookId,
         chapterId: id,
         chapterVariantId: typeof quotes?.[0]?.chapterVariantId === 'string' ? quotes[0].chapterVariantId : null,
+        sourceRevisionId: selection?.sourceRevisionId || null,
+        resolvedRevisionId: selection?.resolvedRevisionId || null,
         variantType:
           typeof quotes?.[0]?.variantType === 'string' && quotes[0].variantType.length > 0
             ? quotes[0].variantType
@@ -119,11 +133,17 @@ export async function POST(
         kind: 'comment',
         status: 'active',
         body: commentBody,
-        selectedText: selection.selectedText || null,
-        paragraphId: selection.paragraphId || null,
-        endParagraphId: selection.endParagraphId || null,
-        startOffset: selection.startOffset,
-        endOffset: selection.endOffset,
+        selectedText: selection?.selectedText || null,
+        paragraphId: selection?.paragraphId || null,
+        endParagraphId: selection?.endParagraphId || null,
+        startStableKey: selection?.startStableKey || null,
+        endStableKey: selection?.endStableKey || null,
+        anchorPrefix: selection?.anchorPrefix || null,
+        anchorSuffix: selection?.anchorSuffix || null,
+        anchorStatus: selection?.anchorStatus || 'stale',
+        anchorScore: selection?.anchorScore || 0,
+        startOffset: selection?.startOffset || 0,
+        endOffset: selection?.endOffset || 0,
       },
       include: {
         votes: {

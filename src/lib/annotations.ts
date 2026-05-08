@@ -1,4 +1,5 @@
 export type AnnotationKind = 'reaction' | 'quote' | 'comment'
+export type AnnotationAnchorStatus = 'exact' | 'approximate' | 'stale'
 
 export interface AnnotationSelection {
   paragraphId: string
@@ -46,6 +47,7 @@ export interface AnnotationLike {
   kind: string
   paragraphId: string | null
   endParagraphId: string | null
+  anchorStatus?: AnnotationAnchorStatus | string | null
   startOffset: number
   endOffset: number
   selectedText?: string | null
@@ -62,6 +64,8 @@ export interface UnifiedAnnotationItem {
   chapterTitle: string
   chapterPosition: number
   chapterVariantId: string | null
+  sourceRevisionId?: string | null
+  resolvedRevisionId?: string | null
   variantType: string
   readerId: string
   username: string
@@ -71,8 +75,17 @@ export interface UnifiedAnnotationItem {
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
+  startStableKey?: string | null
+  endStableKey?: string | null
+  anchorPrefix?: string | null
+  anchorSuffix?: string | null
+  anchorStatus?: AnnotationAnchorStatus
+  anchorScore?: number | null
   startOffset: number
   endOffset: number
+  syncStatus?: 'synced' | 'pending' | 'failed'
+  offlineOperationId?: string | null
+  syncError?: string | null
 }
 
 export interface AnnotationVoteLike {
@@ -92,6 +105,8 @@ export interface AnnotationCommentItem {
   chapterTitle: string
   chapterPosition: number
   chapterVariantId: string | null
+  sourceRevisionId?: string | null
+  resolvedRevisionId?: string | null
   variantType: string
   readerId: string
   username: string
@@ -102,6 +117,12 @@ export interface AnnotationCommentItem {
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
+  startStableKey?: string | null
+  endStableKey?: string | null
+  anchorPrefix?: string | null
+  anchorSuffix?: string | null
+  anchorStatus?: AnnotationAnchorStatus
+  anchorScore?: number | null
   startOffset: number
   endOffset: number
   upvoteCount: number
@@ -149,6 +170,14 @@ export interface AnnotationCommentRowLike {
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
+  sourceRevisionId?: string | null
+  resolvedRevisionId?: string | null
+  startStableKey?: string | null
+  endStableKey?: string | null
+  anchorPrefix?: string | null
+  anchorSuffix?: string | null
+  anchorStatus?: AnnotationAnchorStatus | string | null
+  anchorScore?: number | null
   startOffset: number
   endOffset: number
   votes: AnnotationVoteLike[]
@@ -163,6 +192,14 @@ export interface AnnotationQuoteRowLike {
   endOffset: number
   paragraphId: string | null
   endParagraphId: string | null
+  sourceRevisionId?: string | null
+  resolvedRevisionId?: string | null
+  startStableKey?: string | null
+  endStableKey?: string | null
+  anchorPrefix?: string | null
+  anchorSuffix?: string | null
+  anchorStatus?: AnnotationAnchorStatus | string | null
+  anchorScore?: number | null
   createdAt: Date
   readerId: string
   username: string
@@ -204,6 +241,8 @@ export function mapAnnotationComment(
     chapterTitle: annotation.chapter.title,
     chapterPosition: annotation.chapter.position,
     chapterVariantId: annotation.chapterVariantId,
+    sourceRevisionId: annotation.sourceRevisionId || null,
+    resolvedRevisionId: annotation.resolvedRevisionId || null,
     variantType: annotation.variantType,
     readerId: annotation.readerId,
     username: annotation.username,
@@ -214,6 +253,12 @@ export function mapAnnotationComment(
     selectedText,
     paragraphId,
     endParagraphId,
+    startStableKey: annotation.startStableKey || null,
+    endStableKey: annotation.endStableKey || null,
+    anchorPrefix: annotation.anchorPrefix || null,
+    anchorSuffix: annotation.anchorSuffix || null,
+    anchorStatus: normalizeAnchorStatus(annotation.anchorStatus),
+    anchorScore: annotation.anchorScore ?? 1,
     startOffset: annotation.startOffset,
     endOffset: annotation.endOffset,
     upvoteCount: annotation.votes.length,
@@ -280,6 +325,14 @@ export function annotationKindFromString(kind: string): AnnotationKind {
   if (kind === 'quote') return 'quote'
   if (kind === 'comment') return 'comment'
   return 'reaction'
+}
+
+export function normalizeAnchorStatus(status?: string | null): AnnotationAnchorStatus {
+  if (status === 'approximate' || status === 'stale') {
+    return status
+  }
+
+  return 'exact'
 }
 
 export function buildAnnotationSelection(

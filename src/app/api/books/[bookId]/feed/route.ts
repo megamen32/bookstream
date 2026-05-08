@@ -106,6 +106,12 @@ export async function GET(
         const variantWithParagraphs = await db.chapterVariant.findUnique({
           where: { id: selectedVariant.id },
           include: {
+            headRevision: {
+              select: {
+                id: true,
+                revisionNumber: true,
+              },
+            },
             paragraphs: {
               orderBy: { position: 'asc' },
             },
@@ -247,6 +253,8 @@ export async function GET(
           variant: {
             id: variantWithParagraphs.id,
             variantType: variantWithParagraphs.variantType,
+            revisionId: variantWithParagraphs.headRevision?.id || null,
+            revisionNumber: variantWithParagraphs.headRevision?.revisionNumber || null,
             paragraphs: ensuredParagraphs.map((paragraph, paragraphIndex) => ({
               ...paragraph,
               html: parsedParagraphs[paragraphIndex]?.html ?? paragraph.text,

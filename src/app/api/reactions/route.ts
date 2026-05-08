@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { buildAnnotationSelection } from '@/lib/annotations'
+import { buildAnnotationAnchorFromSelection, resolveAnnotationVariantContext } from '@/lib/chapter-revisions'
 
 interface GroupedReaction {
   emoji: string
@@ -123,14 +123,6 @@ export async function POST(request: NextRequest) {
     const chapterId = typeof body.chapterId === 'string' ? body.chapterId : ''
     const variantType = typeof body.variantType === 'string' && body.variantType.length > 0 ? body.variantType : 'original'
 
-    const selection = buildAnnotationSelection({
-      paragraphId,
-      endParagraphId: body.selection?.endParagraphId ?? paragraphId,
-      startOffset: body.selection?.startOffset ?? 0,
-      endOffset: body.selection?.endOffset ?? 0,
-      selectedText: body.selection?.selectedText ?? '',
-    })
-
     if (!paragraphId || !chapterVariantId || !readerId || !emoji || !username) {
       return NextResponse.json(
         { error: 'paragraphId, chapterVariantId, readerId, emoji, and username are required' },
@@ -169,6 +161,24 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+
+    const variantContext = await resolveAnnotationVariantContext(db, {
+      chapterVariantId,
+      chapterId: resolvedChapterId,
+      variantType: resolvedVariantType,
+    })
+
+    if (!variantContext) {
+      return NextResponse.json({ error: 'Chapter variant not found' }, { status: 404 })
+    }
+
+    const selection = buildAnnotationAnchorFromSelection(variantContext, {
+      paragraphId,
+      endParagraphId: body.selection?.endParagraphId ?? paragraphId,
+      startOffset: body.selection?.startOffset ?? 0,
+      endOffset: body.selection?.endOffset ?? 0,
+      selectedText: body.selection?.selectedText ?? '',
+    })
 
     const existing = await db.annotation.findFirst({
       where: {
@@ -209,6 +219,14 @@ export async function POST(request: NextRequest) {
         selectedText: selection.selectedText || null,
         paragraphId,
         endParagraphId: selection.endParagraphId,
+        sourceRevisionId: selection.sourceRevisionId,
+        resolvedRevisionId: selection.resolvedRevisionId,
+        startStableKey: selection.startStableKey,
+        endStableKey: selection.endStableKey,
+        anchorPrefix: selection.anchorPrefix,
+        anchorSuffix: selection.anchorSuffix,
+        anchorStatus: selection.anchorStatus,
+        anchorScore: selection.anchorScore,
         startOffset: selection.startOffset,
         endOffset: selection.endOffset,
       },

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, BookOpen, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, BookOpen, DownloadCloud, Sparkles, UserRound } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getOfflineCatalogBooks, subscribeOfflineUpdates } from '@/lib/offline-client'
 
 interface Author {
   id: string
@@ -31,35 +32,86 @@ export default function HomePage() {
   const [books, setBooks] = useState<Book[]>([])
   const [authors, setAuthors] = useState<Author[]>([])
   const [loading, setLoading] = useState(true)
+  const [offlineCatalog, setOfflineCatalog] = useState(false)
+  const [isOffline, setIsOffline] = useState(false)
 
   useEffect(() => {
+    let isCancelled = false
+
     async function fetchData(): Promise<void> {
       try {
-        const res = await fetch('/api/books')
-        if (res.ok) {
-          const data = await res.json()
-          if (Array.isArray(data) && data.length > 0) {
-            setBooks(data)
-
-            const authorMap = new Map<string, Author>()
-            data.forEach((book: Book) => {
-              authorMap.set(book.author.slug, {
-                id: book.author.id,
-                slug: book.author.slug,
-                name: book.author.name,
-              })
-            })
-            setAuthors(Array.from(authorMap.values()))
-          }
+        const nextOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+        if (!isCancelled) {
+          setIsOffline(nextOffline)
         }
+        const localBooks = await getOfflineCatalogBooks()
+        const canUseOfflineOnly = nextOffline
+        let resolvedBooks = localBooks as Book[]
+
+        if (!canUseOfflineOnly) {
+          const res = await fetch('/api/books')
+          if (res.ok) {
+            const data = await res.json()
+            if (Array.isArray(data)) {
+              resolvedBooks = data as Book[]
+              setOfflineCatalog(false)
+            }
+          } else if (localBooks.length > 0) {
+            setOfflineCatalog(true)
+          }
+        } else if (localBooks.length > 0) {
+          setOfflineCatalog(true)
+        }
+
+        if (resolvedBooks.length === 0 && localBooks.length > 0) {
+          resolvedBooks = localBooks as Book[]
+          setOfflineCatalog(true)
+        }
+
+        if (isCancelled) return
+
+        setBooks(resolvedBooks)
+        const authorMap = new Map<string, Author>()
+        resolvedBooks.forEach((book: Book) => {
+          authorMap.set(book.author.slug, {
+            id: book.author.id,
+            slug: book.author.slug,
+            name: book.author.name,
+          })
+        })
+        setAuthors(Array.from(authorMap.values()))
       } catch (error) {
         console.error('Failed to fetch data:', error)
+        const localBooks = await getOfflineCatalogBooks()
+        if (!isCancelled) {
+          setBooks(localBooks as Book[])
+          setOfflineCatalog(localBooks.length > 0)
+          const authorMap = new Map<string, Author>()
+          localBooks.forEach((book) => {
+            authorMap.set(book.author.slug, {
+              id: book.author.id,
+              slug: book.author.slug,
+              name: book.author.name,
+            })
+          })
+          setAuthors(Array.from(authorMap.values()))
+        }
       } finally {
-        setLoading(false)
+        if (!isCancelled) {
+          setLoading(false)
+        }
       }
     }
 
     void fetchData()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void fetchData()
+    })
+
+    return () => {
+      isCancelled = true
+      unsubscribe()
+    }
   }, [])
 
   return (
@@ -88,7 +140,12 @@ export default function HomePage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-
+        {offlineCatalog ? (
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+            <DownloadCloud size={16} />
+            Показаны скачанные книги. Полный каталог появится после возврата сети.
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="mt-10">
@@ -216,8 +273,14 @@ export default function HomePage() {
         ) : (
           <div className="poster-card mt-10 rounded-[2rem] border border-white/10 px-6 py-16 text-center text-white/70">
             <BookOpen size={48} className="mx-auto mb-4 opacity-40" />
-            <p className="text-lg font-medium text-white">Пока нет опубликованных книг</p>
-            <p className="mt-2 text-sm text-white/60">Когда книги появятся, они отобразятся здесь.</p>
+            <p className="text-lg font-medium text-white">
+              {isOffline ? 'Офлайн-каталог пуст' : 'Пока нет опубликованных книг'}
+            </p>
+            <p className="mt-2 text-sm text-white/60">
+              {isOffline
+                ? 'Скачайте хотя бы одну книгу, и она появится здесь без сети.'
+                : 'Когда книги появятся, они отобразятся здесь.'}
+            </p>
           </div>
         )}
       </main>

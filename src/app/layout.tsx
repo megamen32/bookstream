@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import UserAccentController from "@/components/user/UserAccentController";
+import OfflineRuntime from "@/components/app/OfflineRuntime";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
   description: "Интерактивная платформа для чтения книг с комментариями к абзацам, несколькими вариантами текста и настраиваемым интерфейсом",
   keywords: ["Bookstream", "книги", "чтение", "комментарии", "читалка"],
   authors: [{ name: "Bookstream" }],
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/logo.svg",
   },
@@ -34,6 +36,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <OfflineRuntime />
         <UserAccentController />
         {children}
         <Toaster />

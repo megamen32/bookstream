@@ -1,5 +1,5 @@
 import { Prisma, type Paragraph } from '@prisma/client'
-import { splitHtmlIntoParagraphs } from '@/lib/file-parser'
+import { splitHtmlIntoParagraphs } from './file-parser.ts'
 
 type ParagraphStore = Pick<Prisma.TransactionClient, 'paragraph'>
 
@@ -32,6 +32,73 @@ export function buildParagraphInputsFromHtml(contentHtml: string): SyncedParagra
 }
 
 /**
+ * Reconciles persisted paragraphs with the provided normalized paragraph list.
+ * Existing paragraph ids are preserved when stable keys survive an edit.
+ *
+ * @param store Prisma client or transaction exposing paragraph operations.
+ * @param variantId ChapterVariant id to rebuild.
+ * @param paragraphInputs Normalized paragraph payloads with stable keys.
+ * @returns Persisted paragraph list in reading order.
+ */
+export async function syncVariantParagraphs(
+  store: ParagraphStore,
+  variantId: string,
+  paragraphInputs: SyncedParagraphInput[]
+): Promise<Paragraph[]> {
+  const normalizedInputs = paragraphInputs.map((paragraph) => ({
+    chapterVariantId: variantId,
+    stableKey: paragraph.stableKey,
+    position: paragraph.position,
+    text: paragraph.text,
+  }))
+
+  const existingParagraphs = await store.paragraph.findMany({
+    where: { chapterVariantId: variantId },
+    orderBy: { position: 'asc' },
+  })
+
+  const existingByStableKey = new Map(existingParagraphs.map((paragraph) => [paragraph.stableKey, paragraph]))
+  const matchedParagraphIds = new Set<string>()
+
+  for (const paragraph of normalizedInputs) {
+    const existing = existingByStableKey.get(paragraph.stableKey)
+
+    if (existing) {
+      matchedParagraphIds.add(existing.id)
+      await store.paragraph.update({
+        where: { id: existing.id },
+        data: {
+          position: paragraph.position,
+          text: paragraph.text,
+        },
+      })
+      continue
+    }
+
+    await store.paragraph.create({
+      data: paragraph,
+    })
+  }
+
+  const staleParagraphIds = existingParagraphs
+    .filter((paragraph) => !matchedParagraphIds.has(paragraph.id))
+    .map((paragraph) => paragraph.id)
+
+  if (staleParagraphIds.length > 0) {
+    await store.paragraph.deleteMany({
+      where: {
+        id: { in: staleParagraphIds },
+      },
+    })
+  }
+
+  return store.paragraph.findMany({
+    where: { chapterVariantId: variantId },
+    orderBy: { position: 'asc' },
+  })
+}
+
+/**
  * Replaces all paragraphs for a chapter variant with rows derived from its HTML.
  *
  * @param store Prisma client or transaction exposing paragraph operations.
@@ -44,27 +111,7 @@ export async function syncVariantParagraphsFromHtml(
   variantId: string,
   contentHtml: string
 ): Promise<Paragraph[]> {
-  const paragraphInputs = buildParagraphInputsFromHtml(contentHtml).map((paragraph) => ({
-    chapterVariantId: variantId,
-    stableKey: paragraph.stableKey,
-    position: paragraph.position,
-    text: paragraph.text,
-  }))
-
-  await store.paragraph.deleteMany({
-    where: { chapterVariantId: variantId },
-  })
-
-  if (paragraphInputs.length > 0) {
-    await store.paragraph.createMany({
-      data: paragraphInputs,
-    })
-  }
-
-  return store.paragraph.findMany({
-    where: { chapterVariantId: variantId },
-    orderBy: { position: 'asc' },
-  })
+  return syncVariantParagraphs(store, variantId, buildParagraphInputsFromHtml(contentHtml))
 }
 
 /**

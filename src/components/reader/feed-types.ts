@@ -56,6 +56,8 @@ export interface FeedSectionData {
   variant: {
     id: string
     variantType: string
+    revisionId?: string | null
+    revisionNumber?: number | null
     paragraphs: ReaderParagraph[]
   }
   preview: FeedSectionPreview

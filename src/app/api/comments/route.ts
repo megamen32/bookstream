@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
-  buildAnnotationSelection,
   mapAnnotationComment,
   sortCommentsByTop,
 } from '@/lib/annotations'
+import { buildAnnotationAnchorFromSelection, resolveAnnotationVariantContext } from '@/lib/chapter-revisions'
 
 export async function GET(request: NextRequest) {
   try {
@@ -78,13 +78,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const selection = quote ? buildAnnotationSelection(quote) : null
+    const variantContext = quote
+      ? await resolveAnnotationVariantContext(db, {
+          chapterVariantId: typeof quote.chapterVariantId === 'string' ? quote.chapterVariantId : null,
+          chapterId,
+          variantType: typeof quote.variantType === 'string' ? quote.variantType : 'original',
+        })
+      : null
+    const selection = quote && variantContext ? buildAnnotationAnchorFromSelection(variantContext, quote) : null
 
     const created = await db.annotation.create({
       data: {
         bookId,
         chapterId,
         chapterVariantId: typeof quote?.chapterVariantId === 'string' ? quote.chapterVariantId : null,
+        sourceRevisionId: selection?.sourceRevisionId || null,
+        resolvedRevisionId: selection?.resolvedRevisionId || null,
         variantType:
           typeof quote?.variantType === 'string' && quote.variantType.length > 0
             ? quote.variantType
@@ -98,6 +107,12 @@ export async function POST(request: NextRequest) {
         selectedText: selection?.selectedText || null,
         paragraphId: selection?.paragraphId || null,
         endParagraphId: selection?.endParagraphId || null,
+        startStableKey: selection?.startStableKey || null,
+        endStableKey: selection?.endStableKey || null,
+        anchorPrefix: selection?.anchorPrefix || null,
+        anchorSuffix: selection?.anchorSuffix || null,
+        anchorStatus: selection?.anchorStatus || 'stale',
+        anchorScore: selection?.anchorScore || 0,
         startOffset: selection?.startOffset || 0,
         endOffset: selection?.endOffset || 0,
       },

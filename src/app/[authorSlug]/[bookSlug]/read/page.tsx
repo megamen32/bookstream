@@ -30,6 +30,16 @@ import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
 } from '@/lib/reader-location'
+import {
+  getEffectiveOfflineProgress,
+  getOfflineBookRecord,
+  getOfflineBookBySlugs,
+  getOfflineChapterSection,
+  getOfflineFeedWindow,
+  queueOfflineComment,
+  saveProgressUpdate,
+} from '@/lib/offline-client'
+import type { OfflineProgressRecord, VariantPresetRecord } from '@/lib/offline-types'
 
 interface BookData {
   id: string
@@ -45,15 +55,6 @@ interface FeedResponse {
   variantPresets?: Record<string, VariantPresetRecord>
   hasPrev: boolean
   hasNext: boolean
-}
-
-interface VariantPresetRecord {
-  id: string
-  label: string
-  emoji: string
-  description?: string
-  targetSizePercent?: number | null
-  position?: number
 }
 
 interface RestoreRequest {
@@ -328,6 +329,11 @@ export default function ReaderPage() {
     before: number,
     after: number,
   ): Promise<FeedResponse | null> => {
+    const offlineData = await getOfflineFeedWindow(targetBookId, anchorId, requestedVariant, before, after)
+    if (offlineData) {
+      return offlineData
+    }
+
     const params = new URLSearchParams({
       anchorChapterId: anchorId,
       variantType: requestedVariant,
@@ -349,6 +355,14 @@ export default function ReaderPage() {
     targetChapterId: string,
     requestedVariant: VariantType,
   ): Promise<FeedSectionData | null> => {
+    if (bookId) {
+      const offlineSection = await getOfflineChapterSection(bookId, targetChapterId, requestedVariant)
+      if (offlineSection) {
+        cacheBookSection(offlineSection)
+        return offlineSection
+      }
+    }
+
     const cacheKey = getChapterCacheKey(targetChapterId, requestedVariant)
     const cached = chapterSectionCacheRef.current.get(cacheKey)
     if (cached) {
@@ -427,7 +441,7 @@ export default function ReaderPage() {
     } finally {
       chapterSectionRequestRef.current.delete(cacheKey)
     }
-  }, [cacheBookSection, getChapterCacheKey, setVariantType])
+  }, [bookId, cacheBookSection, getChapterCacheKey, setVariantType])
 
   const applyActiveVariantOptions = useCallback((sections: FeedSectionData[], nextActiveChapterId: string | null): void => {
     if (!nextActiveChapterId) {
@@ -524,19 +538,16 @@ export default function ReaderPage() {
 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        await fetch('/api/progress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            readerId,
-            bookId,
-            chapterId: targetChapterId,
-            variantType: useReaderStore.getState().variantType,
-            scrollPercent: progress,
-            fontSize: useReaderStore.getState().fontSize,
-            lineHeight: useReaderStore.getState().lineHeight,
-            readingMode: useReaderStore.getState().readingMode,
-          }),
+        await saveProgressUpdate({
+          readerId,
+          bookId,
+          chapterId: targetChapterId,
+          variantType: useReaderStore.getState().variantType,
+          scrollPercent: progress,
+          fontSize: useReaderStore.getState().fontSize,
+          lineHeight: useReaderStore.getState().lineHeight,
+          readingMode: useReaderStore.getState().readingMode,
+          updatedAt: new Date().toISOString(),
         })
       } catch (error) {
         console.error('Failed to save progress:', error)
@@ -548,19 +559,16 @@ export default function ReaderPage() {
     if (!bookId || !readerId || !activeChapterId) return
 
     try {
-      await fetch('/api/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          readerId,
-          bookId,
-          chapterId: activeChapterId,
-          variantType,
-          scrollPercent: scrollProgress,
-          fontSize: useReaderStore.getState().fontSize,
-          lineHeight: useReaderStore.getState().lineHeight,
-          readingMode: nextMode,
-        }),
+      await saveProgressUpdate({
+        readerId,
+        bookId,
+        chapterId: activeChapterId,
+        variantType,
+        scrollPercent: scrollProgress,
+        fontSize: useReaderStore.getState().fontSize,
+        lineHeight: useReaderStore.getState().lineHeight,
+        readingMode: nextMode,
+        updatedAt: new Date().toISOString(),
       })
     } catch (error) {
       console.error('Failed to save reading mode:', error)
@@ -583,14 +591,33 @@ export default function ReaderPage() {
       setLoading(true)
 
       try {
-        const bookRes = await fetch(`/api/books/${bookSlug}?authorSlug=${authorSlug}`)
-        if (!bookRes.ok) {
+        const offlineRecord = await getOfflineBookBySlugs(authorSlug, bookSlug)
+        let book: BookData | null = offlineRecord ? {
+          id: offlineRecord.book.id,
+          slug: offlineRecord.book.slug,
+          title: offlineRecord.book.title,
+          readingModeDefault: offlineRecord.book.readingModeDefault,
+          author: offlineRecord.book.author,
+          chapters: offlineRecord.chapterList,
+        } : null
+
+        if (navigator.onLine !== false) {
+          try {
+            const bookRes = await fetch(`/api/books/${bookSlug}?authorSlug=${authorSlug}`)
+            if (bookRes.ok) {
+              book = await bookRes.json() as BookData
+            }
+          } catch (error) {
+            console.error('Failed to fetch online book metadata:', error)
+          }
+        }
+
+        if (!book) {
           setLoading(false)
           hasResolvedInitialLocation.current = true
           return
         }
 
-        const book = await bookRes.json() as BookData
         setBookData(book)
         setBookId(book.id)
 
@@ -599,26 +626,48 @@ export default function ReaderPage() {
         let restoreScrollPercent = 0
         const { hasStoredReadingMode, readingMode: storedReadingMode } = useReaderStore.getState()
         let progressReadingMode: ReadingMode | null = null
+        let mergedProgress: OfflineProgressRecord | null = null
 
         try {
-          const progressRes = await fetch(`/api/progress?readerId=${readerId}&bookId=${book.id}`)
-          if (progressRes.ok) {
-            const progressData = await progressRes.json() as {
-              chapterId?: string
-              variantType?: string
-              fontSize?: number
-              lineHeight?: number
-              readingMode?: ReadingMode
-              scrollPercent?: number
-            } | null
-            if (progressData) {
-              targetChapterId = progressData.chapterId || targetChapterId
-              targetVariant = progressData.variantType || targetVariant
-              progressReadingMode = progressData.readingMode || null
-              restoreScrollPercent = progressData.scrollPercent ?? 0
-              if (progressData.fontSize) setFontSize(progressData.fontSize)
-              if (progressData.lineHeight) setLineHeight(progressData.lineHeight)
+          let serverProgress: OfflineProgressRecord | null = offlineRecord?.serverProgress || null
+
+          if (navigator.onLine !== false) {
+            const progressRes = await fetch(`/api/progress?readerId=${readerId}&bookId=${book.id}`)
+            if (progressRes.ok) {
+              const progressData = await progressRes.json() as {
+                chapterId?: string
+                variantType?: string
+                fontSize?: number
+                lineHeight?: number
+                readingMode?: ReadingMode
+                scrollPercent?: number
+                updatedAt?: string
+              } | null
+
+              if (progressData?.chapterId) {
+                serverProgress = {
+                  readerId,
+                  bookId: book.id,
+                  chapterId: progressData.chapterId,
+                  variantType: progressData.variantType || 'original',
+                  scrollPercent: progressData.scrollPercent ?? 0,
+                  fontSize: progressData.fontSize ?? 18,
+                  lineHeight: progressData.lineHeight ?? 1.6,
+                  readingMode: progressData.readingMode || 'feed',
+                  updatedAt: progressData.updatedAt || new Date().toISOString(),
+                }
+              }
             }
+          }
+
+          mergedProgress = await getEffectiveOfflineProgress(book.id, readerId, serverProgress)
+          if (mergedProgress) {
+            targetChapterId = mergedProgress.chapterId || targetChapterId
+            targetVariant = mergedProgress.variantType || targetVariant
+            progressReadingMode = mergedProgress.readingMode || null
+            restoreScrollPercent = mergedProgress.scrollPercent ?? 0
+            if (mergedProgress.fontSize) setFontSize(mergedProgress.fontSize)
+            if (mergedProgress.lineHeight) setLineHeight(mergedProgress.lineHeight)
           }
         } catch {
           // Ignore missing progress during boot.
@@ -1112,20 +1161,25 @@ export default function ReaderPage() {
             endOffset: replyingTo.endOffset || 0,
           }]
         : undefined
-      const response = await fetch(`/api/chapters/${activeChapterId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ readerId, username, body, bookId, quotes }),
-      })
-      if (!response.ok) {
+      const offlineRecord = await getOfflineBookRecord(bookId)
+      const nextComment = offlineRecord
+        ? await queueOfflineComment({ readerId, username, body, bookId, chapterId: activeChapterId, quotes })
+        : await (async (): Promise<ReaderComment | null> => {
+            const response = await fetch(`/api/chapters/${activeChapterId}/comments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ readerId, username, body, bookId, quotes }),
+            })
+            if (!response.ok) {
+              return null
+            }
+
+            const data = await response.json() as { comment?: ReaderComment }
+            return data.comment || null
+          })()
+      if (!nextComment) {
         return null
       }
-
-      const data = await response.json() as { comment?: ReaderComment }
-      if (!data.comment) {
-        return null
-      }
-
       setReplyingTo(null)
       setFeedSections((current) => current.map((section) => (
         section.chapter.id === activeChapterId
@@ -1133,19 +1187,19 @@ export default function ReaderPage() {
               ...section,
               preview: {
                 ...section.preview,
-                ...buildAfterwordComments(prependUniqueComment(section.commentsPreview, data.comment!, 5)),
+                ...buildAfterwordComments(prependUniqueComment(section.commentsPreview, nextComment, 5)),
                 stats: {
                   ...section.preview.stats,
                   commentsCount: section.preview.stats.commentsCount + 1,
                   topQuote: section.preview.quotesPreview[0] || section.preview.stats.topQuote,
                 },
               },
-              commentsPreview: prependUniqueComment(section.commentsPreview, data.comment!, 5),
+              commentsPreview: prependUniqueComment(section.commentsPreview, nextComment, 5),
               commentCount: section.commentCount + 1,
             }
           : section
       )))
-      return data.comment
+      return nextComment
     } catch (error) {
       console.error('Failed to send comment:', error)
       return null

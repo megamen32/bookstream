@@ -11,6 +11,11 @@ import {
   Heart,
 } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
+import {
+  getOfflineAnnotations,
+  getOfflineBookRecord,
+  subscribeOfflineUpdates,
+} from '@/lib/offline-client'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
@@ -251,6 +256,19 @@ export default function UserActivityPanel({
       setError(null)
 
       try {
+        const offlineRecord = await getOfflineBookRecord(bookId)
+        if (offlineRecord) {
+          const offlineItems = await getOfflineAnnotations({
+            bookId,
+            readerId,
+          })
+          if (!controller.signal.aborted) {
+            setItems(sortByDate(offlineItems))
+            setLoading(false)
+          }
+          return
+        }
+
         const params = new URLSearchParams({
           readerId,
           bookId,
@@ -277,7 +295,13 @@ export default function UserActivityPanel({
     }
 
     void fetchActivity()
-    return () => controller.abort()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void fetchActivity()
+    })
+    return () => {
+      controller.abort()
+      unsubscribe()
+    }
   }, [open, readerId, bookId])
 
   const counts = useMemo(() => ({

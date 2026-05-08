@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { buildAnnotationSelection } from '@/lib/annotations'
+import { buildAnnotationAnchorFromSelection, resolveAnnotationVariantContext } from '@/lib/chapter-revisions'
 
 /**
  * Deprecated compatibility route.
@@ -20,14 +20,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const selection = buildAnnotationSelection({
-      paragraphId,
-      endParagraphId: body.selection?.endParagraphId ?? paragraphId,
-      startOffset: body.selection?.startOffset ?? 0,
-      endOffset: body.selection?.endOffset ?? 0,
-      selectedText: body.selection?.selectedText ?? '',
-    })
-
     const chapterVariant = await db.chapterVariant.findUnique({
       where: { id: chapterVariantId },
       select: {
@@ -44,6 +36,24 @@ export async function POST(request: NextRequest) {
     if (!chapterVariant) {
       return NextResponse.json({ error: 'chapterVariant not found' }, { status: 404 })
     }
+
+    const variantContext = await resolveAnnotationVariantContext(db, {
+      chapterVariantId,
+      chapterId: chapterVariant.chapter.id,
+      variantType: chapterVariant.variantType || variantType,
+    })
+
+    if (!variantContext) {
+      return NextResponse.json({ error: 'chapterVariant not found' }, { status: 404 })
+    }
+
+    const selection = buildAnnotationAnchorFromSelection(variantContext, {
+      paragraphId,
+      endParagraphId: body.selection?.endParagraphId ?? paragraphId,
+      startOffset: body.selection?.startOffset ?? 0,
+      endOffset: body.selection?.endOffset ?? 0,
+      selectedText: body.selection?.selectedText ?? '',
+    })
 
     const existing = await db.annotation.findFirst({
       where: {
@@ -77,6 +87,14 @@ export async function POST(request: NextRequest) {
         selectedText: selection.selectedText || null,
         paragraphId,
         endParagraphId: selection.endParagraphId,
+        sourceRevisionId: selection.sourceRevisionId,
+        resolvedRevisionId: selection.resolvedRevisionId,
+        startStableKey: selection.startStableKey,
+        endStableKey: selection.endStableKey,
+        anchorPrefix: selection.anchorPrefix,
+        anchorSuffix: selection.anchorSuffix,
+        anchorStatus: selection.anchorStatus,
+        anchorScore: selection.anchorScore,
         startOffset: selection.startOffset,
         endOffset: selection.endOffset,
       },

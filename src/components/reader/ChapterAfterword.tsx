@@ -104,7 +104,7 @@ export default function ChapterAfterword({
         : 'chapter-afterword--quiet'
       : 'chapter-afterword--compact',
   ].join(' ')
-  const likesLabel = formatCount(stats.reactionsCount, 'лайк', 'лайка')
+  const likesLabel = formatCount(stats?.reactionsCount || 0, 'лайк', 'лайка')
   const composerAvatar = readerId
     ? (username.trim().charAt(0).toUpperCase() || '•')
     : '⋯'

@@ -3,11 +3,19 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, BookOpen, MessageSquare } from 'lucide-react'
+import { ArrowLeft, BookOpen, Download, MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useReaderStore } from '@/lib/store'
+import {
+  downloadBook,
+  getOfflineBookBySlugs,
+  refreshDownloadedBook,
+  removeDownloadedBook,
+  subscribeOfflineUpdates,
+} from '@/lib/offline-client'
 
 interface Author {
   id: string
@@ -44,6 +52,10 @@ export default function BookCoverPage() {
   const bookSlug = params.bookSlug as string
   const [book, setBook] = useState<Book | null>(null)
   const [loading, setLoading] = useState(true)
+  const [downloaded, setDownloaded] = useState(false)
+  const [downloadPending, setDownloadPending] = useState(false)
+  const [offlineError, setOfflineError] = useState<string | null>(null)
+  const { readerId, loadFromStorage } = useReaderStore()
 
   useEffect(() => {
     if (!authorSlug || !bookSlug) return
@@ -64,6 +76,76 @@ export default function BookCoverPage() {
 
     void fetchData()
   }, [authorSlug, bookSlug])
+
+  useEffect(() => {
+    if (readerId) return
+    loadFromStorage()
+  }, [readerId, loadFromStorage])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadOfflineState = async (): Promise<void> => {
+      const offlineRecord = await getOfflineBookBySlugs(authorSlug, bookSlug)
+      if (!isCancelled) {
+        setDownloaded(Boolean(offlineRecord))
+      }
+    }
+
+    void loadOfflineState()
+
+    return subscribeOfflineUpdates(() => {
+      void loadOfflineState()
+    })
+  }, [authorSlug, bookSlug])
+
+  const handleDownload = async (): Promise<void> => {
+    if (!book || !readerId) return
+
+    setDownloadPending(true)
+    setOfflineError(null)
+    try {
+      await downloadBook(book.id, readerId)
+      setDownloaded(true)
+    } catch (error) {
+      console.error('Failed to download book for offline:', error)
+      setOfflineError('Не удалось сохранить книгу офлайн.')
+    } finally {
+      setDownloadPending(false)
+    }
+  }
+
+  const handleRefresh = async (): Promise<void> => {
+    if (!book || !readerId) return
+
+    setDownloadPending(true)
+    setOfflineError(null)
+    try {
+      await refreshDownloadedBook(book.id, readerId)
+      setDownloaded(true)
+    } catch (error) {
+      console.error('Failed to refresh offline book:', error)
+      setOfflineError('Не удалось обновить офлайн-копию.')
+    } finally {
+      setDownloadPending(false)
+    }
+  }
+
+  const handleRemove = async (): Promise<void> => {
+    if (!book) return
+
+    setDownloadPending(true)
+    setOfflineError(null)
+    try {
+      await removeDownloadedBook(book.id)
+      setDownloaded(false)
+    } catch (error) {
+      console.error('Failed to remove offline book:', error)
+      setOfflineError('Не удалось удалить офлайн-копию.')
+    } finally {
+      setDownloadPending(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -158,6 +240,61 @@ export default function BookCoverPage() {
                   Читать книгу
                 </Button>
               </Link>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {!downloaded ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-full border-white/15 bg-black/20 text-white hover:bg-white/10 hover:text-white"
+                    onClick={() => void handleDownload()}
+                    disabled={downloadPending || !readerId}
+                  >
+                    <Download className="mr-2" size={16} />
+                    {downloadPending ? 'Сохраняем офлайн…' : 'Скачать офлайн'}
+                  </Button>
+                ) : (
+                  <>
+                    <Link href={`/${authorSlug}/${bookSlug}/read`} className="inline-flex">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full border-emerald-400/25 bg-emerald-500/12 text-emerald-100 hover:bg-emerald-500/18 hover:text-white"
+                      >
+                        <BookOpen className="mr-2" size={16} />
+                        Открыть офлайн
+                      </Button>
+                    </Link>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-white/15 bg-black/20 text-white hover:bg-white/10 hover:text-white"
+                      onClick={() => void handleRefresh()}
+                      disabled={downloadPending || !readerId}
+                    >
+                      <RefreshCw className="mr-2" size={16} />
+                      {downloadPending ? 'Обновляем…' : 'Обновить'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
+                      onClick={() => void handleRemove()}
+                      disabled={downloadPending}
+                    >
+                      <Trash2 className="mr-2" size={16} />
+                      Удалить
+                    </Button>
+                  </>
+                )}
+              </div>
+              {offlineError ? (
+                <p className="mt-3 text-sm text-rose-200">{offlineError}</p>
+              ) : downloaded ? (
+                <p className="mt-3 text-sm text-emerald-200">Книга доступна офлайн на этом устройстве.</p>
+              ) : (
+                <p className="mt-3 text-sm text-white/55">Скачайте книгу, чтобы читать её без сети и синхронизировать действия позже.</p>
+              )}
             </div>
           </div>
         </section>

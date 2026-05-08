@@ -69,6 +69,14 @@ interface ChapterVariant {
   variantType: string
   contentHtml: string
   editedByAuthor: boolean
+  headRevisionId?: string | null
+}
+
+interface VariantRevisionSummary {
+  id: string
+  revisionNumber: number
+  source: string
+  createdAt: string
 }
 
 interface BookData {
@@ -131,6 +139,9 @@ export default function BookEditorPage() {
   const [bookSettingsOpen, setBookSettingsOpen] = useState(false)
   const [initialChapterTitle, setInitialChapterTitle] = useState('')
   const [initialChapterContent, setInitialChapterContent] = useState('')
+  const [revisionHistory, setRevisionHistory] = useState<VariantRevisionSummary[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [restoringRevisionId, setRestoringRevisionId] = useState<string | null>(null)
 
   const [editTitle, setEditTitle] = useState('')
   const [editSlug, setEditSlug] = useState('')
@@ -147,6 +158,8 @@ export default function BookEditorPage() {
   const [editSyntheticQuotesPerChapter, setEditSyntheticQuotesPerChapter] = useState(1)
   const [editSyntheticReactionsPerChapter, setEditSyntheticReactionsPerChapter] = useState(5)
   const [editSyntheticCommentsUseLlm, setEditSyntheticCommentsUseLlm] = useState(false)
+  const visibleRevisionHistory = selectedChapterId ? revisionHistory : []
+  const visibleLoadingHistory = selectedChapterId ? loadingHistory : false
 
   useEffect(() => (
     () => {
@@ -310,6 +323,79 @@ export default function BookEditorPage() {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedChapterId) {
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      setLoadingHistory(true)
+
+      try {
+        const response = await fetch(`/api/chapters/${selectedChapterId}/variants/${activeVariant}/history`)
+
+        if (!response.ok) {
+          throw new Error('history fetch failed')
+        }
+
+        const payload = (await response.json()) as { revisions?: VariantRevisionSummary[] }
+
+        if (!cancelled) {
+          setRevisionHistory(payload.revisions || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setRevisionHistory([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingHistory(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeVariant, selectedChapterId])
+
+  const handleRestoreRevision = async (revisionId: string): Promise<void> => {
+    if (!selectedChapterId) {
+      return
+    }
+
+    setRestoringRevisionId(revisionId)
+
+    try {
+      const response = await fetch(
+        `/api/chapters/${selectedChapterId}/variants/${activeVariant}/history/${revisionId}`,
+        {
+          method: 'POST',
+        },
+      )
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string }
+        throw new Error(payload.error || 'Не удалось восстановить ревизию')
+      }
+
+      toast({
+        title: 'Версия восстановлена',
+        description: 'Создана новая head revision на основе выбранного снимка',
+      })
+      await fetchBook()
+    } catch (error) {
+      toast({
+        title: 'Ошибка восстановления',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      })
+    } finally {
+      setRestoringRevisionId(null)
     }
   }
 
@@ -1020,6 +1106,58 @@ export default function BookEditorPage() {
                     </TabsContent>
                   ))}
                 </Tabs>
+
+                <div className="mt-6 rounded-3xl border border-border/60 bg-muted/20 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium">История версии</div>
+                      <div className="text-xs text-muted-foreground">
+                        Ревизии для текущего варианта главы
+                      </div>
+                    </div>
+                    {visibleLoadingHistory && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  </div>
+
+                  <div className="space-y-2">
+                    {visibleRevisionHistory.slice(0, 8).map((revision) => (
+                      <div
+                        key={revision.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-border/50 bg-background/60 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">
+                            Rev {revision.revisionNumber}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {revision.source} · {new Date(revision.createdAt).toLocaleString('ru-RU')}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          disabled={restoringRevisionId === revision.id}
+                          onClick={() => {
+                            void handleRestoreRevision(revision.id)
+                          }}
+                        >
+                          {restoringRevisionId === revision.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            'Restore'
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+
+                    {!visibleLoadingHistory && visibleRevisionHistory.length === 0 && (
+                      <div className="rounded-2xl border border-dashed border-border/60 px-3 py-4 text-sm text-muted-foreground">
+                        История появится после первого сохранения этого варианта.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ) : (

@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import type { AnnotationKind } from '@/lib/annotations'
+import { getOfflineBookRecord, toggleOfflineAnnotation } from '@/lib/offline-client'
 
 export interface SelectionAnnotationRange {
   id?: string
@@ -313,33 +314,8 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
     if (!toolbar || !readerId || !bookId || !toolbar.chapterId || !username) return
 
     try {
-      const res = await fetch('/api/annotations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind,
-          bookId,
-          chapterId: toolbar.chapterId,
-          chapterVariantId: toolbar.variantId,
-          variantType: toolbar.variantType,
-          readerId,
-          username,
-          emoji: emoji || null,
-          selection: {
-            paragraphId: toolbar.paragraphId,
-            endParagraphId: toolbar.endParagraphId,
-            selectedText: toolbar.selectedText,
-            startOffset: toolbar.startOffset,
-            endOffset: toolbar.endOffset,
-          },
-        }),
-      })
-
-      if (!res.ok) {
-        return
-      }
-
-      const payload = (await res.json()) as {
+      const offlineRecord = await getOfflineBookRecord(bookId)
+      let payload: {
         action?: string
         annotation?: {
           id: string
@@ -351,6 +327,83 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
           endOffset: number
           selectedText: string | null
           body?: string | null
+        }
+      }
+
+      if (offlineRecord) {
+        const result = await toggleOfflineAnnotation({
+          kind: kind === 'comment' ? 'quote' : kind,
+          bookId,
+          chapterId: toolbar.chapterId,
+          chapterVariantId: toolbar.variantId,
+          variantType: toolbar.variantType,
+          readerId,
+          username,
+          emoji: emoji || null,
+          toggleAction: 'add',
+          selection: {
+            paragraphId: toolbar.paragraphId,
+            endParagraphId: toolbar.endParagraphId,
+            selectedText: toolbar.selectedText,
+            startOffset: toolbar.startOffset,
+            endOffset: toolbar.endOffset,
+          },
+        })
+
+        payload = {
+          action: result.active ? 'added' : 'removed',
+          annotation: result.annotation ? {
+            id: result.annotation.id,
+            kind: result.annotation.kind,
+            emoji: result.annotation.emoji,
+            paragraphId: result.annotation.paragraphId || toolbar.paragraphId,
+            endParagraphId: result.annotation.endParagraphId || toolbar.endParagraphId,
+            startOffset: result.annotation.startOffset,
+            endOffset: result.annotation.endOffset,
+            selectedText: result.annotation.selectedText,
+            body: result.annotation.body,
+          } : undefined,
+        }
+      } else {
+        const res = await fetch('/api/annotations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind,
+            bookId,
+            chapterId: toolbar.chapterId,
+            chapterVariantId: toolbar.variantId,
+            variantType: toolbar.variantType,
+            readerId,
+            username,
+            emoji: emoji || null,
+            selection: {
+              paragraphId: toolbar.paragraphId,
+              endParagraphId: toolbar.endParagraphId,
+              selectedText: toolbar.selectedText,
+              startOffset: toolbar.startOffset,
+              endOffset: toolbar.endOffset,
+            },
+          }),
+        })
+
+        if (!res.ok) {
+          return
+        }
+
+        payload = await res.json() as {
+          action?: string
+          annotation?: {
+            id: string
+            kind: AnnotationKind
+            emoji?: string | null
+            paragraphId: string
+            endParagraphId: string | null
+            startOffset: number
+            endOffset: number
+            selectedText: string | null
+            body?: string | null
+          }
         }
       }
 

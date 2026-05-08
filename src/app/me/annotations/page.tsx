@@ -8,6 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import {
+  getAllOfflineReaderAnnotations,
+  getOfflineCatalogBooks,
+  subscribeOfflineUpdates,
+} from '@/lib/offline-client'
+import {
   annotationKindLabel,
   type AnnotationKind,
   type UnifiedAnnotationItem,
@@ -190,6 +195,26 @@ export default function UserAnnotationsPage(): React.ReactElement {
       setError(null)
 
       try {
+        const [offlineAnnotations, offlineBooks] = await Promise.all([
+          getAllOfflineReaderAnnotations(),
+          getOfflineCatalogBooks(),
+        ])
+        if (offlineAnnotations.length > 0 || offlineBooks.length > 0) {
+          const booksMap = Object.fromEntries(
+            offlineBooks.map((book) => [book.id, book]),
+          ) as Record<string, BookLookupItem>
+
+          if (!controller.signal.aborted) {
+            setBooksById(booksMap)
+            setAnnotations(Array.isArray(offlineAnnotations) ? offlineAnnotations.filter((item) => item.readerId === readerId) : [])
+            setLoading(false)
+          }
+
+          if (navigator.onLine === false) {
+            return
+          }
+        }
+
         const [annotationsResponse, booksResponse] = await Promise.all([
           fetch(`/api/annotations?readerId=${readerId}`, { signal: controller.signal }),
           fetch('/api/books', { signal: controller.signal }),
@@ -226,7 +251,13 @@ export default function UserAnnotationsPage(): React.ReactElement {
     }
 
     void fetchData()
-    return () => controller.abort()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void fetchData()
+    })
+    return () => {
+      controller.abort()
+      unsubscribe()
+    }
   }, [readerId])
 
   const filteredAnnotations = useMemo(() => {

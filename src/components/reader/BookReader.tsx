@@ -18,6 +18,7 @@ import {
   resolveBookReaderPage,
   setBookReaderPage,
 } from '@/lib/book-reader-progress'
+import { getOfflineAnnotations, getOfflineBookRecord } from '@/lib/offline-client'
 
 interface Paragraph {
   id: string
@@ -235,6 +236,31 @@ export default function BookReader({
 
     const loadSelectionHighlights = async (): Promise<void> => {
       try {
+        const offlineRecord = await getOfflineBookRecord(bookId)
+        if (offlineRecord) {
+          const offlineAnnotations = await getOfflineAnnotations({
+            bookId,
+            chapterId,
+            readerId,
+          })
+          if (controller.signal.aborted) {
+            return
+          }
+
+          setSelectionHighlights(offlineAnnotations.map<SelectionAnnotationRange>((annotation) => ({
+            id: annotation.id,
+            kind: annotation.kind,
+            paragraphId: annotation.paragraphId || '',
+            endParagraphId: annotation.endParagraphId || annotation.paragraphId || '',
+            startOffset: Number.isFinite(annotation.startOffset) ? annotation.startOffset : 0,
+            endOffset: Number.isFinite(annotation.endOffset) ? annotation.endOffset : 0,
+            selectedText: annotation.selectedText || '',
+            emoji: annotation.emoji,
+            body: annotation.body,
+          })))
+          return
+        }
+
         const params = new URLSearchParams({ readerId, bookId })
 
         const response = await fetch(`/api/annotations?${params.toString()}`, {

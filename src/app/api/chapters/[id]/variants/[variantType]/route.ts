@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
+import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import { db } from '@/lib/db'
 
 export async function GET(
@@ -30,26 +30,19 @@ export async function PUT(
   try {
     const { id, variantType } = await params
     const { contentHtml } = await request.json()
+    const saved = await db.$transaction((tx) => saveChapterVariantRevision(tx, {
+      chapterId: id,
+      variantType,
+      contentHtml,
+      editedByAuthor: true,
+      source: 'manual',
+    }))
 
-    const variant = await db.chapterVariant.upsert({
-      where: {
-        chapterId_variantType: { chapterId: id, variantType },
-      },
-      update: {
-        contentHtml,
-        editedByAuthor: true,
-      },
-      create: {
-        chapterId: id,
-        variantType,
-        contentHtml,
-        editedByAuthor: true,
-      },
+    return NextResponse.json({
+      ...saved.variant,
+      headRevisionId: saved.headRevision.id,
+      revisionNumber: saved.headRevision.revisionNumber,
     })
-
-    await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
-
-    return NextResponse.json(variant)
   } catch (error) {
     console.error('Error updating variant:', error)
     return NextResponse.json({ error: 'Ошибка сохранения варианта' }, { status: 500 })

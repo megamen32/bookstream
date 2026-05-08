@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ensureVariantParagraphs, syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
+import { ensureVariantParagraphs } from '@/lib/chapter-variants'
+import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import { db } from '@/lib/db'
 import { createChatCompletion } from '@/lib/llm'
 
@@ -28,18 +29,15 @@ async function upsertVariant(
   if (paragraphs.length === 0) return null
 
   const contentHtml = paragraphs.map((p) => `<p>${p}</p>`).join('\n')
+  const saved = await db.$transaction((tx) => saveChapterVariantRevision(tx, {
+    chapterId,
+    variantType,
+    contentHtml,
+    editedByAuthor,
+    source: 'ai',
+  }))
 
-  const variant = await db.chapterVariant.upsert({
-    where: {
-      chapterId_variantType: { chapterId, variantType },
-    },
-    update: { contentHtml, editedByAuthor },
-    create: { chapterId, variantType, contentHtml, editedByAuthor },
-  })
-
-  const syncedParagraphs = await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
-
-  return { variantId: variant.id, paragraphCount: syncedParagraphs.length }
+  return { variantId: saved.variant.id, paragraphCount: saved.paragraphs.length }
 }
 
 function buildFallbackPrompt(variantType: string, wordCount: number): string {

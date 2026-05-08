@@ -22,11 +22,15 @@ export interface ReaderComment {
   selectedText?: string | null
   paragraphId?: string | null
   endParagraphId?: string | null
+  anchorStatus?: 'exact' | 'approximate' | 'stale' | null
   startOffset?: number
   endOffset?: number
   upvoteCount: number
   reacted: boolean
   quotes: ReaderCommentQuote[]
+  syncStatus?: 'synced' | 'pending' | 'failed'
+  offlineOperationId?: string | null
+  syncError?: string | null
 }
 
 export type CommentSubmitHandler = (body: string) => Promise<ReaderComment | null>

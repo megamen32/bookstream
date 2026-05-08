@@ -17,11 +17,21 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { sortCommentsByTop } from '@/lib/annotations'
 import { getVisibleBookHighlights, type BookHighlightsSectionKey } from '@/lib/book-highlights'
+import { buildPendingCommentMetaLabel } from '@/lib/offline-helpers'
+import {
+  getOfflineBookRecord,
+  getOfflineComments,
+  getOfflineQuotes,
+  subscribeOfflineUpdates,
+  toggleOfflineAnnotationVote,
+  toggleOfflineQuoteVote,
+} from '@/lib/offline-client'
 import { useReaderStore } from '@/lib/store'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import { cn } from '@/lib/utils'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import TopCommentCard from '@/components/reader/TopCommentCard'
+import type { OfflineBookQuoteRecord } from '@/lib/offline-types'
 
 type SectionKey = BookHighlightsSectionKey
 
@@ -32,20 +42,7 @@ interface Chapter {
   variants: Array<{ id: string; variantType: string }>
 }
 
-interface BookQuote {
-  id: string
-  text: string
-  variantType: string
-  variantLabel: string
-  chapterId: string
-  paragraphId: string
-  chapterTitle: string
-  chapterPosition: number
-  username: string
-  createdAt: string
-  upvoteCount: number
-  reacted: boolean
-}
+type BookQuote = OfflineBookQuoteRecord
 
 interface BookHighlightsPanelProps {
   authorSlug: string
@@ -405,6 +402,21 @@ export default function BookHighlightsPanel({
       setCommentsError(null)
       setQuotesError(null)
 
+      const offlineRecord = await getOfflineBookRecord(bookId)
+      if (offlineRecord) {
+        if (!controller.signal.aborted) {
+          const [offlineComments, offlineQuotes] = await Promise.all([
+            getOfflineComments(bookId),
+            getOfflineQuotes(bookId),
+          ])
+          setComments(sortCommentsByTop(offlineComments))
+          setQuotes(sortQuotes(offlineQuotes))
+          setCommentsLoading(false)
+          setQuotesLoading(false)
+        }
+        return
+      }
+
       const commentsParams = new URLSearchParams({
         bookId,
         status: 'active',
@@ -454,7 +466,13 @@ export default function BookHighlightsPanel({
     }
 
     void fetchBookHighlights()
-    return () => controller.abort()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void fetchBookHighlights()
+    })
+    return () => {
+      controller.abort()
+      unsubscribe()
+    }
   }, [bookId, readerId])
 
   const visibleChapters = useMemo(
@@ -500,6 +518,12 @@ export default function BookHighlightsPanel({
     setTogglingCommentId(commentId)
 
     try {
+      const offlineRecord = await getOfflineBookRecord(bookId)
+      if (offlineRecord) {
+        await toggleOfflineAnnotationVote(bookId, commentId, readerId)
+        return
+      }
+
       const response = await fetch(`/api/annotations/${commentId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -551,6 +575,12 @@ export default function BookHighlightsPanel({
     setTogglingQuoteId(quoteId)
 
     try {
+      const offlineRecord = await getOfflineBookRecord(bookId)
+      if (offlineRecord) {
+        await toggleOfflineQuoteVote(bookId, quoteId, readerId)
+        return
+      }
+
       const response = await fetch(`/api/annotations/${quoteId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -677,7 +707,8 @@ export default function BookHighlightsPanel({
                             endOffset: comment.endOffset,
                         })}
                         onToggleVote={() => void handleToggleCommentVote(comment.id)}
-                        voteDisabled={!readerId || togglingCommentId === comment.id}
+                        voteDisabled={!readerId || togglingCommentId === comment.id || comment.syncStatus === 'pending'}
+                        metaLabel={buildPendingCommentMetaLabel(comment)}
                         bodyLines={3}
                       />
                     ))}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { syncVariantParagraphsFromHtml } from '@/lib/chapter-variants'
+import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import {
   persistImportedBookCover,
   readImportedBookFile,
@@ -61,11 +61,27 @@ export async function POST(
 
     const book = await db.book.findUnique({
       where: { id: bookId },
-      select: { id: true, slug: true, title: true },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        _count: {
+          select: {
+            chapters: true,
+          },
+        },
+      },
     })
 
     if (!book) {
       return NextResponse.json({ error: 'Книга не найдена' }, { status: 404 })
+    }
+
+    if (book._count.chapters > 0) {
+      return NextResponse.json(
+        { error: 'Импорт в непустую книгу пока запрещён: сначала создайте новую книгу или очистите текущую.' },
+        { status: 409 }
+      )
     }
 
     const importedContent = await readImportedBookFile(file)
@@ -89,15 +105,13 @@ export async function POST(
         },
       })
 
-      const variant = await db.chapterVariant.create({
-        data: {
-          chapterId: chapter.id,
-          variantType: 'original',
-          contentHtml: chapterParts[index].content,
-        },
-      })
-
-      await syncVariantParagraphsFromHtml(db, variant.id, variant.contentHtml)
+      await db.$transaction((tx) => saveChapterVariantRevision(tx, {
+        chapterId: chapter.id,
+        variantType: 'original',
+        contentHtml: chapterParts[index].content,
+        editedByAuthor: true,
+        source: 'import',
+      }))
     }
 
     const coverUrl = await persistImportedBookCover({

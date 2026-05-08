@@ -3,9 +3,12 @@ import { db } from '@/lib/db'
 import {
   annotationKindFromString,
   annotationKindLabel,
-  buildAnnotationSelection,
   type AnnotationKind,
 } from '@/lib/annotations'
+import {
+  buildAnnotationAnchorFromSelection,
+  resolveAnnotationVariantContext,
+} from '@/lib/chapter-revisions'
 
 interface AnnotationResponseItem {
   id: string
@@ -17,6 +20,8 @@ interface AnnotationResponseItem {
   chapterTitle: string
   chapterPosition: number
   chapterVariantId: string | null
+  sourceRevisionId: string | null
+  resolvedRevisionId: string | null
   variantType: string
   readerId: string
   username: string
@@ -25,6 +30,12 @@ interface AnnotationResponseItem {
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
+  startStableKey: string | null
+  endStableKey: string | null
+  anchorPrefix: string | null
+  anchorSuffix: string | null
+  anchorStatus: string
+  anchorScore: number
   startOffset: number
   endOffset: number
 }
@@ -36,6 +47,8 @@ function mapAnnotationRow(annotation: {
   bookId: string
   chapterId: string
   chapterVariantId: string | null
+  sourceRevisionId: string | null
+  resolvedRevisionId: string | null
   variantType: string
   readerId: string
   username: string
@@ -44,6 +57,12 @@ function mapAnnotationRow(annotation: {
   selectedText: string | null
   paragraphId: string | null
   endParagraphId: string | null
+  startStableKey: string | null
+  endStableKey: string | null
+  anchorPrefix: string | null
+  anchorSuffix: string | null
+  anchorStatus: string
+  anchorScore: number
   startOffset: number
   endOffset: number
   chapter: {
@@ -63,6 +82,8 @@ function mapAnnotationRow(annotation: {
     chapterTitle: annotation.chapter.title,
     chapterPosition: annotation.chapter.position,
     chapterVariantId: annotation.chapterVariantId,
+    sourceRevisionId: annotation.sourceRevisionId,
+    resolvedRevisionId: annotation.resolvedRevisionId,
     variantType: annotation.variantType,
     readerId: annotation.readerId,
     username: annotation.username,
@@ -71,6 +92,12 @@ function mapAnnotationRow(annotation: {
     selectedText: annotation.selectedText,
     paragraphId: annotation.paragraphId,
     endParagraphId: annotation.endParagraphId,
+    startStableKey: annotation.startStableKey,
+    endStableKey: annotation.endStableKey,
+    anchorPrefix: annotation.anchorPrefix,
+    anchorSuffix: annotation.anchorSuffix,
+    anchorStatus: annotation.anchorStatus,
+    anchorScore: annotation.anchorScore,
     startOffset: annotation.startOffset,
     endOffset: annotation.endOffset,
   }
@@ -139,8 +166,6 @@ export async function POST(request: NextRequest) {
     const bodyText = typeof body.body === 'string' ? body.body.trim() : ''
     const variantType =
       typeof body.variantType === 'string' && body.variantType.length > 0 ? body.variantType : 'original'
-    const selection = buildAnnotationSelection(body.selection ?? body)
-
     let bookId = typeof body.bookId === 'string' ? body.bookId : ''
     let chapterId = typeof body.chapterId === 'string' ? body.chapterId : ''
     let chapterVariantId = typeof body.chapterVariantId === 'string' ? body.chapterVariantId : null
@@ -173,9 +198,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (kind !== 'comment' && !selection.paragraphId) {
+    const variantContext = chapterVariantId || chapterId
+      ? await resolveAnnotationVariantContext(db, {
+          chapterVariantId,
+          chapterId,
+          variantType,
+        })
+      : null
+    const selection = variantContext
+      ? buildAnnotationAnchorFromSelection(variantContext, body.selection ?? body)
+      : null
+
+    if (kind !== 'comment' && !selection?.paragraphId) {
       return NextResponse.json(
         { error: 'paragraphId is required for selected-text annotations' },
+        { status: 400 },
+      )
+    }
+
+    if (!selection && kind !== 'comment') {
+      return NextResponse.json(
+        { error: 'selection could not be resolved for this variant' },
         { status: 400 },
       )
     }
@@ -186,6 +229,8 @@ export async function POST(request: NextRequest) {
           bookId,
           chapterId,
           chapterVariantId,
+          sourceRevisionId: selection?.sourceRevisionId || null,
+          resolvedRevisionId: selection?.resolvedRevisionId || null,
           variantType,
           readerId,
           username,
@@ -193,11 +238,17 @@ export async function POST(request: NextRequest) {
           status: 'active',
           body: bodyText || null,
           emoji: null,
-          selectedText: selection.selectedText || null,
-          paragraphId: selection.paragraphId || null,
-          endParagraphId: selection.endParagraphId || null,
-          startOffset: selection.startOffset,
-          endOffset: selection.endOffset,
+          selectedText: selection?.selectedText || null,
+          paragraphId: selection?.paragraphId || null,
+          endParagraphId: selection?.endParagraphId || null,
+          startStableKey: selection?.startStableKey || null,
+          endStableKey: selection?.endStableKey || null,
+          anchorPrefix: selection?.anchorPrefix || null,
+          anchorSuffix: selection?.anchorSuffix || null,
+          anchorStatus: selection?.anchorStatus || 'stale',
+          anchorScore: selection?.anchorScore || 0,
+          startOffset: selection?.startOffset || 0,
+          endOffset: selection?.endOffset || 0,
         },
         include: {
           chapter: {
@@ -218,6 +269,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!selection) {
+      return NextResponse.json(
+        { error: 'selection could not be resolved for this variant' },
+        { status: 400 },
+      )
+    }
+
+    const resolvedSelection = selection
+
     const existing = await db.annotation.findFirst({
       where: {
         kind,
@@ -225,12 +285,12 @@ export async function POST(request: NextRequest) {
         bookId,
         chapterId,
         chapterVariantId,
-        paragraphId: selection.paragraphId,
-        endParagraphId: selection.endParagraphId,
-        startOffset: selection.startOffset,
-        endOffset: selection.endOffset,
+        paragraphId: resolvedSelection.paragraphId,
+        endParagraphId: resolvedSelection.endParagraphId,
+        startOffset: resolvedSelection.startOffset,
+        endOffset: resolvedSelection.endOffset,
         ...(kind === 'reaction' ? { emoji: emoji || '' } : {}),
-        ...(kind === 'quote' ? { selectedText: selection.selectedText } : {}),
+        ...(kind === 'quote' ? { selectedText: resolvedSelection.selectedText } : {}),
       },
     })
 
@@ -246,7 +306,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'emoji is required for reactions' }, { status: 400 })
     }
 
-    if (kind === 'quote' && selection.selectedText.trim().length === 0) {
+    if (kind === 'quote' && resolvedSelection.selectedText.trim().length === 0) {
       return NextResponse.json({ error: 'selectedText is required for quotes' }, { status: 400 })
     }
 
@@ -255,6 +315,8 @@ export async function POST(request: NextRequest) {
         bookId,
         chapterId,
         chapterVariantId,
+        sourceRevisionId: resolvedSelection.sourceRevisionId,
+        resolvedRevisionId: resolvedSelection.resolvedRevisionId,
         variantType,
         readerId,
         username,
@@ -262,11 +324,17 @@ export async function POST(request: NextRequest) {
         status: 'active',
         body: null,
         emoji,
-        selectedText: selection.selectedText || null,
-        paragraphId: selection.paragraphId,
-        endParagraphId: selection.endParagraphId,
-        startOffset: selection.startOffset,
-        endOffset: selection.endOffset,
+        selectedText: resolvedSelection.selectedText || null,
+        paragraphId: resolvedSelection.paragraphId,
+        endParagraphId: resolvedSelection.endParagraphId,
+        startStableKey: resolvedSelection.startStableKey,
+        endStableKey: resolvedSelection.endStableKey,
+        anchorPrefix: resolvedSelection.anchorPrefix,
+        anchorSuffix: resolvedSelection.anchorSuffix,
+        anchorStatus: resolvedSelection.anchorStatus,
+        anchorScore: resolvedSelection.anchorScore,
+        startOffset: resolvedSelection.startOffset,
+        endOffset: resolvedSelection.endOffset,
       },
       include: {
         chapter: {

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, ArrowRight, BookOpen } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, DownloadCloud } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getOfflineAuthorBooks, subscribeOfflineUpdates } from '@/lib/offline-client'
 
 interface Author {
   id: string
@@ -35,36 +36,83 @@ export default function AuthorProfilePage() {
   const [author, setAuthor] = useState<Author | null>(null)
   const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
+  const [offlineCatalog, setOfflineCatalog] = useState(false)
 
   useEffect(() => {
     if (!authorSlug) return
 
+    let isCancelled = false
+
     async function fetchData(): Promise<void> {
       try {
-        const res = await fetch(`/api/books?authorSlug=${authorSlug}`)
-        if (res.ok) {
-          const data = await res.json()
-          if (Array.isArray(data) && data.length > 0) {
-            const firstBook = data[0]
-            if (firstBook.author) {
-              setAuthor({
-                id: firstBook.author.id,
-                slug: firstBook.author.slug,
-                name: firstBook.author.name,
-                bio: null,
-              })
+        const localBooks = await getOfflineAuthorBooks(authorSlug)
+        let resolvedBooks = localBooks as Book[]
+
+        if (navigator.onLine !== false) {
+          const res = await fetch(`/api/books?authorSlug=${authorSlug}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (Array.isArray(data)) {
+              resolvedBooks = data as Book[]
+              setOfflineCatalog(false)
             }
-            setBooks(data)
+          } else if (localBooks.length > 0) {
+            setOfflineCatalog(true)
+          }
+        } else if (localBooks.length > 0) {
+          setOfflineCatalog(true)
+        }
+
+        if (resolvedBooks.length === 0 && localBooks.length > 0) {
+          resolvedBooks = localBooks as Book[]
+          setOfflineCatalog(true)
+        }
+
+        if (isCancelled) return
+
+        if (resolvedBooks.length > 0) {
+          const firstBook = resolvedBooks[0]
+          if (firstBook.author) {
+            setAuthor({
+              id: 'offline-author',
+              slug: firstBook.author.slug,
+              name: firstBook.author.name,
+              bio: null,
+            })
           }
         }
+        setBooks(resolvedBooks)
       } catch (error) {
         console.error('Failed to fetch author:', error)
+        const localBooks = await getOfflineAuthorBooks(authorSlug)
+        if (!isCancelled) {
+          setBooks(localBooks as Book[])
+          setOfflineCatalog(localBooks.length > 0)
+          if (localBooks[0]) {
+            setAuthor({
+              id: 'offline-author',
+              slug: localBooks[0].author.slug,
+              name: localBooks[0].author.name,
+              bio: null,
+            })
+          }
+        }
       } finally {
-        setLoading(false)
+        if (!isCancelled) {
+          setLoading(false)
+        }
       }
     }
 
     void fetchData()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void fetchData()
+    })
+
+    return () => {
+      isCancelled = true
+      unsubscribe()
+    }
   }, [authorSlug])
 
   if (loading) {
@@ -126,6 +174,13 @@ export default function AuthorProfilePage() {
             </div>
           </div>
         </section>
+
+        {offlineCatalog ? (
+          <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+            <DownloadCloud size={16} />
+            Показаны офлайн-книги этого автора.
+          </div>
+        ) : null}
 
         {books.length === 0 ? (
           <div className="poster-card mt-10 rounded-[2rem] border border-white/10 px-6 py-16 text-center text-white/70">

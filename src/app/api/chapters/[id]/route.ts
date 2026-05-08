@@ -89,6 +89,12 @@ export async function GET(
     const variantWithParagraphs = await db.chapterVariant.findUnique({
       where: { id: variant.id },
       include: {
+        headRevision: {
+          select: {
+            id: true,
+            revisionNumber: true,
+          },
+        },
         paragraphs: { orderBy: { position: 'asc' } },
       },
     })
@@ -134,6 +140,8 @@ export async function GET(
       variant: {
         id: variantWithParagraphs.id,
         variantType: variantWithParagraphs.variantType,
+        revisionId: variantWithParagraphs.headRevision?.id || null,
+        revisionNumber: variantWithParagraphs.headRevision?.revisionNumber || null,
         contentHtml: variantWithParagraphs.contentHtml,
         paragraphs: enrichedParagraphs,
       },
@@ -197,7 +205,7 @@ export async function DELETE(
     const variantIds = chapter.variants.map((variant) => variant.id)
 
     await db.$transaction(async (tx) => {
-      await tx.comment.deleteMany({
+      await tx.annotation.deleteMany({
         where: { chapterId: id },
       })
 

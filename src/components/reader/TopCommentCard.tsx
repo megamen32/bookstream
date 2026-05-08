@@ -9,6 +9,7 @@ interface TopCommentCardProps {
   quoteHref?: string
   onToggleVote?: (() => void) | null
   voteDisabled?: boolean
+  bodyLines?: number
   compact?: boolean
   showChapterLink?: boolean
   metaLabel?: string | null
@@ -23,6 +24,7 @@ export default function TopCommentCard({
   quoteHref,
   onToggleVote = null,
   voteDisabled = false,
+  bodyLines,
   compact = false,
   showChapterLink = true,
   metaLabel = null,
@@ -37,6 +39,7 @@ export default function TopCommentCard({
       quoteHref={quoteHref || chapterHref}
       onToggleVote={onToggleVote}
       voteDisabled={voteDisabled}
+      bodyLines={bodyLines}
       quoteLines={2}
       compact={compact}
       showChapterLink={showChapterLink}

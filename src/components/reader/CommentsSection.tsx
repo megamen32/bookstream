@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { sortCommentsByTop, sortItemsByCreatedAt } from '@/lib/annotations'
+import { buildPendingCommentMetaLabel } from '@/lib/offline-helpers'
+import {
+  getOfflineBookRecord,
+  getOfflineComments,
+  subscribeOfflineUpdates,
+  toggleOfflineAnnotationVote,
+} from '@/lib/offline-client'
 import { useReaderStore } from '@/lib/store'
 import { MessageSquare } from 'lucide-react'
 import { X } from 'lucide-react'
@@ -99,6 +106,17 @@ export default function CommentsSection({
 
     const loadComments = async (): Promise<void> => {
       try {
+        if (bookId) {
+          const offlineRecord = await getOfflineBookRecord(bookId)
+          if (offlineRecord) {
+            const offlineComments = await getOfflineComments(bookId, chapterId)
+            if (!isCancelled) {
+              setComments(Array.isArray(offlineComments) ? offlineComments : [])
+            }
+            return
+          }
+        }
+
         const params = new URLSearchParams()
         if (readerId) {
           params.set('readerId', readerId)
@@ -129,9 +147,13 @@ export default function CommentsSection({
     }
 
     void loadComments()
+    const unsubscribe = subscribeOfflineUpdates(() => {
+      void loadComments()
+    })
 
     return () => {
       isCancelled = true
+      unsubscribe()
     }
   }, [bookId, chapterId, readerId])
 
@@ -236,6 +258,14 @@ export default function CommentsSection({
     setTogglingCommentId(commentId)
 
     try {
+      if (bookId) {
+        const offlineRecord = await getOfflineBookRecord(bookId)
+        if (offlineRecord) {
+          await toggleOfflineAnnotationVote(bookId, commentId, readerId)
+          return
+        }
+      }
+
       const response = await fetch(`/api/annotations/${commentId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -403,7 +433,8 @@ export default function CommentsSection({
                   })
                 : undefined}
               onToggleVote={() => void handleToggleVote(comment.id)}
-              voteDisabled={!readerId || togglingCommentId === comment.id}
+              voteDisabled={!readerId || togglingCommentId === comment.id || comment.syncStatus === 'pending'}
+              metaLabel={buildPendingCommentMetaLabel(comment)}
             />
           ))}
         </div>

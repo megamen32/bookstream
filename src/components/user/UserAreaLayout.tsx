@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft, Settings2, Shapes } from 'lucide-react'
+import { ArrowLeft, DownloadCloud, Settings2, Shapes } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserAreaLayoutProps {
@@ -21,6 +21,11 @@ const NAV_ITEMS = [
     href: '/me/settings',
     label: 'Настройки',
     icon: Settings2,
+  },
+  {
+    href: '/me/offline',
+    label: 'Офлайн',
+    icon: DownloadCloud,
   },
 ]
 
