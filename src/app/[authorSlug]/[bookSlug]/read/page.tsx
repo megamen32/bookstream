@@ -18,6 +18,7 @@ import ReaderChrome, { type ReaderChromeOverlay } from '@/components/reader/Read
 import ReaderCommentsOverlay from '@/components/reader/ReaderCommentsOverlay'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import type {
+  BookChapterManifestItem,
   FeedSectionData,
   ReaderChapterListItem,
 } from '@/components/reader/feed-types'
@@ -487,6 +488,7 @@ export default function ReaderPage() {
   const fetchSingleChapter = useCallback(async (
     targetChapterId: string,
     requestedVariant: VariantType,
+    signal?: AbortSignal,
   ): Promise<FeedSectionData | null> => {
     if (bookId) {
       const offlineSection = await getOfflineChapterSection(bookId, targetChapterId, requestedVariant)
@@ -508,7 +510,7 @@ export default function ReaderPage() {
     }
 
     const requestChapter = async (nextVariant: VariantType): Promise<FeedSectionData | null> => {
-      const response = await fetch(`/api/chapters/${targetChapterId}?variantType=${nextVariant}`)
+      const response = await fetch(`/api/chapters/${targetChapterId}?variantType=${nextVariant}`, { signal })
       if (response.ok) {
         const data = await response.json() as {
           chapter: BookData['chapters'][number] & {
@@ -1634,14 +1636,23 @@ export default function ReaderPage() {
         <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex' }}>
           {readingMode === 'feed' ? (
             <FeedReader
-              sections={feedSections}
+              manifest={chapters.map<BookChapterManifestItem>((chapter) => ({
+                chapterId: chapter.id,
+                title: chapter.title,
+                position: chapter.position,
+                paragraphCount: chapter.paragraphCount || 0,
+                estimatedChars: chapter.estimatedChars || 0,
+                hasImages: Boolean(chapter.hasImages),
+              }))}
+              initialSections={feedSections}
               activeChapterId={activeChapterId}
-              hasMorePrev={feedHasMorePrev}
-              hasMoreNext={feedHasMoreNext}
-              loadingPrev={feedLoadingPrev}
-              loadingNext={feedLoadingNext}
-              onLoadPrev={() => { void loadMorePrev() }}
-              onLoadNext={() => { void loadMoreNext() }}
+              loadChapter={async (chapterId, signal) => {
+                const section = await fetchSingleChapter(chapterId, variantType, signal)
+                if (!section) {
+                  throw new Error(`Failed to load chapter ${chapterId}`)
+                }
+                return section
+              }}
               onActiveChapterChange={handleActiveChapterChange}
               setContentNode={setSearchContentNode}
               bookmarkedKeys={bookmarksByChapter}

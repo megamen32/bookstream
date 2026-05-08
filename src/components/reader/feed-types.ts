@@ -15,7 +15,19 @@ export interface ReaderChapterListItem {
   title: string
   position: number
   level?: number
+  paragraphCount?: number
+  estimatedChars?: number
+  hasImages?: boolean
   variants: Array<{ id: string; variantType: string }>
+}
+
+export interface BookChapterManifestItem {
+  chapterId: string
+  title: string
+  position: number
+  paragraphCount: number
+  estimatedChars: number
+  hasImages: boolean
 }
 
 export interface FeedPreviewTopQuote {

@@ -1,34 +1,33 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type React from 'react'
-import { Bookmark, BookmarkCheck } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
 import type { ReplyQuote } from '@/lib/store'
 import './FeedReader.css'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
-import ReactionBar from './ReactionBar'
-import ChapterAfterword from './ChapterAfterword'
-import type { FeedSectionData } from './feed-types'
+import type { BookChapterManifestItem, FeedSectionData } from './feed-types'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import {
   buildAnnotationParagraphRanges,
-  splitTextByAnnotationRanges,
   type AnnotationParagraphRange,
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
+import { estimateChapterHeight } from './chapter-height'
+import ChapterSkeleton from './ChapterSkeleton'
+import MeasuredChapter from './MeasuredChapter'
+import ReaderChapterSection from './ReaderChapterSection'
+import { useBackgroundChapterLoader } from './useBackgroundChapterLoader'
+import { resolveActiveChapterFromVirtualLayout, useVirtualBookFeed } from './useVirtualBookFeed'
+import { useInitialScrollLock } from './useInitialScrollLock'
 
 interface FeedReaderProps {
-  sections: FeedSectionData[]
+  manifest: BookChapterManifestItem[]
+  initialSections: FeedSectionData[]
   activeChapterId: string | null
-  hasMorePrev: boolean
-  hasMoreNext: boolean
-  loadingPrev: boolean
-  loadingNext: boolean
-  onLoadPrev: () => void
-  onLoadNext: () => void
+  loadChapter: (chapterId: string, signal: AbortSignal) => Promise<FeedSectionData>
   onActiveChapterChange: (chapterId: string, scrollPercent: number, fromScroll: boolean) => void
   setContentNode?: (node: HTMLDivElement | null) => void
   bookmarkedKeys: Record<string, string | undefined>
@@ -52,12 +51,6 @@ interface StoredSelectionAnnotationRange extends SelectionAnnotationRange {
   chapterId?: string
 }
 
-interface ScrollSnapshot {
-  firstChapterId: string
-  scrollTop: number
-  scrollHeight: number
-}
-
 interface PointerGestureState {
   pointerId: number
   pointerType: string
@@ -65,19 +58,13 @@ interface PointerGestureState {
   clientY: number
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
-}
+type VirtualStatus = 'stub' | 'loading' | 'ready' | 'error'
 
 export default function FeedReader({
-  sections,
+  manifest,
+  initialSections,
   activeChapterId,
-  hasMorePrev,
-  hasMoreNext,
-  loadingPrev,
-  loadingNext,
-  onLoadPrev,
-  onLoadNext,
+  loadChapter,
   onActiveChapterChange,
   setContentNode,
   bookmarkedKeys,
@@ -97,39 +84,52 @@ export default function FeedReader({
   onNavigate,
 }: FeedReaderProps) {
   const { fontSize, lineHeight, lineWidth, bookId, readerId, showMobileReactionBar } = useReaderStore()
-
   const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const topSentinelRef = useRef<HTMLDivElement>(null)
-  const bottomSentinelRef = useRef<HTMLDivElement>(null)
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const restoreAppliedTokenRef = useRef<number | null>(null)
-  const prependSnapshotRef = useRef<ScrollSnapshot | null>(null)
   const tickingRef = useRef(false)
   const pointerGestureRef = useRef<PointerGestureState | null>(null)
+  const initialRevealSetRef = useRef(false)
 
   const [selectionHighlights, setSelectionHighlights] = useState<StoredSelectionAnnotationRange[]>([])
-  const paragraphIndexMaps = useMemo(() => (
+  const [initialRevealChapterId, setInitialRevealChapterId] = useState<string | null>(null)
+  const [initialScrollReady, setInitialScrollReady] = useState(false)
+
+  const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
+
+  const chapterLoader = useBackgroundChapterLoader({
+    chapterIds: manifest.map((item) => item.chapterId),
+    activeChapterId: activeChapterId || manifest[0]?.chapterId || null,
+    initialSections,
+    loadChapter,
+  })
+
+  const loadedSections = useMemo(() => {
+    return Object.values(chapterLoader.sectionsByChapterId)
+      .filter((section): section is FeedSectionData => Boolean(section))
+      .sort((a, b) => a.chapter.position - b.chapter.position)
+  }, [chapterLoader.sectionsByChapterId])
+
+  const loadedParagraphIndexMaps = useMemo(() => (
     Object.fromEntries(
-      sections.map((section) => [
+      loadedSections.map((section) => [
         section.chapter.id,
         new Map(section.variant.paragraphs.map((paragraph, index) => [paragraph.id, index])),
       ]),
     ) as Record<string, Map<string, number>>
-  ), [sections])
-  const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
+  ), [loadedSections])
+
   const quoteHighlightRangesByChapter = useMemo(() => {
     if (!highlightParagraphId || !hasPreciseQuoteHighlight) {
       return {}
     }
 
-    const section = sections.find((entry) => entry.variant.paragraphs.some((paragraph) => paragraph.id === highlightParagraphId))
+    const section = loadedSections.find((entry) => entry.variant.paragraphs.some((paragraph) => paragraph.id === highlightParagraphId))
     if (!section) {
       return {}
     }
 
-    const paragraphIndexMap = paragraphIndexMaps[section.chapter.id]
+    const paragraphIndexMap = loadedParagraphIndexMaps[section.chapter.id]
     if (!paragraphIndexMap) {
       return {}
     }
@@ -151,10 +151,20 @@ export default function FeedReader({
     return {
       [section.chapter.id]: ranges,
     }
-  }, [hasPreciseQuoteHighlight, highlightEndOffset, highlightParagraphEndId, highlightParagraphId, highlightStartOffset, paragraphIndexMaps, sections])
+  }, [
+    hasPreciseQuoteHighlight,
+    highlightEndOffset,
+    highlightParagraphEndId,
+    highlightParagraphId,
+    highlightStartOffset,
+    loadedParagraphIndexMaps,
+    loadedSections,
+  ])
 
   useEffect(() => {
-    if (!readerId || !bookId) return
+    if (!readerId || !bookId) {
+      return
+    }
 
     const controller = new AbortController()
 
@@ -164,8 +174,9 @@ export default function FeedReader({
         const response = await fetch(`/api/annotations?${params.toString()}`, {
           signal: controller.signal,
         })
-
-        if (!response.ok) return
+        if (!response.ok) {
+          return
+        }
 
         const data = await response.json() as {
           annotations?: UnifiedAnnotationItem[]
@@ -206,14 +217,14 @@ export default function FeedReader({
 
     setSelectionHighlights((current) => {
       const isSame = (entry: StoredSelectionAnnotationRange) => (
-        entry.kind === candidate.kind &&
-        entry.chapterId === candidate.chapterId &&
-        entry.paragraphId === candidate.paragraphId &&
-        entry.endParagraphId === candidate.endParagraphId &&
-        entry.startOffset === candidate.startOffset &&
-        entry.endOffset === candidate.endOffset &&
-        entry.emoji === candidate.emoji &&
-        entry.body === candidate.body
+        entry.kind === candidate.kind
+        && entry.chapterId === candidate.chapterId
+        && entry.paragraphId === candidate.paragraphId
+        && entry.endParagraphId === candidate.endParagraphId
+        && entry.startOffset === candidate.startOffset
+        && entry.endOffset === candidate.endOffset
+        && entry.emoji === candidate.emoji
+        && entry.body === candidate.body
       )
 
       if (!active) {
@@ -224,278 +235,253 @@ export default function FeedReader({
     })
   }, [])
 
-  const getTextRangesForParagraph = useCallback(
-    (chapterId: string, paragraphId: string): AnnotationParagraphRange[] => {
-      const section = sections.find((entry) => entry.chapter.id === chapterId)
-      const paragraphIndexMap = paragraphIndexMaps[chapterId]
+  const getTextRangesForParagraph = useCallback((
+    chapterId: string,
+    paragraphId: string,
+  ): AnnotationParagraphRange[] => {
+    const section = loadedSections.find((entry) => entry.chapter.id === chapterId)
+    const paragraphIndexMap = loadedParagraphIndexMaps[chapterId]
 
-      if (!section || !paragraphIndexMap) return []
+    if (!section || !paragraphIndexMap) {
+      return []
+    }
 
-      const ranges = buildAnnotationParagraphRanges(
-        selectionHighlights.filter((annotation) => annotation.chapterId === chapterId),
-        section.variant.paragraphs,
-        paragraphIndexMap,
-      )
+    const ranges = buildAnnotationParagraphRanges(
+      selectionHighlights.filter((annotation) => annotation.chapterId === chapterId),
+      section.variant.paragraphs,
+      paragraphIndexMap,
+    )
+    const quoteRanges = quoteHighlightRangesByChapter[chapterId] || []
 
-      const quoteRanges = quoteHighlightRangesByChapter[chapterId] || []
+    return [...ranges, ...quoteRanges].filter((range) => range.paragraphId === paragraphId)
+  }, [loadedParagraphIndexMaps, loadedSections, quoteHighlightRangesByChapter, selectionHighlights])
 
-      return [...ranges, ...quoteRanges].filter((range) => range.paragraphId === paragraphId)
-    },
-    [paragraphIndexMaps, quoteHighlightRangesByChapter, sections, selectionHighlights],
-  )
-
-  const resolveSectionProgress = useCallback((chapterId: string): number => {
-    const container = scrollRef.current
-    const currentNode = sectionRefs.current[chapterId]
-
-    if (!container || !currentNode) return 0
-
-    const sectionIndex = sections.findIndex((section) => section.chapter.id === chapterId)
-
-    const nextNode = sectionIndex >= 0
-      ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
-      : null
-
-    const sectionTop = currentNode.offsetTop
-
-    const sectionBottom = nextNode
-      ? nextNode.offsetTop
-      : Math.max(currentNode.offsetTop + currentNode.offsetHeight, container.scrollHeight)
-
-    const sectionHeight = Math.max(1, sectionBottom - sectionTop - container.clientHeight * 0.2)
-
-    return clamp((container.scrollTop - sectionTop) / sectionHeight, 0, 1)
-  }, [sections])
-
-  const updateActiveChapter = useCallback((fromScroll: boolean) => {
-    const container = scrollRef.current
-
-    if (!container || sections.length === 0) return
-
-    const threshold = container.scrollTop + container.clientHeight * 0.22
-    let nextActiveId = sections[0].chapter.id
-
-    for (const section of sections) {
-      const node = sectionRefs.current[section.chapter.id]
-      if (!node) continue
-
-      if (node.offsetTop <= threshold) {
-        nextActiveId = section.chapter.id
-      } else {
-        break
+  const manifestItems = useMemo(() => {
+    const resolveStatus = (chapterId: string): VirtualStatus => {
+      if (chapterLoader.sectionsByChapterId[chapterId]) {
+        return 'ready'
       }
-    }
-
-    const nextProgress = resolveSectionProgress(nextActiveId)
-
-    onActiveChapterChange(nextActiveId, nextProgress, fromScroll)
-  }, [onActiveChapterChange, resolveSectionProgress, sections])
-
-  const handleScroll = useCallback(() => {
-    const container = scrollRef.current
-    if (!container) return
-
-    onNavigate?.()
-
-    const topDistance = container.scrollTop
-    const bottomDistance = container.scrollHeight - container.scrollTop - container.clientHeight
-
-    if (hasMorePrev && !loadingPrev && topDistance < 240 && sections.length > 0) {
-      prependSnapshotRef.current = {
-        firstChapterId: sections[0].chapter.id,
-        scrollTop: container.scrollTop,
-        scrollHeight: container.scrollHeight,
+      if (chapterLoader.loadingIds[chapterId]) {
+        return 'loading'
       }
-
-      onLoadPrev()
+      if (chapterLoader.failedIds[chapterId]) {
+        return 'error'
+      }
+      return 'stub'
     }
 
-    if (hasMoreNext && !loadingNext && bottomDistance < 420) {
-      onLoadNext()
-    }
-
-    if (tickingRef.current) return
-
-    tickingRef.current = true
-
-    window.requestAnimationFrame(() => {
-      updateActiveChapter(true)
-      tickingRef.current = false
-    })
+    return manifest.map((chapter) => ({
+      chapterId: chapter.chapterId,
+      title: chapter.title,
+      position: chapter.position,
+      estimatedHeight: estimateChapterHeight({
+        estimatedChars: chapter.estimatedChars,
+        paragraphCount: chapter.paragraphCount,
+        fontSize,
+        lineHeight,
+        lineWidth,
+        hasCommentsAfterChapter: showCommentsAfterChapter,
+        hasImages: chapter.hasImages,
+      }),
+      section: chapterLoader.sectionsByChapterId[chapter.chapterId],
+      status: resolveStatus(chapter.chapterId),
+    }))
   }, [
-    hasMoreNext,
-    hasMorePrev,
-    loadingNext,
-    loadingPrev,
-    onLoadNext,
-    onLoadPrev,
-    onNavigate,
-    sections,
-    updateActiveChapter,
+    chapterLoader.failedIds,
+    chapterLoader.loadingIds,
+    chapterLoader.sectionsByChapterId,
+    fontSize,
+    lineHeight,
+    lineWidth,
+    manifest,
+    showCommentsAfterChapter,
   ])
 
-  useEffect(() => {
-    const container = scrollRef.current
-    const topSentinel = topSentinelRef.current
-    const bottomSentinel = bottomSentinelRef.current
+  const virtualFeed = useVirtualBookFeed({
+    chapters: manifestItems,
+    scrollContainerRef: scrollRef,
+    overscanScreens: 2.5,
+  })
 
-    if (!container || !topSentinel || !bottomSentinel) return
-
-    const topObserver = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasMorePrev && !loadingPrev && sections.length > 0) {
-          prependSnapshotRef.current = {
-            firstChapterId: sections[0].chapter.id,
-            scrollTop: container.scrollTop,
-            scrollHeight: container.scrollHeight,
-          }
-
-          onLoadPrev()
-        }
-      },
-      { root: container, threshold: 0.1 },
-    )
-
-    const bottomObserver = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasMoreNext && !loadingNext) {
-          onLoadNext()
-        }
-      },
-      { root: container, threshold: 0.1 },
-    )
-
-    topObserver.observe(topSentinel)
-    bottomObserver.observe(bottomSentinel)
-
-    return () => {
-      topObserver.disconnect()
-      bottomObserver.disconnect()
+  const restoreOffset = useMemo(() => {
+    if (restoreRequest) {
+      return virtualFeed.getRestoreOffset(restoreRequest.chapterId, restoreRequest.scrollPercent)
     }
-  }, [hasMoreNext, hasMorePrev, loadingNext, loadingPrev, onLoadNext, onLoadPrev, sections])
 
-  useLayoutEffect(() => {
-    const snapshot = prependSnapshotRef.current
-    const container = scrollRef.current
+    if (activeChapterId) {
+      return virtualFeed.getRestoreOffset(activeChapterId, 0)
+    }
 
-    if (!snapshot || !container || loadingPrev) return
+    return manifestItems[0] ? 0 : null
+  }, [activeChapterId, manifestItems, restoreRequest, virtualFeed])
 
-    const currentFirstId = sections[0]?.chapter.id
+  useInitialScrollLock({
+    scrollRef,
+    ready: manifestItems.length > 0 && restoreOffset !== null,
+    targetOffset: restoreOffset,
+    onDone: () => {
+      setInitialScrollReady(true)
 
-    if (!currentFirstId || currentFirstId === snapshot.firstChapterId) {
-      prependSnapshotRef.current = null
+      if (!initialRevealSetRef.current) {
+        initialRevealSetRef.current = true
+        setInitialRevealChapterId(
+          restoreRequest?.chapterId || activeChapterId || manifestItems[0]?.chapterId || null,
+        )
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (!restoreRequest || !scrollRef.current || !initialScrollReady) {
       return
     }
 
-    const delta = container.scrollHeight - snapshot.scrollHeight
-    container.scrollTop = snapshot.scrollTop + delta
-    prependSnapshotRef.current = null
-  }, [loadingPrev, sections])
+    if (restoreAppliedTokenRef.current === restoreRequest.token) {
+      return
+    }
+
+    const offset = virtualFeed.getRestoreOffset(restoreRequest.chapterId, restoreRequest.scrollPercent)
+    if (offset === null) {
+      return
+    }
+
+    scrollRef.current.scrollTop = offset
+    restoreAppliedTokenRef.current = restoreRequest.token
+    virtualFeed.handleScroll()
+    onActiveChapterChange(
+      restoreRequest.chapterId,
+      virtualFeed.getChapterProgress(restoreRequest.chapterId),
+      false,
+    )
+  }, [initialScrollReady, onActiveChapterChange, restoreRequest, virtualFeed])
+
+  useEffect(() => {
+    if (!scrollToChapterId) {
+      return
+    }
+
+    let cancelled = false
+
+    const run = async (): Promise<void> => {
+      await chapterLoader.ensureChapterLoaded(scrollToChapterId)
+      if (cancelled) {
+        return
+      }
+
+      virtualFeed.scrollToChapter(scrollToChapterId, 'auto')
+      onActiveChapterChange(scrollToChapterId, 0, false)
+      onScrollToChapterHandled?.()
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [chapterLoader, onActiveChapterChange, onScrollToChapterHandled, scrollToChapterId, virtualFeed])
 
   useEffect(() => {
     for (const node of quoteHighlightNodesRef.current) {
       node.classList.remove('bookstream-quote-frame')
     }
-
     quoteHighlightNodesRef.current = []
 
-    if (!highlightParagraphId || !scrollRef.current) return
+    if (!highlightParagraphId || !scrollRef.current || !activeChapterId) {
+      return
+    }
 
-    const frameId = window.requestAnimationFrame(() => {
-      if (!scrollRef.current) return
+    let cancelled = false
 
-      const target = findQuoteParagraphElement(scrollRef.current, highlightParagraphId)
-      if (!target) return
-
-      if (!hasPreciseQuoteHighlight) {
-        const frames = collectParagraphRangeElements(
-          scrollRef.current,
-          highlightParagraphId,
-          highlightParagraphEndId,
-        )
-
-        for (const node of frames) {
-          node.classList.add('bookstream-quote-frame')
-        }
-
-        quoteHighlightNodesRef.current = frames
+    const run = async (): Promise<void> => {
+      await chapterLoader.ensureChapterLoaded(activeChapterId)
+      if (cancelled || !scrollRef.current) {
+        return
       }
 
-      scrollQuoteTargetIntoView(scrollRef.current, target)
-      updateActiveChapter(false)
-    })
+      virtualFeed.scrollToChapter(activeChapterId, 'auto')
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (cancelled || !scrollRef.current) {
+            return
+          }
+
+          const target = findQuoteParagraphElement(scrollRef.current, highlightParagraphId)
+          if (!target) {
+            return
+          }
+
+          if (!hasPreciseQuoteHighlight) {
+            const frames = collectParagraphRangeElements(
+              scrollRef.current,
+              highlightParagraphId,
+              highlightParagraphEndId,
+            )
+            for (const node of frames) {
+              node.classList.add('bookstream-quote-frame')
+            }
+            quoteHighlightNodesRef.current = frames
+          }
+
+          scrollQuoteTargetIntoView(scrollRef.current, target)
+          virtualFeed.handleScroll()
+        })
+      })
+    }
+
+    void run()
 
     return () => {
-      window.cancelAnimationFrame(frameId)
-
+      cancelled = true
       for (const node of quoteHighlightNodesRef.current) {
         node.classList.remove('bookstream-quote-frame')
       }
-
       quoteHighlightNodesRef.current = []
     }
-  }, [hasPreciseQuoteHighlight, highlightParagraphEndId, highlightParagraphId, sections, updateActiveChapter])
+  }, [
+    activeChapterId,
+    chapterLoader,
+    hasPreciseQuoteHighlight,
+    highlightParagraphEndId,
+    highlightParagraphId,
+    virtualFeed,
+  ])
 
-  useLayoutEffect(() => {
-    if (!restoreRequest || highlightParagraphId || !scrollRef.current) return
-    if (restoreAppliedTokenRef.current === restoreRequest.token) return
+  useEffect(() => {
+    if (!activeChapterId && virtualFeed.items.length > 0) {
+      onActiveChapterChange(virtualFeed.items[0].chapterId, 0, false)
+    }
+  }, [activeChapterId, onActiveChapterChange, virtualFeed.items])
 
-    const targetNode = sectionRefs.current[restoreRequest.chapterId]
-    if (!targetNode) return
-
+  const handleVirtualScroll = useCallback(() => {
     const container = scrollRef.current
-    const currentTarget = sectionRefs.current[restoreRequest.chapterId]
+    if (!container) {
+      return
+    }
 
-    if (!container || !currentTarget) return
+    onNavigate?.()
+    virtualFeed.handleScroll()
 
-    const sectionIndex = sections.findIndex((section) => section.chapter.id === restoreRequest.chapterId)
+    if (tickingRef.current) {
+      return
+    }
 
-    const nextNode = sectionIndex >= 0
-      ? sectionRefs.current[sections[sectionIndex + 1]?.chapter.id || '']
-      : null
+    tickingRef.current = true
 
-    const sectionBottom = nextNode
-      ? nextNode.offsetTop
-      : Math.max(currentTarget.offsetTop + currentTarget.offsetHeight, container.scrollHeight)
+    window.requestAnimationFrame(() => {
+      const activeId = resolveActiveChapterFromVirtualLayout({
+        items: virtualFeed.items,
+        scrollTop: container.scrollTop,
+        viewportHeight: container.clientHeight,
+      })
 
-    const travel = Math.max(
-      0,
-      sectionBottom - currentTarget.offsetTop - container.clientHeight * 0.2,
-    )
+      if (activeId) {
+        onActiveChapterChange(activeId, virtualFeed.getChapterProgress(activeId), true)
+      }
 
-    container.scrollTop = currentTarget.offsetTop + travel * restoreRequest.scrollPercent
-    restoreAppliedTokenRef.current = restoreRequest.token
-
-    updateActiveChapter(false)
-  }, [highlightParagraphId, restoreRequest, sections, updateActiveChapter])
-
-  useEffect(() => {
-    if (!scrollToChapterId || !scrollRef.current) return
-
-    const targetNode = sectionRefs.current[scrollToChapterId]
-    if (!targetNode) return
-
-    const frameId = window.requestAnimationFrame(() => {
-      targetNode.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      updateActiveChapter(false)
-      onScrollToChapterHandled?.()
+      tickingRef.current = false
     })
-
-    return () => window.cancelAnimationFrame(frameId)
-  }, [onScrollToChapterHandled, scrollToChapterId, sections, updateActiveChapter])
-
-  useEffect(() => {
-    updateActiveChapter(false)
-  }, [activeChapterId, sections, updateActiveChapter])
-
-  const handleBookmarkClick = useCallback((
-    event: React.MouseEvent,
-    chapterId: string,
-    stableKey: string,
-  ) => {
-    event.stopPropagation()
-    onToggleBookmark?.(chapterId, stableKey)
-  }, [onToggleBookmark])
+  }, [onActiveChapterChange, onNavigate, virtualFeed])
 
   const clearPointerGesture = useCallback((): void => {
     pointerGestureRef.current = null
@@ -539,14 +525,7 @@ export default function FeedReader({
 
     const dx = event.clientX - gesture.clientX
     const dy = event.clientY - gesture.clientY
-    const absDx = Math.abs(dx)
-    const absDy = Math.abs(dy)
-
-    if (gesture.pointerType === 'touch' && (absDx > 8 || absDy > 8)) {
-      return
-    }
-
-    if (absDx > 8 || absDy > 8) {
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
       return
     }
 
@@ -576,6 +555,12 @@ export default function FeedReader({
       ? '48rem'
       : '64rem'
 
+  const selectorVariantId = useMemo(() => {
+    return virtualFeed.visibleChapters.find((chapter) => chapter.section)?.section?.variant.id
+      || loadedSections[0]?.variant.id
+      || ''
+  }, [loadedSections, virtualFeed.visibleChapters])
+
   return (
     <div
       className="feed-reader-shell"
@@ -590,200 +575,63 @@ export default function FeedReader({
           setContentNode?.(node)
         }}
         className="reader-scrollbar feed-reader"
-        onScroll={handleScroll}
+        onScroll={handleVirtualScroll}
         style={{ overflowY: 'auto', height: '100%' }}
       >
         <TextSelector
           containerRef={scrollRef}
-          variantId={sections[0]?.variant.id || ''}
+          variantId={selectorVariantId}
           onSelectionAnnotation={handleSelectionAnnotation}
         />
 
-        <div ref={topSentinelRef} style={{ height: '1px' }} />
+        <div className="feed-reader__content">
+          <div className="feed-reader__virtual-canvas" style={{ minHeight: virtualFeed.totalHeight }}>
+            <div style={{ height: virtualFeed.topSpacerHeight }} />
 
-        <div ref={contentRef} className="feed-reader__content">
-          {sections.map((section) => {
-            const isActiveSection = section.chapter.id === activeChapterId
-            const bookmarkedKey = bookmarkedKeys[section.chapter.id] || null
-            return (
-              <section
-                key={`${section.chapter.id}-${section.variant.variantType}`}
-                ref={(node) => {
-                  sectionRefs.current[section.chapter.id] = node
-                }}
-                data-chapter-id={section.chapter.id}
-                data-variant-id={section.variant.id}
-                data-variant-type={section.variant.variantType}
-                className={`feed-section${isActiveSection ? ' is-active' : ''}`}
-                style={{
-                  maxWidth: contentMaxWidth,
-                  margin: '0 auto',
-                }}
-              >
-                <div className="feed-chapter-header">
-                  <div className="feed-chapter-header__eyebrow">
-                    Глава {section.chapter.position + 1}
-                  </div>
+            {virtualFeed.visibleChapters.map((virtualChapter) => {
+              if (!virtualChapter.section) {
+                return (
+                  <ChapterSkeleton
+                    key={virtualChapter.chapterId}
+                    title={virtualChapter.title}
+                    height={virtualChapter.estimatedHeight}
+                    contentMaxWidth={contentMaxWidth}
+                  />
+                )
+              }
 
-                  <h1 className="feed-chapter-header__title">
-                    {section.chapter.title}
-                  </h1>
-
-                  <div className="feed-chapter-header__rule" aria-hidden="true">
-                    <span className="feed-chapter-header__rule-line" />
-                    <span className="feed-chapter-header__rule-dot" />
-                    <span className="feed-chapter-header__rule-line" />
-                  </div>
-                </div>
-
-                <div
-                  className="reader-content feed-reader-content"
-                  data-line-width={lineWidth}
-                  style={{
-                    fontSize: `${fontSize}px`,
-                    lineHeight: `${lineHeight}`,
-                    margin: '0 auto',
-                  }}
+              return (
+                <MeasuredChapter
+                  key={virtualChapter.chapterId}
+                  chapterId={virtualChapter.chapterId}
+                  onMeasure={virtualFeed.registerMeasuredHeight}
                 >
-                  {section.variant.paragraphs.map((paragraph) => {
-                    const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
-                    const ranges = getTextRangesForParagraph(section.chapter.id, paragraph.id)
-                    const hasSelectionHighlight = ranges.length > 0
-                    const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
-                    const canRenderRichParagraph = !hasSelectionHighlight && Boolean(paragraph.html)
+                  <ReaderChapterSection
+                    section={virtualChapter.section}
+                    isActiveSection={virtualChapter.chapterId === activeChapterId}
+                    isInitialReveal={virtualChapter.chapterId === initialRevealChapterId}
+                    contentMaxWidth={contentMaxWidth}
+                    fontSize={fontSize}
+                    lineHeight={lineHeight}
+                    lineWidth={lineWidth}
+                    bookmarkedKeys={bookmarkedKeys}
+                    onToggleBookmark={onToggleBookmark}
+                    authorSlug={authorSlug}
+                    bookSlug={bookSlug}
+                    showCommentsAfterChapter={showCommentsAfterChapter}
+                    showMobileReactionBar={showMobileReactionBar}
+                    highlightParagraphId={highlightParagraphId}
+                    hasPreciseQuoteHighlight={hasPreciseQuoteHighlight}
+                    onOpenChapterComments={onOpenChapterComments}
+                    getTextRangesForParagraph={getTextRangesForParagraph}
+                  />
+                </MeasuredChapter>
+              )
+            })}
 
-                    return (
-                      <div
-                        key={paragraph.stableKey || paragraph.id}
-                        className={`feed-paragraph group${hasSelectionHighlight ? ' has-selection-highlight' : ''}${isQuoteTarget ? ' is-quote-target' : ''}`}
-                      >
-                        {isQuoteTarget ? (
-                          <span className="feed-paragraph__quote-badge">
-                            Цитата
-                          </span>
-                        ) : null}
-
-                        <article
-                          data-paragraph-id={paragraph.id}
-                          data-stable-key={paragraph.stableKey}
-                          className="feed-paragraph__article"
-                        >
-                          <button
-                            onClick={(event) => handleBookmarkClick(
-                              event,
-                              section.chapter.id,
-                              paragraph.stableKey,
-                            )}
-                            title={bookmarkedKey === paragraph.stableKey ? 'Убрать закладку' : 'Поставить закладку'}
-                            className={`feed-paragraph__bookmark${bookmarkedKey === paragraph.stableKey ? ' is-active' : ''}`}
-                          >
-                            {bookmarkedKey === paragraph.stableKey
-                              ? <BookmarkCheck size={16} />
-                              : <Bookmark size={16} />}
-                          </button>
-
-                          {canRenderRichParagraph ? (
-                            <p
-                              style={{
-                                margin: 0,
-                                textAlign: paragraph.textAlign ?? undefined,
-                                paddingInlineStart: paragraph.indentPx
-                                  ? `${Math.min(paragraph.indentPx, 160)}px`
-                                  : undefined,
-                              }}
-                              dangerouslySetInnerHTML={{ __html: paragraph.html || '' }}
-                            />
-                          ) : (
-                            <p
-                              style={{
-                                margin: 0,
-                                textAlign: paragraph.textAlign ?? undefined,
-                                paddingInlineStart: paragraph.indentPx
-                                  ? `${Math.min(paragraph.indentPx, 160)}px`
-                                  : undefined,
-                              }}
-                            >
-                              {textSegments.map((segment, index) => (
-                                segment.highlighted ? (
-                                  <span
-                                    key={`${paragraph.id}-hl-${index}`}
-                                    className="bookstream-inline-annotation"
-                                  >
-                                    <span className="bookstream-word-highlight">
-                                      {segment.text}
-                                    </span>
-
-                                    {segment.badges.map((badge, badgeIndex) => (
-                                      <span
-                                        key={`${paragraph.id}-badge-${index}-${badgeIndex}-${badge.kind}-${badge.emoji || badge.badgeLabel}`}
-                                        className="bookstream-inline-annotation-badge"
-                                        data-kind={badge.kind}
-                                        title={
-                                          badge.kind === 'reaction'
-                                            ? 'Вы поставили реакцию'
-                                            : badge.kind === 'quote'
-                                              ? 'Вы вынесли цитату'
-                                              : 'Вы оставили комментарий'
-                                        }
-                                      >
-                                        {badge.kind === 'reaction'
-                                          ? badge.emoji || '•'
-                                          : badge.kind === 'quote'
-                                            ? '»'
-                                            : '✎'}
-                                      </span>
-                                    ))}
-                                  </span>
-                                ) : (
-                                  <span key={`${paragraph.id}-txt-${index}`}>
-                                    {segment.text}
-                                  </span>
-                                )
-                              ))}
-                            </p>
-                          )}
-                        </article>
-
-                        <ReactionBar
-                          paragraphId={paragraph.id}
-                          variantId={section.variant.id}
-                          chapterId={section.chapter.id}
-                          variantType={section.variant.variantType}
-                          showOnMobile={showMobileReactionBar}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <ChapterAfterword
-                  chapterId={section.chapter.id}
-                  chapterTitle={section.chapter.title}
-                  authorSlug={authorSlug}
-                  bookSlug={bookSlug}
-                  preview={section.preview}
-                  showCommentsAfterChapter={showCommentsAfterChapter}
-                  onOpenComments={(targetChapterId, replyTo) => onOpenChapterComments?.(targetChapterId, replyTo)}
-                />
-
-                <div className="feed-chapter-footer">
-                  <span className="feed-chapter-footer__label">
-                    {section.nextChapterId ? 'Следующая глава ниже' : 'Конец книги'}
-                  </span>
-                </div>
-              </section>
-            )
-          })}
-
-          {(loadingNext || hasMoreNext) ? (
-            <div className="feed-reader__continuation">
-              {loadingNext ? 'Подгружаем следующую главу...' : 'Прокрутите ниже для продолжения'}
-            </div>
-          ) : null}
+            <div style={{ height: virtualFeed.bottomSpacerHeight }} />
+          </div>
         </div>
-
-        <div ref={bottomSentinelRef} style={{ height: '1px' }} />
-        <div style={{ height: '2rem' }} />
       </div>
     </div>
   )

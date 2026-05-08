@@ -4,6 +4,16 @@ import { buildOwnedBookWhere, getOwnedBook } from '@/lib/admin-ownership'
 import { db } from '@/lib/db'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 
+function estimateTextLengthFromHtml(contentHtml: string): number {
+  return contentHtml
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length
+}
+
 async function getDraftAccessReaderId(request: NextRequest): Promise<string | null> {
   const { searchParams } = new URL(request.url)
   if (searchParams.get('includeDrafts') !== '1') {
@@ -44,7 +54,24 @@ export async function GET(
           author: true,
           chapters: {
             orderBy: { position: 'asc' },
-            include: { variants: true },
+            select: {
+              id: true,
+              title: true,
+              level: true,
+              position: true,
+              variants: {
+                select: {
+                  id: true,
+                  variantType: true,
+                  contentHtml: true,
+                  _count: {
+                    select: {
+                      paragraphs: true,
+                    },
+                  },
+                },
+              },
+            },
           },
           _count: { select: { chapters: true } },
         },
@@ -60,7 +87,24 @@ export async function GET(
           author: true,
           chapters: {
             orderBy: { position: 'asc' },
-            include: { variants: true },
+            select: {
+              id: true,
+              title: true,
+              level: true,
+              position: true,
+              variants: {
+                select: {
+                  id: true,
+                  variantType: true,
+                  contentHtml: true,
+                  _count: {
+                    select: {
+                      paragraphs: true,
+                    },
+                  },
+                },
+              },
+            },
           },
           _count: { select: { chapters: true } },
         },
@@ -79,8 +123,29 @@ export async function GET(
       },
     })
 
+    const chapters = book.chapters.map((chapter) => {
+      const sourceVariant = chapter.variants.find((variant) => variant.variantType === 'original')
+        || chapter.variants[0]
+      const sourceHtml = sourceVariant?.contentHtml || ''
+
+      return {
+        id: chapter.id,
+        title: chapter.title,
+        level: chapter.level,
+        position: chapter.position,
+        paragraphCount: sourceVariant?._count.paragraphs || 0,
+        estimatedChars: estimateTextLengthFromHtml(sourceHtml),
+        hasImages: /<img[\s>]/i.test(sourceHtml),
+        variants: chapter.variants.map((variant) => ({
+          id: variant.id,
+          variantType: variant.variantType,
+        })),
+      }
+    })
+
     return NextResponse.json({
       ...book,
+      chapters,
       _count: {
         ...book._count,
         comments: commentCount,
