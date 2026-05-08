@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, Loader2, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,17 +14,42 @@ function normalizeLinkCode(value: string): string {
 }
 
 /**
- * Public page that consumes a one-time code and creates an admin session on the current device.
+ * Shared loading shell for the device-link page.
+ *
+ * @returns Centered card placeholder while search params are resolving.
+ */
+function AdminLinkDeviceFallback(): React.ReactElement {
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(217,119,6,0.16),_transparent_32%),linear-gradient(180deg,_#faf7f2_0%,_#fff7ed_35%,_#ffffff_100%)] p-4">
+      <div className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center">
+        <Card className="w-full border-amber-200/60 shadow-xl shadow-amber-950/5">
+          <CardContent className="flex min-h-[240px] items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Public form that consumes a one-time code and creates an admin session on the current device.
  *
  * @returns Device-link form for new browsers or phones.
  */
-export default function AdminLinkDevicePage(): React.ReactElement {
+function AdminLinkDevicePageContent(): React.ReactElement {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { toast } = useToast()
   const [code, setCode] = useState(() => normalizeLinkCode(searchParams.get('code') || ''))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const nextCode = normalizeLinkCode(searchParams.get('code') || '')
+    setCode(nextCode)
+    setError('')
+  }, [searchParams])
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -120,5 +145,18 @@ export default function AdminLinkDevicePage(): React.ReactElement {
         </Card>
       </div>
     </div>
+  )
+}
+
+/**
+ * Public page entrypoint for linking a new admin device.
+ *
+ * @returns Suspense-wrapped device-link page compatible with static prerendering.
+ */
+export default function AdminLinkDevicePage(): React.ReactElement {
+  return (
+    <Suspense fallback={<AdminLinkDeviceFallback />}>
+      <AdminLinkDevicePageContent />
+    </Suspense>
   )
 }
