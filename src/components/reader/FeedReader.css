@@ -685,6 +685,47 @@
   border-radius: 18px;
 }
 
+/* Light theme stays near-white and relies on borders instead of filled surfaces. */
+[data-reader-theme="light"] .chapter-afterword {
+  border-color: color-mix(in srgb, var(--r-border) 88%, rgb(139, 92, 246) 12%);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-reader-theme="light"] .chapter-afterword--compact {
+  background: transparent;
+}
+
+[data-reader-theme="light"] .chapter-afterword__comment-card,
+[data-reader-theme="light"] .chapter-afterword__comment-card--lead,
+[data-reader-theme="light"] .chapter-afterword__quote-row,
+[data-reader-theme="light"] .chapter-afterword__footer-button {
+  background: #ffffff;
+  box-shadow: none;
+}
+
+[data-reader-theme="light"] .chapter-afterword__comment-card--lead {
+  border-color: color-mix(in srgb, rgb(59, 130, 246) 20%, var(--r-border) 80%);
+  background: #ffffff;
+}
+
+[data-reader-theme="light"] .chapter-afterword__footer-button {
+  border-color: color-mix(in srgb, var(--r-border) 88%, rgb(59, 130, 246) 12%);
+}
+
+[data-reader-theme="light"] .chapter-afterword__quiet-orb {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.08), transparent 68%);
+}
+
+[data-reader-theme="light"] .chapter-afterword__quiet-button {
+  border-color: color-mix(in srgb, rgb(139, 92, 246) 16%, var(--r-border) 84%);
+  background: #ffffff;
+}
+
+[data-reader-theme="light"] .chapter-afterword__compact-icon {
+  background: rgba(139, 92, 246, 0.08);
+}
+
 @keyframes chapter-afterword-skeleton {
   from {
     background-position: 100% 0;
