@@ -35,6 +35,7 @@ interface FeedReaderProps {
   authorSlug: string
   bookSlug: string
   showCommentsAfterChapter?: boolean
+  showReactionBar?: boolean
   highlightParagraphId?: string | null
   highlightParagraphEndId?: string | null
   highlightStartOffset?: number | null
@@ -72,6 +73,7 @@ export default function FeedReader({
   authorSlug,
   bookSlug,
   showCommentsAfterChapter = true,
+  showReactionBar = true,
   highlightParagraphId,
   highlightParagraphEndId,
   highlightStartOffset,
@@ -96,9 +98,10 @@ export default function FeedReader({
   const [initialScrollReady, setInitialScrollReady] = useState(false)
 
   const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
+  const chapterIds = useMemo(() => manifest.map((item) => item.chapterId), [manifest])
 
   const chapterLoader = useBackgroundChapterLoader({
-    chapterIds: manifest.map((item) => item.chapterId),
+    chapterIds,
     activeChapterId: activeChapterId || manifest[0]?.chapterId || null,
     initialSections,
     loadChapter,
@@ -619,6 +622,7 @@ export default function FeedReader({
                     authorSlug={authorSlug}
                     bookSlug={bookSlug}
                     showCommentsAfterChapter={showCommentsAfterChapter}
+                    showReactionBar={showReactionBar}
                     showMobileReactionBar={showMobileReactionBar}
                     highlightParagraphId={highlightParagraphId}
                     hasPreciseQuoteHighlight={hasPreciseQuoteHighlight}

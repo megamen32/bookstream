@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FeedSectionData } from './feed-types'
 import { preloadSectionImages } from './chapter-images'
 
@@ -23,6 +23,146 @@ interface IdleDeadlineLike {
 }
 
 type IdleScheduler = (callback: (deadline: IdleDeadlineLike) => void) => number
+
+type LoadChapterFn = UseBackgroundChapterLoaderParams['loadChapter']
+
+// Assign stable ids to callback identities so the pump can restart on real loader changes
+// without depending on a raw function reference in the effect body.
+const loadChapterIds = new WeakMap<LoadChapterFn, number>()
+let nextLoadChapterId = 1
+
+function getLoadChapterIdentity(loadChapter: LoadChapterFn): number {
+  const existing = loadChapterIds.get(loadChapter)
+  if (existing) {
+    return existing
+  }
+
+  const nextId = nextLoadChapterId
+  nextLoadChapterId += 1
+  loadChapterIds.set(loadChapter, nextId)
+  return nextId
+}
+
+function createInitialState(initialSections: FeedSectionData[]): ChapterLoaderState {
+  return {
+    sectionsByChapterId: Object.fromEntries(
+      initialSections.map((section) => [section.chapter.id, section]),
+    ),
+    loadingIds: {},
+    failedIds: {},
+  }
+}
+
+function removeRecordKey(record: Record<string, boolean>, key: string): Record<string, boolean> {
+  if (!(key in record)) {
+    return record
+  }
+
+  const next = { ...record }
+  delete next[key]
+  return next
+}
+
+function getLoadedChapterIds(state: ChapterLoaderState): Set<string> {
+  const result = new Set<string>()
+
+  for (const [chapterId, section] of Object.entries(state.sectionsByChapterId)) {
+    if (section) {
+      result.add(chapterId)
+    }
+  }
+
+  return result
+}
+
+function pruneStateForChapterIds(current: ChapterLoaderState, allowedChapterIds: Set<string>): ChapterLoaderState {
+  let changed = false
+
+  const sectionsByChapterId: Record<string, FeedSectionData | undefined> = {}
+  for (const [chapterId, section] of Object.entries(current.sectionsByChapterId)) {
+    if (allowedChapterIds.has(chapterId)) {
+      sectionsByChapterId[chapterId] = section
+    } else {
+      changed = true
+    }
+  }
+
+  const loadingIds: Record<string, boolean> = {}
+  for (const chapterId of Object.keys(current.loadingIds)) {
+    if (allowedChapterIds.has(chapterId) && current.loadingIds[chapterId]) {
+      loadingIds[chapterId] = true
+    } else {
+      changed = true
+    }
+  }
+
+  const failedIds: Record<string, boolean> = {}
+  for (const chapterId of Object.keys(current.failedIds)) {
+    if (allowedChapterIds.has(chapterId) && current.failedIds[chapterId]) {
+      failedIds[chapterId] = true
+    } else {
+      changed = true
+    }
+  }
+
+  if (!changed) {
+    return current
+  }
+
+  return {
+    sectionsByChapterId,
+    loadingIds,
+    failedIds,
+  }
+}
+
+function markChapterLoading(current: ChapterLoaderState, chapterId: string): ChapterLoaderState {
+  const loadingAlready = Boolean(current.loadingIds[chapterId])
+  const failedAlready = Boolean(current.failedIds[chapterId])
+
+  if (loadingAlready && !failedAlready) {
+    return current
+  }
+
+  return {
+    sectionsByChapterId: current.sectionsByChapterId,
+    loadingIds: loadingAlready ? current.loadingIds : { ...current.loadingIds, [chapterId]: true },
+    failedIds: failedAlready ? removeRecordKey(current.failedIds, chapterId) : current.failedIds,
+  }
+}
+
+function markChapterFailed(current: ChapterLoaderState, chapterId: string): ChapterLoaderState {
+  const loadingAlready = Boolean(current.loadingIds[chapterId])
+  const failedAlready = Boolean(current.failedIds[chapterId])
+
+  if (!loadingAlready && failedAlready) {
+    return current
+  }
+
+  return {
+    sectionsByChapterId: current.sectionsByChapterId,
+    loadingIds: loadingAlready ? removeRecordKey(current.loadingIds, chapterId) : current.loadingIds,
+    failedIds: failedAlready ? current.failedIds : { ...current.failedIds, [chapterId]: true },
+  }
+}
+
+function markChapterLoaded(current: ChapterLoaderState, chapterId: string, section: FeedSectionData): ChapterLoaderState {
+  const existingSection = current.sectionsByChapterId[chapterId]
+  const loadingAlready = Boolean(current.loadingIds[chapterId])
+  const failedAlready = Boolean(current.failedIds[chapterId])
+
+  if (existingSection === section && !loadingAlready && !failedAlready) {
+    return current
+  }
+
+  return {
+    sectionsByChapterId: existingSection === section
+      ? current.sectionsByChapterId
+      : { ...current.sectionsByChapterId, [chapterId]: section },
+    loadingIds: loadingAlready ? removeRecordKey(current.loadingIds, chapterId) : current.loadingIds,
+    failedIds: failedAlready ? removeRecordKey(current.failedIds, chapterId) : current.failedIds,
+  }
+}
 
 /**
  * Builds a preload queue that favors the active chapter and nearby neighbors.
@@ -81,113 +221,128 @@ function createIdleScheduler(): IdleScheduler {
 export function useBackgroundChapterLoader(params: UseBackgroundChapterLoaderParams): ChapterLoaderState & {
   ensureChapterLoaded: (chapterId: string) => Promise<FeedSectionData | null>
 } {
-  const [state, setState] = useState<ChapterLoaderState>(() => ({
-    sectionsByChapterId: Object.fromEntries(
-      params.initialSections.map((section) => [section.chapter.id, section]),
-    ),
-    loadingIds: {},
-    failedIds: {},
-  }))
-  const loadedIdsRef = useRef(new Set(params.initialSections.map((section) => section.chapter.id)))
+  const [state, setState] = useState<ChapterLoaderState>(() => createInitialState(params.initialSections))
+  const stateRef = useRef(state)
+  const loadedIdsRef = useRef(getLoadedChapterIds(state))
   const pendingRequestsRef = useRef(new Map<string, Promise<FeedSectionData | null>>())
+  const latestChapterIdsRef = useRef(params.chapterIds)
+  const latestLoadChapterRef = useRef(params.loadChapter)
+  const generationRef = useRef(0)
+  const signatureRef = useRef('')
 
-  useEffect(() => {
-    setState((current) => {
-      const nextSections = { ...current.sectionsByChapterId }
-      let changed = false
-
-      for (const section of params.initialSections) {
-        if (nextSections[section.chapter.id] !== section) {
-          nextSections[section.chapter.id] = section
-          loadedIdsRef.current.add(section.chapter.id)
-          preloadSectionImages(section)
-          changed = true
-        }
-      }
-
-      return changed ? { ...current, sectionsByChapterId: nextSections } : current
-    })
-  }, [params.initialSections])
-
-  const ensureChapterLoaded = useMemo(() => {
-    return async (chapterId: string): Promise<FeedSectionData | null> => {
-      if (!chapterId) {
-        return null
-      }
-
-      const existing = state.sectionsByChapterId[chapterId]
-      if (existing) {
-        return existing
-      }
-
-      const pending = pendingRequestsRef.current.get(chapterId)
-      if (pending) {
-        return pending
-      }
-
-      const controller = new AbortController()
-
-      setState((current) => ({
-        ...current,
-        loadingIds: {
-          ...current.loadingIds,
-          [chapterId]: true,
-        },
-      }))
-
-      const request = params.loadChapter(chapterId, controller.signal)
-        .then((section) => {
-          loadedIdsRef.current.add(chapterId)
-          preloadSectionImages(section)
-          setState((current) => ({
-            sectionsByChapterId: {
-              ...current.sectionsByChapterId,
-              [chapterId]: section,
-            },
-            loadingIds: {
-              ...current.loadingIds,
-              [chapterId]: false,
-            },
-            failedIds: {
-              ...current.failedIds,
-              [chapterId]: false,
-            },
-          }))
-          return section
-        })
-        .catch((error: unknown) => {
-          console.error(`Failed to load chapter ${chapterId}:`, error)
-          setState((current) => ({
-            ...current,
-            loadingIds: {
-              ...current.loadingIds,
-              [chapterId]: false,
-            },
-            failedIds: {
-              ...current.failedIds,
-              [chapterId]: true,
-            },
-          }))
-          return null
-        })
-        .finally(() => {
-          pendingRequestsRef.current.delete(chapterId)
-          controller.abort()
-        })
-
-      pendingRequestsRef.current.set(chapterId, request)
-      return request
+  const commitState = useCallback((nextState: ChapterLoaderState): void => {
+    if (Object.is(nextState, stateRef.current)) {
+      return
     }
-  }, [params, state.sectionsByChapterId])
+
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
+  const chapterIdsSignature = JSON.stringify(params.chapterIds)
+  const loadChapterSignature = getLoadChapterIdentity(params.loadChapter)
+  const restartSignature = `${chapterIdsSignature}\u0001${params.activeChapterId || ''}\u0001${loadChapterSignature}`
+
+  useLayoutEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  useLayoutEffect(() => {
+    latestChapterIdsRef.current = params.chapterIds
+  }, [params.chapterIds])
+
+  useLayoutEffect(() => {
+    latestLoadChapterRef.current = params.loadChapter
+  }, [params.loadChapter])
+
+  useLayoutEffect(() => {
+    if (signatureRef.current === restartSignature) {
+      return
+    }
+
+    // Bump the generation before passive effects run so late async completions from the
+    // previous book/chapter set cannot write into the new state.
+    signatureRef.current = restartSignature
+    generationRef.current += 1
+  }, [commitState, restartSignature])
+
+  useLayoutEffect(() => {
+    // Drop chapters that no longer belong to the current signature before preload work resumes.
+    const allowedChapterIds = new Set(params.chapterIds)
+    const currentState = stateRef.current
+    let nextState = pruneStateForChapterIds(currentState, allowedChapterIds)
+    const changedSections = params.initialSections.filter((section) => nextState.sectionsByChapterId[section.chapter.id] !== section)
+
+    if (changedSections.length > 0) {
+      for (const section of changedSections) {
+        loadedIdsRef.current.add(section.chapter.id)
+        preloadSectionImages(section)
+      }
+
+      for (const section of changedSections) {
+        nextState = markChapterLoaded(nextState, section.chapter.id, section)
+      }
+    }
+
+    loadedIdsRef.current = getLoadedChapterIds(nextState)
+    commitState(nextState)
+  }, [chapterIdsSignature, commitState, params.initialSections])
+
+  const ensureChapterLoaded = useCallback(async (chapterId: string): Promise<FeedSectionData | null> => {
+    if (!chapterId) {
+      return null
+    }
+
+    const existing = stateRef.current.sectionsByChapterId[chapterId]
+    if (existing) {
+      return existing
+    }
+
+    const requestGeneration = generationRef.current
+    const requestKey = `${requestGeneration}:${chapterId}`
+    const pending = pendingRequestsRef.current.get(requestKey)
+    if (pending) {
+      return pending
+    }
+
+    const controller = new AbortController()
+    const request = latestLoadChapterRef.current(chapterId, controller.signal)
+      .then((section) => {
+        if (controller.signal.aborted || generationRef.current !== requestGeneration) {
+          return null
+        }
+
+        loadedIdsRef.current.add(chapterId)
+        preloadSectionImages(section)
+        commitState(markChapterLoaded(stateRef.current, chapterId, section))
+        return section
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && generationRef.current === requestGeneration) {
+          console.error(`Failed to load chapter ${chapterId}:`, error)
+          commitState(markChapterFailed(stateRef.current, chapterId))
+        }
+        return null
+      })
+      .finally(() => {
+        pendingRequestsRef.current.delete(requestKey)
+        controller.abort()
+      })
+
+    pendingRequestsRef.current.set(requestKey, request)
+    commitState(markChapterLoading(stateRef.current, chapterId))
+    return request
+  }, [commitState])
 
   useEffect(() => {
     if (!params.activeChapterId || params.chapterIds.length === 0) {
       return
     }
 
+    const requestGeneration = generationRef.current
     const controller = new AbortController()
     const queue = buildChapterPreloadQueue({
-      chapterIds: params.chapterIds,
+      chapterIds: latestChapterIdsRef.current,
       activeChapterId: params.activeChapterId,
     })
     const scheduleIdle = createIdleScheduler()
@@ -197,7 +352,7 @@ export function useBackgroundChapterLoader(params: UseBackgroundChapterLoaderPar
     const maxParallel = 3
 
     const pump = (): void => {
-      if (cancelled) {
+      if (cancelled || generationRef.current !== requestGeneration) {
         return
       }
 
@@ -208,71 +363,43 @@ export function useBackgroundChapterLoader(params: UseBackgroundChapterLoaderPar
         if (
           !chapterId
           || loadedIdsRef.current.has(chapterId)
-          || pendingRequestsRef.current.has(chapterId)
+          || stateRef.current.loadingIds[chapterId]
+          || pendingRequestsRef.current.has(`${requestGeneration}:${chapterId}`)
         ) {
           continue
         }
 
         activeRequests += 1
 
-        setState((current) => ({
-          ...current,
-          loadingIds: {
-            ...current.loadingIds,
-            [chapterId]: true,
-          },
-        }))
-
-        const request = params.loadChapter(chapterId, controller.signal)
+        const requestKey = `${requestGeneration}:${chapterId}`
+        const request = latestLoadChapterRef.current(chapterId, controller.signal)
           .then((section) => {
-            if (cancelled) {
+            if (cancelled || controller.signal.aborted || generationRef.current !== requestGeneration) {
               return null
             }
 
             loadedIdsRef.current.add(chapterId)
             preloadSectionImages(section)
-            setState((current) => ({
-              sectionsByChapterId: {
-                ...current.sectionsByChapterId,
-                [chapterId]: section,
-              },
-              loadingIds: {
-                ...current.loadingIds,
-                [chapterId]: false,
-              },
-              failedIds: {
-                ...current.failedIds,
-                [chapterId]: false,
-              },
-            }))
+            commitState(markChapterLoaded(stateRef.current, chapterId, section))
             return section
           })
           .catch((error: unknown) => {
-            if (!cancelled && !controller.signal.aborted) {
+            if (!cancelled && !controller.signal.aborted && generationRef.current === requestGeneration) {
               console.error(`Failed to preload chapter ${chapterId}:`, error)
-              setState((current) => ({
-                ...current,
-                loadingIds: {
-                  ...current.loadingIds,
-                  [chapterId]: false,
-                },
-                failedIds: {
-                  ...current.failedIds,
-                  [chapterId]: true,
-                },
-              }))
+              commitState(markChapterFailed(stateRef.current, chapterId))
             }
             return null
           })
           .finally(() => {
             activeRequests -= 1
-            pendingRequestsRef.current.delete(chapterId)
-            if (!cancelled) {
+            pendingRequestsRef.current.delete(requestKey)
+            if (!cancelled && generationRef.current === requestGeneration) {
               scheduleIdle(() => pump())
             }
           })
 
-        pendingRequestsRef.current.set(chapterId, request)
+        pendingRequestsRef.current.set(requestKey, request)
+        commitState(markChapterLoading(stateRef.current, chapterId))
       }
     }
 
@@ -282,7 +409,7 @@ export function useBackgroundChapterLoader(params: UseBackgroundChapterLoaderPar
       cancelled = true
       controller.abort()
     }
-  }, [params.activeChapterId, params.chapterIds, params.loadChapter])
+  }, [commitState, restartSignature])
 
   return {
     ...state,

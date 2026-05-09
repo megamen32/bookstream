@@ -1,6 +1,6 @@
 'use client'
 
-import { startTransition, useEffect, useState, useCallback, useRef } from 'react'
+import { startTransition, useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -27,6 +27,7 @@ import {
   setBookReaderPage,
   setBookReaderPageToLastPage,
 } from '@/lib/book-reader-progress'
+import { shouldReuseLoadedFeedSection } from '@/lib/feed-navigation'
 import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
@@ -1004,6 +1005,12 @@ export default function ReaderPage() {
 
     const syncReaderLocation = async (): Promise<void> => {
       if (readingMode === 'feed') {
+        if (shouldReuseLoadedFeedSection(feedSections, nextChapterId, nextVariant)) {
+          applyActiveVariantOptions(feedSections, nextChapterId)
+          setScrollToChapterId(nextChapterId)
+          return
+        }
+
         await replaceFeedSections(nextChapterId, nextVariant, 1, 1, 0, true)
         return
       }
@@ -1020,7 +1027,9 @@ export default function ReaderPage() {
 
     void syncReaderLocation()
   }, [
+    applyActiveVariantOptions,
     bookData,
+    feedSections,
     fetchSingleChapter,
     quoteTargetEndOffset,
     quoteTargetStartOffset,
@@ -1247,6 +1256,15 @@ export default function ReaderPage() {
     setQuoteTargetEndOffset(null)
 
     if (readingMode === 'feed') {
+      if (shouldReuseLoadedFeedSection(feedSections, newChapterId, variantType)) {
+        applyActiveVariantOptions(feedSections, newChapterId)
+        setActiveChapterId(newChapterId)
+        setChapterId(newChapterId)
+        setScrollProgress(0)
+        setScrollToChapterId(newChapterId)
+        return
+      }
+
       setActiveChapterId(newChapterId)
       setChapterId(newChapterId)
       setScrollProgress(0)
@@ -1261,7 +1279,7 @@ export default function ReaderPage() {
         setScrollProgress(0)
       }
     }
-  }, [fetchSingleChapter, readingMode, replaceFeedSections, setChapterId, variantType])
+  }, [applyActiveVariantOptions, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, setChapterId, variantType])
 
   const goToNextChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
@@ -1463,7 +1481,27 @@ export default function ReaderPage() {
     await replaceFeedSections(activeChapterId, variantType, before, after, scrollProgress, false)
   }, [activeChapterId, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, saveReadingMode, scrollProgress, setReadingMode, variantType])
 
-  const chapters = bookData?.chapters || []
+  const chapters = useMemo(() => bookData?.chapters || [], [bookData])
+  const feedManifest = useMemo<BookChapterManifestItem[]>(() => {
+    return chapters.map((chapter) => ({
+      chapterId: chapter.id,
+      title: chapter.title,
+      position: chapter.position,
+      paragraphCount: chapter.paragraphCount || 0,
+      estimatedChars: chapter.estimatedChars || 0,
+      hasImages: Boolean(chapter.hasImages),
+    }))
+  }, [chapters])
+  const loadFeedChapter = useCallback(async (chapterId: string, signal: AbortSignal) => {
+    const section = await fetchSingleChapter(chapterId, variantType, signal)
+    if (!section) {
+      throw new Error(`Failed to load chapter ${chapterId}`)
+    }
+    return section
+  }, [fetchSingleChapter, variantType])
+  const handleScrollToChapterHandled = useCallback(() => {
+    setScrollToChapterId(null)
+  }, [])
   const activeFeedSection = feedSections.find((section) => section.chapter.id === activeChapterId) || null
   const currentTitle = readingMode === 'feed'
     ? activeFeedSection?.chapter.title || bookModeSection?.chapter.title || ''
@@ -1636,23 +1674,10 @@ export default function ReaderPage() {
         <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex' }}>
           {readingMode === 'feed' ? (
             <FeedReader
-              manifest={chapters.map<BookChapterManifestItem>((chapter) => ({
-                chapterId: chapter.id,
-                title: chapter.title,
-                position: chapter.position,
-                paragraphCount: chapter.paragraphCount || 0,
-                estimatedChars: chapter.estimatedChars || 0,
-                hasImages: Boolean(chapter.hasImages),
-              }))}
+              manifest={feedManifest}
               initialSections={feedSections}
               activeChapterId={activeChapterId}
-              loadChapter={async (chapterId, signal) => {
-                const section = await fetchSingleChapter(chapterId, variantType, signal)
-                if (!section) {
-                  throw new Error(`Failed to load chapter ${chapterId}`)
-                }
-                return section
-              }}
+              loadChapter={loadFeedChapter}
               onActiveChapterChange={handleActiveChapterChange}
               setContentNode={setSearchContentNode}
               bookmarkedKeys={bookmarksByChapter}
@@ -1665,7 +1690,7 @@ export default function ReaderPage() {
               highlightEndOffset={quoteTargetEndOffset}
               restoreRequest={restoreRequest}
               scrollToChapterId={scrollToChapterId}
-              onScrollToChapterHandled={() => setScrollToChapterId(null)}
+              onScrollToChapterHandled={handleScrollToChapterHandled}
               onOpenChapterComments={handleOpenComments}
               onSurfaceTap={toggleChrome}
               onNavigate={closeChrome}

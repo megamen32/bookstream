@@ -1,6 +1,35 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('feed reader interactions', () => {
+  test('loads background chapters without runtime errors', async ({ page }) => {
+    const runtimeErrors: string[] = []
+
+    // Treat every runtime error as a regression; the whitelist is intentionally empty.
+    page.on('pageerror', (error) => {
+      runtimeErrors.push(`pageerror: ${error.message}`)
+    })
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        runtimeErrors.push(`console: ${msg.text()}`)
+      }
+    })
+
+    await page.goto('/test/feed-reader')
+
+    const feedReader = page.locator('.feed-reader')
+    await expect(feedReader).toBeVisible()
+    await expect(page.locator('[data-chapter-id="chapter-1"]')).toBeVisible()
+
+    await feedReader.hover()
+    await page.mouse.wheel(0, 1600)
+
+    await expect(page.locator('[data-chapter-id="chapter-2"]')).toBeVisible()
+
+    await page.waitForTimeout(150)
+
+    expect(runtimeErrors).toEqual([])
+  })
+
   test('scrolls inside the feed viewport', async ({ page }) => {
     await page.goto('/test/feed-reader')
 

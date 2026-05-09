@@ -22,6 +22,7 @@ interface ReaderChapterSectionProps {
   authorSlug: string
   bookSlug: string
   showCommentsAfterChapter: boolean
+  showReactionBar: boolean
   showMobileReactionBar: boolean
   highlightParagraphId?: string | null
   hasPreciseQuoteHighlight?: boolean
@@ -45,6 +46,7 @@ export default function ReaderChapterSection({
   authorSlug,
   bookSlug,
   showCommentsAfterChapter,
+  showReactionBar,
   showMobileReactionBar,
   highlightParagraphId,
   hasPreciseQuoteHighlight = false,
@@ -193,13 +195,15 @@ export default function ReaderChapterSection({
                 )}
               </article>
 
-              <ReactionBar
-                paragraphId={paragraph.id}
-                variantId={section.variant.id}
-                chapterId={section.chapter.id}
-                variantType={section.variant.variantType}
-                showOnMobile={showMobileReactionBar}
-              />
+      {showReactionBar ? (
+        <ReactionBar
+          paragraphId={paragraph.id}
+          variantId={section.variant.id}
+          chapterId={section.chapter.id}
+          variantType={section.variant.variantType}
+          showOnMobile={showMobileReactionBar}
+        />
+      ) : null}
             </div>
           )
         })}

@@ -60,6 +60,7 @@ workspace-*.tar
 download/*.tar.gz
 .playwright-cli/
 .playwright-mcp/
+test-results/
 feed-reader.png
 # Skills directory
 /skills/
