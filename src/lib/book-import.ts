@@ -4,6 +4,7 @@ import mammoth from 'mammoth'
 import { marked } from 'marked'
 import sharp from 'sharp'
 import { resolveCoverDirectories } from '@/lib/cover-storage'
+import { buildDocxImportOptions } from '@/lib/docx-conversion'
 
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
@@ -61,14 +62,11 @@ export async function readImportedBookFile(file: File): Promise<ImportedBookCont
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const htmlResult = await mammoth.convertToHtml(
-    { buffer },
-    {
-      convertImage: mammoth.images.imgElement(async (image) => ({
-        src: `data:${image.contentType};base64,${await image.read('base64')}`,
-      })),
-    }
-  )
+  const htmlResult = await mammoth.convertToHtml({ buffer }, buildDocxImportOptions({
+    convertImage: mammoth.images.imgElement(async (image) => ({
+      src: `data:${image.contentType};base64,${await image.read('base64')}`,
+    })),
+  }))
   const rawTextResult = await mammoth.extractRawText({ buffer })
   const html = htmlResult.value
   const text = normalizeText(rawTextResult.value)

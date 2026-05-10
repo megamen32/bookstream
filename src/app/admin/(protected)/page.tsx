@@ -211,6 +211,9 @@ export default function AdminLibraryPage() {
                   <h2 className="mt-2 line-clamp-2 text-lg font-semibold leading-tight text-slate-950">
                     {book.title}
                   </h2>
+                  <p className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    /{book.author.slug}/{book.slug}
+                  </p>
                   <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
                     {book.description || 'Описание не задано.'}
                   </p>

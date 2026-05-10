@@ -1,5 +1,6 @@
 import mammoth from 'mammoth';
 import { marked } from 'marked';
+import { buildDocxImportOptions } from './docx-conversion.ts';
 
 export interface ParsedChapter {
   title: string;
@@ -20,7 +21,7 @@ export interface ParsedParagraph {
  * Heading1 styles or common chapter heading patterns.
  */
 export async function parseDocx(buffer: ArrayBuffer): Promise<{ chapters: ParsedChapter[] }> {
-  const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+  const result = await mammoth.convertToHtml({ arrayBuffer: buffer }, buildDocxImportOptions());
   const html = result.value;
 
   // Try to split by Heading1 (<h1>...</h1>)

@@ -1,6 +1,22 @@
-const STATIC_CACHE = 'bookstream-static-v1'
-const RUNTIME_CACHE = 'bookstream-runtime-v1'
+const STATIC_CACHE = 'bookstream-static-v2'
+const RUNTIME_CACHE = 'bookstream-runtime-v2'
 const STATIC_ASSETS = ['/', '/logo.svg', '/robots.txt']
+
+function resolveStrategy(pathname) {
+  if (pathname.startsWith('/_next/webpack-hmr')) {
+    return 'network-only'
+  }
+
+  if (
+    pathname === '/api' ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/admin')
+  ) {
+    return 'network-first'
+  }
+
+  return 'cache-first'
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -10,7 +26,15 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys()
+    await Promise.all(
+      cacheNames
+        .filter((cacheName) => cacheName !== STATIC_CACHE && cacheName !== RUNTIME_CACHE)
+        .map((cacheName) => caches.delete(cacheName)),
+    )
+    await self.clients.claim()
+  })())
 })
 
 self.addEventListener('fetch', (event) => {
@@ -24,12 +48,21 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (request.mode === 'navigate') {
+  const strategy = resolveStrategy(url.pathname)
+
+  if (strategy === 'network-only') {
+    event.respondWith(fetch(request))
+    return
+  }
+
+  if (strategy === 'network-first' || request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
         const response = await fetch(request)
         const cache = await caches.open(RUNTIME_CACHE)
-        cache.put(request, response.clone())
+        if (response.ok) {
+          cache.put(request, response.clone())
+        }
         return response
       } catch {
         const cached = await caches.match(request)

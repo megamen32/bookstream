@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAppSettings } from '@/lib/app-settings'
 import { buildOwnedBookWhere, getOwnedBook } from '@/lib/admin-ownership'
+import { buildBookUpdateData, BookUpdateValidationError } from '@/lib/book-update'
 import { db } from '@/lib/db'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 
@@ -175,71 +176,9 @@ export async function PUT(
     const settings = await getAppSettings()
 
     const body = await request.json()
-    const {
-      title,
-      description,
-      slug,
-      isPublic,
-      readingModeDefault,
-      syntheticCommentsPerChapter,
-      syntheticQuotesPerChapter,
-      syntheticReactionsPerChapter,
-      syntheticCommentsUseLlm,
-      openStatsPublic,
-      allowReaderVariantsAtOwnerExpense,
-    } = body
-
-    const clampSyntheticCount = (value: unknown): number | undefined => {
-      if (!Number.isFinite(value)) {
-        return undefined
-      }
-
-      return Math.max(0, Math.min(20, Math.round(Number(value))))
-    }
-
-    const updateData: {
-      title?: string
-      description?: string | null
-      slug?: string
-      isPublic?: boolean
-      readingModeDefault?: string
-      syntheticCommentsPerChapter?: number
-      syntheticQuotesPerChapter?: number
-      syntheticReactionsPerChapter?: number
-      syntheticCommentsUseLlm?: boolean
-      openStatsPublic?: boolean
-      allowReaderVariantsAtOwnerExpense?: boolean
-    } = {}
-
-    if (title !== undefined) updateData.title = title
-    if (description !== undefined) updateData.description = description
-    if (slug !== undefined) updateData.slug = slug
-    if (isPublic !== undefined) {
-      updateData.isPublic = adminReader.isMainAdmin || settings.allowUserPublishing
-        ? isPublic
-        : false
-    }
-    if (readingModeDefault !== undefined) updateData.readingModeDefault = readingModeDefault
-    if (syntheticCommentsUseLlm !== undefined) updateData.syntheticCommentsUseLlm = Boolean(syntheticCommentsUseLlm)
-    if (openStatsPublic !== undefined) updateData.openStatsPublic = Boolean(openStatsPublic)
-    if (allowReaderVariantsAtOwnerExpense !== undefined) {
-      updateData.allowReaderVariantsAtOwnerExpense = Boolean(allowReaderVariantsAtOwnerExpense)
-    }
-
-    const commentsMinimum = clampSyntheticCount(syntheticCommentsPerChapter)
-    if (commentsMinimum !== undefined) {
-      updateData.syntheticCommentsPerChapter = commentsMinimum
-    }
-
-    const quotesMinimum = clampSyntheticCount(syntheticQuotesPerChapter)
-    if (quotesMinimum !== undefined) {
-      updateData.syntheticQuotesPerChapter = quotesMinimum
-    }
-
-    const reactionsMinimum = clampSyntheticCount(syntheticReactionsPerChapter)
-    if (reactionsMinimum !== undefined) {
-      updateData.syntheticReactionsPerChapter = reactionsMinimum
-    }
+    const updateData = buildBookUpdateData(body, {
+      canPublish: adminReader.isMainAdmin || settings.allowUserPublishing,
+    })
 
     const book = await db.book.update({
       where: { id: ownedBook.id },
@@ -249,6 +188,9 @@ export async function PUT(
     return NextResponse.json(book)
   } catch (error: unknown) {
     console.error('Error updating book:', error)
+    if (error instanceof BookUpdateValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
       return NextResponse.json({ error: 'Книга с таким slug уже существует' }, { status: 409 })
     }

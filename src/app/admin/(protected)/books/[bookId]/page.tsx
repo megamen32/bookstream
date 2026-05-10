@@ -91,6 +91,14 @@ interface VariantRevisionSummary {
   createdAt: string
 }
 
+interface LoadedChapterVariant {
+  contentHtml: string
+  editedByAuthor: boolean
+  headRevisionId: string | null
+  revisionId: string | null
+  revisionNumber: number | null
+}
+
 interface BookData {
   id: string
   title: string
@@ -256,6 +264,7 @@ export default function BookEditorPage() {
   const [bookSettingsOpen, setBookSettingsOpen] = useState(false)
   const [initialChapterTitle, setInitialChapterTitle] = useState('')
   const [initialChapterContent, setInitialChapterContent] = useState('')
+  const [loadedChapterVariant, setLoadedChapterVariant] = useState<LoadedChapterVariant | null>(null)
   const [revisionHistory, setRevisionHistory] = useState<VariantRevisionSummary[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [restoringRevisionId, setRestoringRevisionId] = useState<string | null>(null)
@@ -431,6 +440,7 @@ export default function BookEditorPage() {
   const currentVariant = selectedChapter?.variants.find(
     (variant) => variant.variantType === activeVariant
   )
+  const selectedChapterVariantContent = loadedChapterVariant?.contentHtml ?? currentVariant?.contentHtml ?? ''
   const visibleVariantTabs = buildVariantTabs(variantPresets, selectedChapter?.variants ?? [])
   const visibleVariantTypesKey = visibleVariantTabs.map((tab) => tab.value).join('|')
   const activeTab = visibleVariantTabs.find((tab) => tab.value === activeVariant)
@@ -448,17 +458,56 @@ export default function BookEditorPage() {
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       const nextTitle = selectedChapter?.title ?? ''
-      const nextContent = currentVariant?.contentHtml ?? ''
 
       setInitialChapterTitle(nextTitle)
-      setInitialChapterContent(nextContent)
-      setEditContent(nextContent)
+      setInitialChapterContent(selectedChapterVariantContent)
+      setEditContent(selectedChapterVariantContent)
       setEditChapterTitle(nextTitle)
       setSaveStatus('idle')
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [currentVariant?.id, currentVariant?.contentHtml, selectedChapter?.title])
+  }, [selectedChapter?.title, selectedChapterVariantContent])
+
+  useEffect(() => {
+    if (!selectedChapterId) {
+      setLoadedChapterVariant(null)
+      return
+    }
+
+    let cancelled = false
+    setLoadedChapterVariant(null)
+
+    void (async () => {
+      try {
+        const response = await adminFetch(
+          `/api/chapters/${selectedChapterId}?variantType=${activeVariant}&includeDrafts=1`,
+        )
+
+        if (!response) {
+          return
+        }
+
+        if (!response.ok) {
+          throw new Error('chapter fetch failed')
+        }
+
+        const payload = (await response.json()) as { variant?: LoadedChapterVariant }
+
+        if (!cancelled) {
+          setLoadedChapterVariant(payload.variant ?? null)
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadedChapterVariant(null)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeVariant, adminFetch, selectedChapterId])
   const chapterHasChanges =
     editChapterTitle !== initialChapterTitle || editContent !== initialChapterContent
   const hasUnsavedChapterChanges = chapterHasChanges && !saving
@@ -1455,426 +1504,426 @@ export default function BookEditorPage() {
         </div>
       </div>
 
-      <div
-        className={cn(
-          'grid gap-6',
-          activePrimaryTab === 'editor' && chaptersPanelVisible ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'
-        )}
-      >
-        <div className="lg:col-span-full">
-          <Tabs
-            value={activePrimaryTab}
-            onValueChange={(value) => {
-              if (value === 'editor' || value === 'stats') {
-                setActivePrimaryTab(value)
-                if (value === 'stats') {
-                  void fetchBookStats()
-                }
+      <div className="space-y-6">
+        <Tabs
+          value={activePrimaryTab}
+          onValueChange={(value) => {
+            if (value === 'editor' || value === 'stats') {
+              setActivePrimaryTab(value)
+              if (value === 'stats') {
+                void fetchBookStats()
               }
-            }}
-          >
-            <TabsList className="rounded-full">
-              <TabsTrigger value="editor" className="rounded-full">
-                <BookOpen className="mr-2 h-4 w-4" />
-                Редактор
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="rounded-full">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Статистика
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+            }
+          }}
+        >
+          <TabsList className="rounded-full">
+            <TabsTrigger value="editor" className="rounded-full">
+              <BookOpen className="mr-2 h-4 w-4" />
+              Редактор
+            </TabsTrigger>
+            <TabsTrigger value="stats" className="rounded-full">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Статистика
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-        <main className="min-w-0 space-y-4">
-          {activePrimaryTab === 'stats' ? (
-            <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <CardTitle className="text-base">Статистика чтения</CardTitle>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Статистика собирается по реальным открытиям reader и heartbeat-событиям во время активного чтения.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      void fetchBookStats()
-                    }}
-                    disabled={loadingBookStats}
-                  >
-                    {loadingBookStats ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <BarChart3 className="mr-2 h-4 w-4" />
-                    )}
-                    Обновить
-                  </Button>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
-                    <div className="text-3xl font-semibold">{bookStats?.book.uniqueReaders ?? 0}</div>
-                    <div className="mt-2 text-sm text-muted-foreground">уникальных читателей</div>
-                  </div>
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
-                    <div className="text-3xl font-semibold">
-                      {formatDurationLabel(bookStats?.book.totalReadSeconds ?? 0)}
+        <div
+          className={cn(
+            'flex flex-col gap-6',
+            activePrimaryTab === 'editor' && chaptersPanelVisible ? 'lg:flex-row lg:items-start' : ''
+          )}
+        >
+          <main className="min-w-0 flex-1 space-y-4">
+            {activePrimaryTab === 'stats' ? (
+              <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <CardTitle className="text-base">Статистика чтения</CardTitle>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Статистика собирается по реальным открытиям reader и heartbeat-событиям во время активного чтения.
+                      </p>
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">суммарное время чтения</div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => {
+                        void fetchBookStats()
+                      }}
+                      disabled={loadingBookStats}
+                    >
+                      {loadingBookStats ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                      )}
+                      Обновить
+                    </Button>
                   </div>
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
-                    <div className="text-3xl font-semibold">
-                      {formatDurationLabel(bookStats?.book.avgReadSeconds ?? 0)}
-                    </div>
-                    <div className="mt-2 text-sm text-muted-foreground">среднее время на читателя</div>
-                  </div>
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
-                    <div className="text-3xl font-semibold">{bookStats?.book.avgProgressPercent ?? 0}%</div>
-                    <div className="mt-2 text-sm text-muted-foreground">средний прогресс</div>
-                  </div>
-                </div>
+                </CardHeader>
 
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium">Главы</div>
-                        <div className="text-xs text-muted-foreground">
-                          Читаемость, время и дочитывания по каждой главе.
-                        </div>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                      <div className="text-3xl font-semibold">{bookStats?.book.uniqueReaders ?? 0}</div>
+                      <div className="mt-2 text-sm text-muted-foreground">уникальных читателей</div>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                      <div className="text-3xl font-semibold">
+                        {formatDurationLabel(bookStats?.book.totalReadSeconds ?? 0)}
                       </div>
-                      {loadingBookStats ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                      <div className="mt-2 text-sm text-muted-foreground">суммарное время чтения</div>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                      <div className="text-3xl font-semibold">
+                        {formatDurationLabel(bookStats?.book.avgReadSeconds ?? 0)}
+                      </div>
+                      <div className="mt-2 text-sm text-muted-foreground">среднее время на читателя</div>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-5">
+                      <div className="text-3xl font-semibold">{bookStats?.book.avgProgressPercent ?? 0}%</div>
+                      <div className="mt-2 text-sm text-muted-foreground">средний прогресс</div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium">Главы</div>
+                          <div className="text-xs text-muted-foreground">
+                            Читаемость, время и дочитывания по каждой главе.
+                          </div>
+                        </div>
+                        {loadingBookStats ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                      </div>
+
+                      <div className="space-y-3">
+                        {bookStats?.chapters.map((chapterStat) => (
+                          <div
+                            key={chapterStat.chapterId}
+                            className="grid gap-3 rounded-2xl border border-border/50 bg-background/60 p-4 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.7fr))]"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">
+                                Глава {chapterStat.position + 1}
+                              </div>
+                              <div className="mt-1 truncate text-sm text-muted-foreground">
+                                {chapterStat.title}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-semibold">{chapterStat.uniqueReaders}</div>
+                              <div className="text-xs text-muted-foreground">читателей</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-semibold">
+                                {formatDurationLabel(chapterStat.totalReadSeconds)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">время</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-semibold">{chapterStat.avgProgressPercent}%</div>
+                              <div className="text-xs text-muted-foreground">прогресс</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-semibold">{chapterStat.completionRatePercent}%</div>
+                              <div className="text-xs text-muted-foreground">дочитывают</div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {!loadingBookStats && (bookStats?.chapters.length ?? 0) === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-sm text-muted-foreground">
+                            Пока нет данных о чтении этой книги.
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
 
-                    <div className="space-y-3">
-                      {bookStats?.chapters.map((chapterStat) => (
-                        <div
-                          key={chapterStat.chapterId}
-                          className="grid gap-3 rounded-2xl border border-border/50 bg-background/60 p-4 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.7fr))]"
-                        >
-                          <div className="min-w-0">
+                    <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
+                      <div className="text-sm font-medium">Топ глав</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Список строится по уникальным читателям.
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {bookStats?.topChapters.map((chapterStat) => (
+                          <div
+                            key={`top-${chapterStat.chapterId}`}
+                            className="rounded-2xl border border-border/50 bg-background/60 p-4"
+                          >
                             <div className="text-sm font-medium">
                               Глава {chapterStat.position + 1}
                             </div>
-                            <div className="mt-1 truncate text-sm text-muted-foreground">
+                            <div className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                               {chapterStat.title}
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-semibold">{chapterStat.uniqueReaders}</div>
-                            <div className="text-xs text-muted-foreground">читателей</div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-semibold">
-                              {formatDurationLabel(chapterStat.totalReadSeconds)}
+                            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{chapterStat.uniqueReaders} читателей</span>
+                              <span>{chapterStat.completionRatePercent}% дочитывают</span>
                             </div>
-                            <div className="text-xs text-muted-foreground">время</div>
                           </div>
-                          <div>
-                            <div className="text-lg font-semibold">{chapterStat.avgProgressPercent}%</div>
-                            <div className="text-xs text-muted-foreground">прогресс</div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-semibold">{chapterStat.completionRatePercent}%</div>
-                            <div className="text-xs text-muted-foreground">дочитывают</div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {!loadingBookStats && (bookStats?.chapters.length ?? 0) === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-sm text-muted-foreground">
-                          Пока нет данных о чтении этой книги.
-                        </div>
-                      ) : null}
+                        ))}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="rounded-3xl border border-border/60 bg-background/80 p-4">
-                    <div className="text-sm font-medium">Топ глав</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Список строится по уникальным читателям.
+                </CardContent>
+              </Card>
+            ) : selectedChapter ? (
+              <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle className="truncate text-base">Глава {selectedChapter.position + 1}</CardTitle>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Название редактируется в поле ниже · Telegraph-like редактор · сохраняется как HTML
+                      </p>
                     </div>
-                    <div className="mt-4 space-y-3">
-                      {bookStats?.topChapters.map((chapterStat) => (
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        disabled={deletingChapter}
+                        className="rounded-full"
+                      >
+                        {deletingChapter ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-1 h-3 w-3" />
+                        )}
+                        Удалить
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent>
+                  <Tabs
+                    value={activeVariant}
+                    onValueChange={(value) => {
+                      if (value === activeVariant) {
+                        return
+                      }
+
+                      requestTransition({ type: 'variant', variantType: value })
+                    }}
+                  >
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <TabsList className="flex min-w-0 flex-1 flex-wrap rounded-full">
+                        {visibleVariantTabs.map((tab) => {
+                          const hasVariant = selectedChapter.variants.some(
+                            (variant) => variant.variantType === tab.value
+                          )
+
+                          return (
+                            <TabsTrigger
+                              key={tab.value}
+                              value={tab.value}
+                              className="rounded-full text-xs sm:text-sm"
+                            >
+                              {tab.label}
+                              {hasVariant && <Check className="ml-1 h-3 w-3 text-emerald-600" />}
+                            </TabsTrigger>
+                          )
+                        })}
+                      </TabsList>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setGenerateDialogOpen(true)
+                        }}
+                        disabled={generating}
+                        className="shrink-0 rounded-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                      >
+                        {generating ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-1 h-3 w-3" />
+                        )}
+                        {activeVariant === 'original'
+                          ? 'Сгенерировать AI все варианты'
+                          : `ИИ генерировать ${activeTab?.label || activeVariant}`}
+                      </Button>
+                    </div>
+
+                    {activeTab && (
+                      <TabsContent key={activeTab.value} value={activeTab.value} className="mt-0">
+                        <BookTextEditor
+                          value={editContent}
+                          title={editChapterTitle}
+                          onChange={handleEditorChange}
+                          onTitleChange={handleChapterTitleChange}
+                          titlePlaceholder="Название главы"
+                          placeholder={activeTab.placeholder}
+                          onSave={async () => {
+                            await handleSaveChapter()
+                          }}
+                          saving={saving}
+                          saveStatus={saveStatus}
+                          saveDisabled={!chapterHasChanges}
+                        />
+                      </TabsContent>
+                    )}
+                  </Tabs>
+
+                  <div className="mt-6 rounded-3xl border border-border/60 bg-muted/20 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">История версии</div>
+                        <div className="text-xs text-muted-foreground">
+                          Ревизии для текущего варианта главы
+                        </div>
+                      </div>
+                      {visibleLoadingHistory && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+
+                    <div className="space-y-2">
+                      {visibleRevisionHistory.slice(0, 8).map((revision) => (
                         <div
-                          key={`top-${chapterStat.chapterId}`}
-                          className="rounded-2xl border border-border/50 bg-background/60 p-4"
+                          key={revision.id}
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-border/50 bg-background/60 px-3 py-2"
                         >
-                          <div className="text-sm font-medium">
-                            Глава {chapterStat.position + 1}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">
+                              Rev {revision.revisionNumber}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {revision.source} · {new Date(revision.createdAt).toLocaleString('ru-RU')}
+                            </div>
                           </div>
-                          <div className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                            {chapterStat.title}
-                          </div>
-                          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{chapterStat.uniqueReaders} читателей</span>
-                            <span>{chapterStat.completionRatePercent}% дочитывают</span>
-                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="rounded-full"
+                            disabled={restoringRevisionId === revision.id}
+                            onClick={() => {
+                              void handleRestoreRevision(revision.id)
+                            }}
+                          >
+                            {restoringRevisionId === revision.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              'Restore'
+                            )}
+                          </Button>
                         </div>
                       ))}
+
+                      {!visibleLoadingHistory && visibleRevisionHistory.length === 0 && (
+                        <div className="rounded-2xl border border-dashed border-border/60 px-3 py-4 text-sm text-muted-foreground">
+                          История появится после первого сохранения этого варианта.
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : selectedChapter ? (
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="rounded-3xl p-8 text-center">
+                <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+                <p className="text-muted-foreground">Выберите главу для редактирования</p>
+              </Card>
+            )}
+          </main>
+
+          <aside
+            className={cn(
+              'w-full',
+              activePrimaryTab === 'editor' && chaptersPanelVisible ? 'block' : 'hidden',
+              'lg:sticky lg:top-6 lg:w-80 lg:shrink-0 lg:self-start'
+            )}
+          >
             <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
               <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <CardTitle className="truncate text-base">Глава {selectedChapter.position + 1}</CardTitle>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Название редактируется в поле ниже · Telegraph-like редактор · сохраняется как HTML
-                    </p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setDeleteDialogOpen(true)}
-                      disabled={deletingChapter}
-                      className="rounded-full"
-                    >
-                      {deletingChapter ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Trash2 className="mr-1 h-3 w-3" />
-                      )}
-                      Удалить
-                    </Button>
-                  </div>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Главы</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void handleCreateChapter()
+                    }}
+                    disabled={creatingChapter}
+                    className="rounded-full"
+                  >
+                    {creatingChapter ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}
+                    Глава
+                  </Button>
                 </div>
               </CardHeader>
+              <CardContent className="overflow-hidden p-2">
+                <ScrollArea className="h-[min(70vh,calc(100vh-16rem))] pr-2">
+                  <div className="space-y-1">
+                    {book.chapters.map((chapter) => (
+                      <button
+                        key={chapter.id}
+                        onClick={() => {
+                          const nextVariant = chapter.variants.some(
+                            (variant) => variant.variantType === activeVariant
+                          )
+                            ? activeVariant
+                            : 'original'
 
-              <CardContent>
-                <Tabs
-                  value={activeVariant}
-                  onValueChange={(value) => {
-                    if (value === activeVariant) {
-                      return
-                    }
-
-                    requestTransition({ type: 'variant', variantType: value })
-                  }}
-                >
-                  <div className="mb-4 flex flex-wrap items-center gap-3">
-                    <TabsList className="flex min-w-0 flex-1 flex-wrap rounded-full">
-                      {visibleVariantTabs.map((tab) => {
-                        const hasVariant = selectedChapter.variants.some(
-                          (variant) => variant.variantType === tab.value
-                        )
-
-                        return (
-                          <TabsTrigger
-                            key={tab.value}
-                            value={tab.value}
-                            className="rounded-full text-xs sm:text-sm"
-                          >
-                            {tab.label}
-                            {hasVariant && <Check className="ml-1 h-3 w-3 text-emerald-600" />}
-                          </TabsTrigger>
-                        )
-                      })}
-                    </TabsList>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setGenerateDialogOpen(true)
-                      }}
-                      disabled={generating}
-                      className="shrink-0 rounded-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                    >
-                      {generating ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-1 h-3 w-3" />
-                      )}
-                      {activeVariant === 'original'
-                        ? 'Сгенерировать AI все варианты'
-                        : `ИИ генерировать ${activeTab?.label || activeVariant}`}
-                    </Button>
-                  </div>
-
-                  {visibleVariantTabs.map((tab) => (
-                    <TabsContent key={tab.value} value={tab.value} className="mt-0">
-                      <BookTextEditor
-                        value={activeVariant === tab.value ? editContent : ''}
-                        title={editChapterTitle}
-                        onChange={handleEditorChange}
-                        onTitleChange={handleChapterTitleChange}
-                        titlePlaceholder="Название главы"
-                        placeholder={activeTab?.placeholder || tab.placeholder}
-                        onSave={async () => {
-                          await handleSaveChapter()
+                          requestTransition({
+                            type: 'chapter',
+                            chapterId: chapter.id,
+                            variantType: nextVariant,
+                          })
                         }}
-                        saving={saving}
-                        saveStatus={saveStatus}
-                        saveDisabled={!chapterHasChanges}
-                      />
-                    </TabsContent>
-                  ))}
-                </Tabs>
-
-                <div className="mt-6 rounded-3xl border border-border/60 bg-muted/20 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium">История версии</div>
-                      <div className="text-xs text-muted-foreground">
-                        Ревизии для текущего варианта главы
-                      </div>
-                    </div>
-                    {visibleLoadingHistory && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                  </div>
-
-                  <div className="space-y-2">
-                    {visibleRevisionHistory.slice(0, 8).map((revision) => (
-                      <div
-                        key={revision.id}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-border/50 bg-background/60 px-3 py-2"
+                        className={cn(
+                          'flex w-full items-center gap-2 overflow-hidden rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
+                          selectedChapterId === chapter.id
+                            ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        )}
+                        style={{
+                          paddingInlineStart: `${0.75 + Math.max(0, chapter.level - 1) * 1.25}rem`,
+                        }}
                       >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium">
-                            Rev {revision.revisionNumber}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {revision.source} · {new Date(revision.createdAt).toLocaleString('ru-RU')}
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="rounded-full"
-                          disabled={restoringRevisionId === revision.id}
-                          onClick={() => {
-                            void handleRestoreRevision(revision.id)
-                          }}
-                        >
-                          {restoringRevisionId === revision.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            'Restore'
-                          )}
-                        </Button>
-                      </div>
+                        <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                          {chapter.position + 1}.
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
+                        {chapter.level > 1 && (
+                          <Badge
+                            variant="outline"
+                            className="rounded-full px-1.5 py-0 text-[10px]"
+                          >
+                            L{chapter.level}
+                          </Badge>
+                        )}
+                        {chapter.variants.length > 1 && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-auto rounded-full px-1.5 py-0 text-[10px]"
+                          >
+                            {chapter.variants.length}
+                          </Badge>
+                        )}
+                      </button>
                     ))}
 
-                    {!visibleLoadingHistory && visibleRevisionHistory.length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-border/60 px-3 py-4 text-sm text-muted-foreground">
-                        История появится после первого сохранения этого варианта.
-                      </div>
+                    {book.chapters.length === 0 && (
+                      <p className="py-4 text-center text-sm text-muted-foreground">Нет глав</p>
                     )}
                   </div>
-                </div>
+                </ScrollArea>
               </CardContent>
             </Card>
-          ) : (
-            <Card className="rounded-3xl p-8 text-center">
-              <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-              <p className="text-muted-foreground">Выберите главу для редактирования</p>
-            </Card>
-          )}
-        </main>
-
-        <aside
-          className={cn(
-            'w-full',
-            activePrimaryTab === 'editor' && chaptersPanelVisible ? 'block' : 'hidden',
-            'lg:sticky lg:top-6 lg:self-start'
-          )}
-        >
-          <Card className="rounded-3xl border-border/70 bg-card/70 backdrop-blur">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Главы</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void handleCreateChapter()
-                  }}
-                  disabled={creatingChapter}
-                  className="rounded-full"
-                >
-                  {creatingChapter ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="h-3.5 w-3.5" />
-                  )}
-                  Глава
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="overflow-hidden p-2">
-              <ScrollArea className="h-[min(70vh,calc(100vh-16rem))] pr-2">
-                <div className="space-y-1">
-                  {book.chapters.map((chapter) => (
-                    <button
-                      key={chapter.id}
-                      onClick={() => {
-                        const nextVariant = chapter.variants.some(
-                          (variant) => variant.variantType === activeVariant
-                        )
-                          ? activeVariant
-                          : 'original'
-
-                        requestTransition({
-                          type: 'chapter',
-                          chapterId: chapter.id,
-                          variantType: nextVariant,
-                        })
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-2 overflow-hidden rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
-                        selectedChapterId === chapter.id
-                          ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                      )}
-                      style={{
-                        paddingInlineStart: `${0.75 + Math.max(0, chapter.level - 1) * 1.25}rem`,
-                      }}
-                    >
-                      <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                        {chapter.position + 1}.
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
-                      {chapter.level > 1 && (
-                        <Badge
-                          variant="outline"
-                          className="rounded-full px-1.5 py-0 text-[10px]"
-                        >
-                          L{chapter.level}
-                        </Badge>
-                      )}
-                      {chapter.variants.length > 1 && (
-                        <Badge
-                          variant="secondary"
-                          className="ml-auto rounded-full px-1.5 py-0 text-[10px]"
-                        >
-                          {chapter.variants.length}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-
-                  {book.chapters.length === 0 && (
-                    <p className="py-4 text-center text-sm text-muted-foreground">Нет глав</p>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </aside>
+          </aside>
+        </div>
       </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -1922,7 +1971,7 @@ export default function BookEditorPage() {
                   ? 'Будут обновлены все варианты из шаблонов.'
                   : <>Будет обновлена только версия <strong>{activeTab?.label || activeVariant}</strong>.</>}
               </span>
-              {activeVariant !== 'original' && currentVariant?.editedByAuthor && (
+              {activeVariant !== 'original' && (loadedChapterVariant?.editedByAuthor ?? currentVariant?.editedByAuthor) && (
                 <span className="block text-destructive">
                   Сейчас в этой версии есть авторские правки. Генерация перезапишет их.
                 </span>
