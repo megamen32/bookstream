@@ -42,6 +42,10 @@ interface FeedReaderProps {
   highlightParagraphEndId?: string | null
   highlightStartOffset?: number | null
   highlightEndOffset?: number | null
+  focusParagraphId?: string | null
+  focusParagraphEndId?: string | null
+  focusStartOffset?: number | null
+  focusEndOffset?: number | null
   onQuoteFocusHandled?: () => void
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
@@ -106,6 +110,10 @@ export default function FeedReader({
   highlightParagraphEndId,
   highlightStartOffset,
   highlightEndOffset,
+  focusParagraphId,
+  focusParagraphEndId,
+  focusStartOffset,
+  focusEndOffset,
   onQuoteFocusHandled,
   restoreRequest,
   scrollToChapterId,
@@ -154,6 +162,8 @@ export default function FeedReader({
       ]),
     ) as Record<string, Map<string, number>>
   ), [loadedSections])
+
+  const hasPreciseFocusQuote = Number.isFinite(focusStartOffset) && Number.isFinite(focusEndOffset)
 
   const quoteHighlightRangesByChapter = useMemo(() => {
     if (!highlightParagraphId || !hasPreciseQuoteHighlight) {
@@ -435,13 +445,13 @@ export default function FeedReader({
   }, [chapterLoader, onActiveChapterChange, onScrollToChapterHandled, scrollToChapterId, virtualFeed])
 
   useEffect(() => {
-    const quoteFocusKey = highlightParagraphId
+    const quoteFocusKey = focusParagraphId
       ? [
           activeChapterId || '',
-          highlightParagraphId,
-          highlightParagraphEndId || '',
-          highlightStartOffset ?? '',
-          highlightEndOffset ?? '',
+          focusParagraphId,
+          focusParagraphEndId || '',
+          focusStartOffset ?? '',
+          focusEndOffset ?? '',
         ].join(':')
       : null
 
@@ -459,7 +469,7 @@ export default function FeedReader({
       quoteFocusTimeoutRef.current = null
     }
 
-    if (!initialScrollReady || !highlightParagraphId || !scrollRef.current || !activeChapterId || !quoteFocusKey) {
+    if (!initialScrollReady || !focusParagraphId || !scrollRef.current || !activeChapterId || !quoteFocusKey) {
       return
     }
 
@@ -485,7 +495,7 @@ export default function FeedReader({
         return
       }
 
-      const target = await waitForQuoteTarget(scrollRef.current, highlightParagraphId)
+      const target = await waitForQuoteTarget(scrollRef.current, focusParagraphId)
       if (!target || cancelled || !scrollRef.current) {
         return
       }
@@ -499,11 +509,11 @@ export default function FeedReader({
       }
       quoteFocusPulseNodesRef.current = pulseNodes
 
-      if (!hasPreciseQuoteHighlight) {
+      if (!hasPreciseFocusQuote) {
         const frames = collectParagraphRangeElements(
           scrollRef.current,
-          highlightParagraphId,
-          highlightParagraphEndId,
+          focusParagraphId,
+          focusParagraphEndId,
         )
         for (const node of frames) {
           node.classList.add('bookstream-quote-frame')
@@ -548,11 +558,11 @@ export default function FeedReader({
     }
   }, [
     activeChapterId,
-    hasPreciseQuoteHighlight,
-    highlightEndOffset,
-    highlightParagraphEndId,
-    highlightParagraphId,
-    highlightStartOffset,
+    focusEndOffset,
+    focusParagraphEndId,
+    focusParagraphId,
+    focusStartOffset,
+    hasPreciseFocusQuote,
     initialScrollReady,
   ])
 

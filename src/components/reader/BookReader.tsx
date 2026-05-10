@@ -46,6 +46,8 @@ interface BookReaderProps {
   highlightParagraphEndId?: string | null
   highlightStartOffset?: number | null
   highlightEndOffset?: number | null
+  focusParagraphId?: string | null
+  focusParagraphEndId?: string | null
   prefetchNextChapter?: () => Promise<void> | void
   prefetchPrevChapter?: () => Promise<void> | void
   bookProgressPercent: number
@@ -86,6 +88,8 @@ export default function BookReader({
   highlightParagraphEndId,
   highlightStartOffset,
   highlightEndOffset,
+  focusParagraphId,
+  focusParagraphEndId,
   prefetchNextChapter,
   prefetchPrevChapter,
   bookProgressPercent,
@@ -558,11 +562,11 @@ export default function BookReader({
   }, [paragraphs, pageSize.width, pageSize.height, fontSize, lineHeight, chapterId, chapterTitle])
 
   useEffect(() => {
-    if (!highlightParagraphId || quoteFocusAppliedRef.current || pages.length === 0) return
+    if (!focusParagraphId || quoteFocusAppliedRef.current || pages.length === 0) return
 
     const targetPageIndex = pages.findIndex((page) =>
       page.some((block) =>
-        block.paragraph.id === highlightParagraphId || block.paragraph.id === highlightParagraphEndId,
+        block.paragraph.id === focusParagraphId || block.paragraph.id === focusParagraphEndId,
       ),
     )
 
@@ -574,7 +578,7 @@ export default function BookReader({
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [highlightParagraphEndId, highlightParagraphId, pages])
+  }, [focusParagraphEndId, focusParagraphId, pages])
 
   useEffect(() => {
     for (const node of quoteHighlightNodesRef.current) {

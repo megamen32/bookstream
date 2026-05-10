@@ -83,6 +83,7 @@ test.describe('feed reader interactions', () => {
     await expect(targetParagraph).not.toHaveClass(/bookstream-quote-focus-pulse/)
     await expect(shell).toHaveAttribute('data-quote-focus-handled-count', '1')
     await expect(shell).toHaveAttribute('data-quote-focus-active', 'false')
+    await expect(targetParagraph.locator('.bookstream-word-highlight')).toHaveCount(1)
 
     await feedReader.hover()
     await page.mouse.wheel(0, 900)

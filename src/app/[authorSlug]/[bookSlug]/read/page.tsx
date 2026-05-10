@@ -162,6 +162,10 @@ export default function ReaderPage() {
   const [quoteTargetParagraphEndId, setQuoteTargetParagraphEndId] = useState<string | null>(null)
   const [quoteTargetStartOffset, setQuoteTargetStartOffset] = useState<number | null>(null)
   const [quoteTargetEndOffset, setQuoteTargetEndOffset] = useState<number | null>(null)
+  const [quoteHighlightParagraphId, setQuoteHighlightParagraphId] = useState<string | null>(null)
+  const [quoteHighlightParagraphEndId, setQuoteHighlightParagraphEndId] = useState<string | null>(null)
+  const [quoteHighlightStartOffset, setQuoteHighlightStartOffset] = useState<number | null>(null)
+  const [quoteHighlightEndOffset, setQuoteHighlightEndOffset] = useState<number | null>(null)
   const [restoreRequest, setRestoreRequest] = useState<RestoreRequest | null>(null)
   const [scrollToChapterId, setScrollToChapterId] = useState<string | null>(null)
   const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
@@ -846,6 +850,10 @@ export default function ReaderPage() {
         setQuoteTargetParagraphEndId(urlParagraphEnd)
         setQuoteTargetStartOffset(urlStartOffset)
         setQuoteTargetEndOffset(urlEndOffset)
+        setQuoteHighlightParagraphId(urlParagraph)
+        setQuoteHighlightParagraphEndId(urlParagraphEnd)
+        setQuoteHighlightStartOffset(urlStartOffset)
+        setQuoteHighlightEndOffset(urlEndOffset)
 
         if (!targetChapterId) {
           setLoading(false)
@@ -996,6 +1004,12 @@ export default function ReaderPage() {
     setQuoteTargetParagraphEndId(urlParagraphEnd)
     setQuoteTargetStartOffset(urlStartOffset)
     setQuoteTargetEndOffset(urlEndOffset)
+    if (urlParagraph || urlParagraphEnd) {
+      setQuoteHighlightParagraphId(urlParagraph)
+      setQuoteHighlightParagraphEndId(urlParagraphEnd)
+      setQuoteHighlightStartOffset(urlStartOffset)
+      setQuoteHighlightEndOffset(urlEndOffset)
+    }
   }, [searchParams])
 
   useEffect(() => {
@@ -1223,6 +1237,10 @@ const handleQuoteFocusHandled = useCallback(() => {
     setQuoteTargetParagraphEndId(null)
     setQuoteTargetStartOffset(null)
     setQuoteTargetEndOffset(null)
+    setQuoteHighlightParagraphId(null)
+    setQuoteHighlightParagraphEndId(null)
+    setQuoteHighlightStartOffset(null)
+    setQuoteHighlightEndOffset(null)
 
     const exists = availableVariants.includes(newType)
     if (!exists) {
@@ -1313,6 +1331,10 @@ const handleQuoteFocusHandled = useCallback(() => {
     setQuoteTargetParagraphEndId(null)
     setQuoteTargetStartOffset(null)
     setQuoteTargetEndOffset(null)
+    setQuoteHighlightParagraphId(null)
+    setQuoteHighlightParagraphEndId(null)
+    setQuoteHighlightStartOffset(null)
+    setQuoteHighlightEndOffset(null)
 
     if (readingMode === 'feed') {
       if (shouldReuseLoadedFeedSection(feedSections, newChapterId, variantType)) {
@@ -1338,7 +1360,15 @@ const handleQuoteFocusHandled = useCallback(() => {
         setScrollProgress(0)
       }
     }
-  }, [applyActiveVariantOptions, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, setChapterId, variantType])
+  }, [
+    applyActiveVariantOptions,
+    feedSections,
+    fetchSingleChapter,
+    readingMode,
+    replaceFeedSections,
+    setChapterId,
+    variantType,
+  ])
 
   const goToNextChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
@@ -1752,10 +1782,14 @@ const handleQuoteFocusHandled = useCallback(() => {
               authorSlug={authorSlug}
               bookSlug={bookSlug}
               onSendComment={handleSendComment}
-              highlightParagraphId={quoteTargetParagraphId}
-              highlightParagraphEndId={quoteTargetParagraphEndId}
-              highlightStartOffset={quoteTargetStartOffset}
-              highlightEndOffset={quoteTargetEndOffset}
+              highlightParagraphId={quoteHighlightParagraphId}
+              highlightParagraphEndId={quoteHighlightParagraphEndId}
+              highlightStartOffset={quoteHighlightStartOffset}
+              highlightEndOffset={quoteHighlightEndOffset}
+              focusParagraphId={quoteTargetParagraphId}
+              focusParagraphEndId={quoteTargetParagraphEndId}
+              focusStartOffset={quoteTargetStartOffset}
+              focusEndOffset={quoteTargetEndOffset}
               restoreRequest={restoreRequest}
               scrollToChapterId={scrollToChapterId}
               onScrollToChapterHandled={handleScrollToChapterHandled}
@@ -1787,10 +1821,12 @@ const handleQuoteFocusHandled = useCallback(() => {
                 }
               }}
               setContentNode={setSearchContentNode}
-              highlightParagraphId={quoteTargetParagraphId}
-              highlightParagraphEndId={quoteTargetParagraphEndId}
-              highlightStartOffset={quoteTargetStartOffset}
-              highlightEndOffset={quoteTargetEndOffset}
+              highlightParagraphId={quoteHighlightParagraphId}
+              highlightParagraphEndId={quoteHighlightParagraphEndId}
+              highlightStartOffset={quoteHighlightStartOffset}
+              highlightEndOffset={quoteHighlightEndOffset}
+              focusParagraphId={quoteTargetParagraphId}
+              focusParagraphEndId={quoteTargetParagraphEndId}
               onCenterTap={toggleChrome}
               onNavigate={closeChrome}
             />
