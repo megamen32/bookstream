@@ -832,6 +832,30 @@
   background-color: color-mix(in srgb, rgb(245 158 11) 9%, transparent);
 }
 
+.bookstream-quote-focus-pulse {
+  animation: quoteFocusPulse 1.05s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+@keyframes quoteFocusPulse {
+  0% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+    background-color: color-mix(in srgb, rgb(245 158 11) 8%, transparent);
+  }
+
+  22% {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px rgba(245, 158, 11, 0.22);
+    background-color: color-mix(in srgb, rgb(245 158 11) 18%, transparent);
+  }
+
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+    background-color: color-mix(in srgb, rgb(245 158 11) 8%, transparent);
+  }
+}
+
 .reader-content[data-line-width="narrow"] {
   max-width: 36rem;
 }
