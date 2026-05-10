@@ -42,6 +42,7 @@ interface FeedReaderProps {
   highlightParagraphEndId?: string | null
   highlightStartOffset?: number | null
   highlightEndOffset?: number | null
+  onQuoteFocusHandled?: () => void
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
   onScrollToChapterHandled?: () => void
@@ -105,6 +106,7 @@ export default function FeedReader({
   highlightParagraphEndId,
   highlightStartOffset,
   highlightEndOffset,
+  onQuoteFocusHandled,
   restoreRequest,
   scrollToChapterId,
   onScrollToChapterHandled,
@@ -116,6 +118,9 @@ export default function FeedReader({
   const { fontSize, lineHeight, lineWidth, readerId, showMobileReactionBar } = useReaderStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
+  const quoteFocusPulseNodesRef = useRef<HTMLElement[]>([])
+  const quoteFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastHandledQuoteFocusKeyRef = useRef<string | null>(null)
   const restoreAppliedTokenRef = useRef<number | null>(null)
   const tickingRef = useRef(false)
   const pointerGestureRef = useRef<PointerGestureState | null>(null)
@@ -333,6 +338,24 @@ export default function FeedReader({
     scrollContainerRef: scrollRef,
     overscanScreens: 2.5,
   })
+  const onQuoteFocusHandledRef = useRef(onQuoteFocusHandled)
+  const ensureChapterLoadedRef = useRef(chapterLoader.ensureChapterLoaded)
+  const scrollToChapterRef = useRef(virtualFeed.scrollToChapter)
+  const handleVirtualFeedScrollRef = useRef(virtualFeed.handleScroll)
+
+  useEffect(() => {
+    onQuoteFocusHandledRef.current = onQuoteFocusHandled
+  }, [onQuoteFocusHandled])
+
+  useEffect(() => {
+    ensureChapterLoadedRef.current = chapterLoader.ensureChapterLoaded
+    scrollToChapterRef.current = virtualFeed.scrollToChapter
+    handleVirtualFeedScrollRef.current = virtualFeed.handleScroll
+  }, [
+    chapterLoader.ensureChapterLoaded,
+    virtualFeed.handleScroll,
+    virtualFeed.scrollToChapter,
+  ])
 
   const restoreOffset = useMemo(() => {
     if (restoreRequest) {
@@ -412,24 +435,47 @@ export default function FeedReader({
   }, [chapterLoader, onActiveChapterChange, onScrollToChapterHandled, scrollToChapterId, virtualFeed])
 
   useEffect(() => {
+    const quoteFocusKey = highlightParagraphId
+      ? [
+          activeChapterId || '',
+          highlightParagraphId,
+          highlightParagraphEndId || '',
+          highlightStartOffset ?? '',
+          highlightEndOffset ?? '',
+        ].join(':')
+      : null
+
     for (const node of quoteHighlightNodesRef.current) {
       node.classList.remove('bookstream-quote-frame')
     }
     quoteHighlightNodesRef.current = []
+    for (const node of quoteFocusPulseNodesRef.current) {
+      node.classList.remove('bookstream-quote-focus-pulse')
+    }
+    quoteFocusPulseNodesRef.current = []
 
-    if (!initialScrollReady || !highlightParagraphId || !scrollRef.current || !activeChapterId) {
+    if (quoteFocusTimeoutRef.current) {
+      window.clearTimeout(quoteFocusTimeoutRef.current)
+      quoteFocusTimeoutRef.current = null
+    }
+
+    if (!initialScrollReady || !highlightParagraphId || !scrollRef.current || !activeChapterId || !quoteFocusKey) {
+      return
+    }
+
+    if (lastHandledQuoteFocusKeyRef.current === quoteFocusKey) {
       return
     }
 
     let cancelled = false
 
     const run = async (): Promise<void> => {
-      await chapterLoader.ensureChapterLoaded(activeChapterId)
+      await ensureChapterLoadedRef.current(activeChapterId)
       if (cancelled || !scrollRef.current) {
         return
       }
 
-      virtualFeed.scrollToChapter(activeChapterId, 'auto')
+      scrollToChapterRef.current(activeChapterId, 'auto')
 
       await new Promise<void>((resolve) => {
         window.requestAnimationFrame(() => resolve())
@@ -444,6 +490,15 @@ export default function FeedReader({
         return
       }
 
+      const pulseNodes = [
+        target,
+        target.closest<HTMLElement>('.feed-paragraph'),
+      ].filter((node): node is HTMLElement => Boolean(node))
+      for (const node of pulseNodes) {
+        node.classList.add('bookstream-quote-focus-pulse')
+      }
+      quoteFocusPulseNodesRef.current = pulseNodes
+
       if (!hasPreciseQuoteHighlight) {
         const frames = collectParagraphRangeElements(
           scrollRef.current,
@@ -457,26 +512,48 @@ export default function FeedReader({
       }
 
       scrollQuoteTargetIntoView(scrollRef.current, target)
-      virtualFeed.handleScroll()
+      handleVirtualFeedScrollRef.current()
+
+      quoteFocusTimeoutRef.current = window.setTimeout(() => {
+        for (const node of quoteFocusPulseNodesRef.current) {
+          node.classList.remove('bookstream-quote-focus-pulse')
+        }
+
+        quoteFocusPulseNodesRef.current = []
+        quoteFocusTimeoutRef.current = null
+
+        if (!cancelled) {
+          lastHandledQuoteFocusKeyRef.current = quoteFocusKey
+          onQuoteFocusHandledRef.current?.()
+        }
+      }, 1100)
     }
 
     void run()
 
     return () => {
       cancelled = true
+      if (quoteFocusTimeoutRef.current) {
+        window.clearTimeout(quoteFocusTimeoutRef.current)
+        quoteFocusTimeoutRef.current = null
+      }
       for (const node of quoteHighlightNodesRef.current) {
         node.classList.remove('bookstream-quote-frame')
       }
       quoteHighlightNodesRef.current = []
+      for (const node of quoteFocusPulseNodesRef.current) {
+        node.classList.remove('bookstream-quote-focus-pulse')
+      }
+      quoteFocusPulseNodesRef.current = []
     }
   }, [
     activeChapterId,
-    chapterLoader,
     hasPreciseQuoteHighlight,
+    highlightEndOffset,
     highlightParagraphEndId,
     highlightParagraphId,
+    highlightStartOffset,
     initialScrollReady,
-    virtualFeed,
   ])
 
   useEffect(() => {

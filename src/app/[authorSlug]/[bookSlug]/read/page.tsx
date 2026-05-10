@@ -1118,6 +1118,37 @@ export default function ReaderPage() {
       void prefetchFeedWindow(activeChapterId, variantType, 0, 1)
     }
   }, [activeChapterId, bookData, feedSections, fetchSingleChapter, prefetchFeedWindow, readingMode, variantType])
+  
+const handleQuoteFocusHandled = useCallback(() => {
+  setQuoteTargetParagraphId(null)
+  setQuoteTargetParagraphEndId(null)
+  setQuoteTargetStartOffset(null)
+  setQuoteTargetEndOffset(null)
+
+  const currentUrl = new URL(window.location.href)
+  const params = new URLSearchParams(currentUrl.search)
+
+  params.delete('quote')
+  params.delete('paragraph')
+  params.delete('paragraphEnd')
+  params.delete('paragraphId')
+  params.delete('endParagraphId')
+  params.delete('startOffset')
+  params.delete('endOffset')
+  params.delete('highlightParagraphId')
+  params.delete('highlightParagraphEndId')
+  params.delete('highlightStartOffset')
+  params.delete('highlightEndOffset')
+
+  const nextQuery = params.toString()
+  const nextUrl = nextQuery
+    ? `${currentUrl.pathname}?${nextQuery}`
+    : currentUrl.pathname
+
+  lastQuoteTargetSearchRef.current = nextQuery
+
+  router.replace(nextUrl, { scroll: false })
+}, [router])
 
   const handleActiveChapterChange = useCallback((nextChapterId: string, progress: number, fromScroll: boolean): void => {
     markReaderActivity()
@@ -1732,6 +1763,7 @@ export default function ReaderPage() {
               composerOpenRequest={commentsComposerRequest}
               onSurfaceTap={toggleChrome}
               onNavigate={closeChrome}
+              onQuoteFocusHandled={handleQuoteFocusHandled}
             />
           ) : bookModeSection ? (
             <BookReader
