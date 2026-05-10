@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'bookstream-static-v2'
-const RUNTIME_CACHE = 'bookstream-runtime-v2'
+const STATIC_CACHE = 'bookstream-static-v3'
+const RUNTIME_CACHE = 'bookstream-runtime-v3'
 const STATIC_ASSETS = ['/', '/logo.svg', '/robots.txt']
 
 function resolveStrategy(pathname) {
@@ -16,6 +16,35 @@ function resolveStrategy(pathname) {
   }
 
   return 'cache-first'
+}
+
+function shouldFallbackToCache(response) {
+  return response.status >= 500
+}
+
+async function matchNavigationFallback(request) {
+  const exactMatch = await caches.match(request)
+  if (exactMatch) {
+    return exactMatch
+  }
+
+  const pathMatch = await caches.match(request, { ignoreSearch: true })
+  if (pathMatch) {
+    return pathMatch
+  }
+
+  const rootMatch = await caches.match('/')
+  return rootMatch || null
+}
+
+async function matchRequestFallback(request) {
+  const exactMatch = await caches.match(request)
+  if (exactMatch) {
+    return exactMatch
+  }
+
+  const pathMatch = await caches.match(request, { ignoreSearch: true })
+  return pathMatch || null
 }
 
 self.addEventListener('install', (event) => {
@@ -61,18 +90,26 @@ self.addEventListener('fetch', (event) => {
         const response = await fetch(request)
         const cache = await caches.open(RUNTIME_CACHE)
         if (response.ok) {
-          cache.put(request, response.clone())
-        }
-        return response
-      } catch {
-        const cached = await caches.match(request)
-        if (cached) {
-          return cached
+          await cache.put(request, response.clone())
+          return response
         }
 
-        const root = await caches.match('/')
-        if (root) {
-          return root
+        if (shouldFallbackToCache(response)) {
+          const cached = request.mode === 'navigate'
+            ? await matchNavigationFallback(request)
+            : await matchRequestFallback(request)
+          if (cached) {
+            return cached
+          }
+        }
+
+        return response
+      } catch {
+        const cached = request.mode === 'navigate'
+          ? await matchNavigationFallback(request)
+          : await matchRequestFallback(request)
+        if (cached) {
+          return cached
         }
 
         return new Response('Offline', { status: 503, statusText: 'Offline' })
