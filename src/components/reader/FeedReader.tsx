@@ -64,6 +64,28 @@ interface PointerGestureState {
 
 type VirtualStatus = 'stub' | 'loading' | 'ready' | 'error'
 
+/**
+ * Waits until the quote target paragraph is mounted inside the scroll container.
+ */
+async function waitForQuoteTarget(
+  container: HTMLDivElement,
+  paragraphId: string,
+  maxFrames: number = 24,
+): Promise<HTMLElement | null> {
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    const target = findQuoteParagraphElement(container, paragraphId)
+    if (target) {
+      return target
+    }
+
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve())
+    })
+  }
+
+  return null
+}
+
 export default function FeedReader({
   bookId,
   manifest,
@@ -395,7 +417,7 @@ export default function FeedReader({
     }
     quoteHighlightNodesRef.current = []
 
-    if (!highlightParagraphId || !scrollRef.current || !activeChapterId) {
+    if (!initialScrollReady || !highlightParagraphId || !scrollRef.current || !activeChapterId) {
       return
     }
 
@@ -409,33 +431,33 @@ export default function FeedReader({
 
       virtualFeed.scrollToChapter(activeChapterId, 'auto')
 
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          if (cancelled || !scrollRef.current) {
-            return
-          }
-
-          const target = findQuoteParagraphElement(scrollRef.current, highlightParagraphId)
-          if (!target) {
-            return
-          }
-
-          if (!hasPreciseQuoteHighlight) {
-            const frames = collectParagraphRangeElements(
-              scrollRef.current,
-              highlightParagraphId,
-              highlightParagraphEndId,
-            )
-            for (const node of frames) {
-              node.classList.add('bookstream-quote-frame')
-            }
-            quoteHighlightNodesRef.current = frames
-          }
-
-          scrollQuoteTargetIntoView(scrollRef.current, target)
-          virtualFeed.handleScroll()
-        })
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve())
       })
+
+      if (cancelled || !scrollRef.current) {
+        return
+      }
+
+      const target = await waitForQuoteTarget(scrollRef.current, highlightParagraphId)
+      if (!target || cancelled || !scrollRef.current) {
+        return
+      }
+
+      if (!hasPreciseQuoteHighlight) {
+        const frames = collectParagraphRangeElements(
+          scrollRef.current,
+          highlightParagraphId,
+          highlightParagraphEndId,
+        )
+        for (const node of frames) {
+          node.classList.add('bookstream-quote-frame')
+        }
+        quoteHighlightNodesRef.current = frames
+      }
+
+      scrollQuoteTargetIntoView(scrollRef.current, target)
+      virtualFeed.handleScroll()
     }
 
     void run()
@@ -453,6 +475,7 @@ export default function FeedReader({
     hasPreciseQuoteHighlight,
     highlightParagraphEndId,
     highlightParagraphId,
+    initialScrollReady,
     virtualFeed,
   ])
 
@@ -590,6 +613,8 @@ export default function FeedReader({
         <TextSelector
           containerRef={scrollRef}
           variantId={selectorVariantId}
+          authorSlug={authorSlug}
+          bookSlug={bookSlug}
           onSelectionAnnotation={handleSelectionAnnotation}
         />
 

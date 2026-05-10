@@ -33,6 +33,19 @@ interface VoteState {
   upvoteCount: number
 }
 
+interface AnnotationUpdateDetail {
+  action?: 'added' | 'removed'
+  annotationId?: string | null
+  kind?: string
+  chapterId?: string
+  variantType?: string
+  selectedText?: string
+  paragraphId?: string
+  endParagraphId?: string | null
+  startOffset?: number
+  endOffset?: number
+}
+
 interface ChapterQuote {
   id: string
   text: string
@@ -68,6 +81,19 @@ function dedupeQuotes(quotes: ChapterQuote[]): ChapterQuote[] {
     seen.add(normalized)
     return true
   })
+}
+
+function mergeChapterQuotes(primary: ChapterQuote[], secondary: ChapterQuote[]): ChapterQuote[] {
+  const merged = [...primary]
+
+  for (const quote of secondary) {
+    if (merged.some((entry) => entry.id === quote.id)) {
+      continue
+    }
+    merged.push(quote)
+  }
+
+  return merged
 }
 
 function buildReplyQuote(comment: ReaderComment): ReplyQuote | null {
@@ -115,6 +141,8 @@ export default function ChapterAfterword({
   const [visibleCommentCount, setVisibleCommentCount] = useState(3)
   const [quotesExpanded, setQuotesExpanded] = useState(false)
   const [loadedQuotes, setLoadedQuotes] = useState<ChapterQuote[] | null>(null)
+  const [quoteSourceOverride, setQuoteSourceOverride] = useState<ChapterQuote[] | null>(null)
+  const [quoteCountOverride, setQuoteCountOverride] = useState<number | null>(null)
   const [loadingQuotes, setLoadingQuotes] = useState(false)
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [composerText, setComposerText] = useState('')
@@ -131,6 +159,8 @@ export default function ChapterAfterword({
     setVisibleCommentCount(3)
     setQuotesExpanded(false)
     setLoadedQuotes(null)
+    setQuoteSourceOverride(null)
+    setQuoteCountOverride(null)
     setLoadingQuotes(false)
     setComposerText('')
     setComposerError(null)
@@ -194,30 +224,89 @@ export default function ChapterAfterword({
     }))
   }, [preview?.quotesPreview])
 
+  const currentQuoteSource = loadedQuotes || quoteSourceOverride || baseQuotes
+  const displayedQuotesCount = quoteCountOverride ?? stats?.quotesCount ?? 0
+
   const quotes = useMemo(() => {
-    const source = loadedQuotes || baseQuotes
-    const chapterQuotes = source.filter((quote) => quote.chapterId === chapterId)
+    const chapterQuotes = currentQuoteSource.filter((quote) => quote.chapterId === chapterId)
     const deduped = dedupeQuotes(chapterQuotes)
     const sorted = sortQuotesByTop(deduped)
     return quotesExpanded ? sorted : sorted.slice(0, 2)
-  }, [baseQuotes, chapterId, loadedQuotes, quotesExpanded])
+  }, [chapterId, currentQuoteSource, quotesExpanded])
 
   const fullQuoteCount = useMemo(() => {
-    const source = loadedQuotes || baseQuotes
-    const chapterQuotes = source.filter((quote) => quote.chapterId === chapterId)
+    const chapterQuotes = currentQuoteSource.filter((quote) => quote.chapterId === chapterId)
     return dedupeQuotes(chapterQuotes).length
-  }, [baseQuotes, chapterId, loadedQuotes])
+  }, [chapterId, currentQuoteSource])
 
   const hasMoreQuotes = fullQuoteCount > quotes.length
   const hasRichContent = Boolean(
     stats && (
       stats.commentsCount > 0 ||
       stats.reactionsCount > 0 ||
-      stats.quotesCount > 0 ||
+      displayedQuotesCount > 0 ||
       comments.length > 0 ||
       quotes.length > 0
     ),
   )
+
+  useEffect(() => {
+    const handleAnnotationUpdated = (event: Event): void => {
+      const detail = (event as CustomEvent<AnnotationUpdateDetail>).detail
+      if (!detail || detail.kind !== 'quote' || detail.chapterId !== chapterId || !detail.annotationId) {
+        return
+      }
+
+      const currentSource = loadedQuotes || quoteSourceOverride || baseQuotes
+      const nextSource = [...currentSource]
+      const existingIndex = nextSource.findIndex((quote) => quote.id === detail.annotationId)
+
+      if (detail.action === 'removed') {
+        if (existingIndex >= 0) {
+          nextSource.splice(existingIndex, 1)
+        }
+        setQuoteCountOverride((current) => Math.max(0, (current ?? stats?.quotesCount ?? 0) - 1))
+        setQuoteSourceOverride(nextSource)
+        return
+      }
+
+      if (!detail.selectedText || !detail.paragraphId) {
+        return
+      }
+
+      const nextQuote: ChapterQuote = {
+        id: detail.annotationId,
+        text: detail.selectedText,
+        variantType: detail.variantType || 'original',
+        paragraphId: detail.paragraphId,
+        paragraphEndId: detail.endParagraphId ?? null,
+        startOffset: Number.isFinite(detail.startOffset) ? Number(detail.startOffset) : 0,
+        endOffset: Number.isFinite(detail.endOffset) ? Number(detail.endOffset) : 0,
+        upvoteCount: 0,
+        reacted: false,
+        chapterId,
+        createdAt: new Date().toISOString(),
+      }
+
+      if (existingIndex >= 0) {
+        nextSource[existingIndex] = nextQuote
+      } else {
+        nextSource.unshift(nextQuote)
+      }
+
+      setQuoteCountOverride((current) => (
+        existingIndex >= 0
+          ? current ?? stats?.quotesCount ?? 0
+          : (current ?? stats?.quotesCount ?? 0) + 1
+      ))
+      setQuoteSourceOverride(nextSource)
+    }
+
+    window.addEventListener('bookstream:annotation-updated', handleAnnotationUpdated)
+    return () => {
+      window.removeEventListener('bookstream:annotation-updated', handleAnnotationUpdated)
+    }
+  }, [baseQuotes, chapterId, loadedQuotes, quoteSourceOverride, stats?.quotesCount])
 
   const afterwordClassName = [
     'chapter-afterword',
@@ -307,7 +396,7 @@ export default function ChapterAfterword({
 
         const data = await response.json() as { quotes?: ChapterQuote[] }
         const fetchedQuotes = Array.isArray(data.quotes) ? data.quotes : []
-        setLoadedQuotes(fetchedQuotes.map((quote) => ({
+        const normalizedFetchedQuotes = fetchedQuotes.map((quote) => ({
           id: quote.id,
           text: quote.text,
           variantType: quote.variantType,
@@ -319,7 +408,8 @@ export default function ChapterAfterword({
           reacted: quote.reacted,
           chapterId: quote.chapterId,
           createdAt: quote.createdAt,
-        })))
+        }))
+        setLoadedQuotes(mergeChapterQuotes(normalizedFetchedQuotes, quoteSourceOverride || []))
       } catch (error) {
         console.error('Failed to load chapter quotes:', error)
       } finally {
@@ -445,7 +535,7 @@ export default function ChapterAfterword({
             <div className="chapter-afterword__title">Что думают другие</div>
             <div className="chapter-afterword__subtitle">
               {formatCount(stats.commentsCount, 'комментарий', 'комментария')}
-              {stats.quotesCount > 0 ? ` · ${formatCount(stats.quotesCount, 'цитата', 'цитаты')}` : ''}
+              {displayedQuotesCount > 0 ? ` · ${formatCount(displayedQuotesCount, 'цитата', 'цитаты')}` : ''}
               {stats.reactionsCount > 0 ? ` · ${likesLabel}` : ''}
             </div>
           </div>

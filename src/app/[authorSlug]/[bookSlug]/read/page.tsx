@@ -1,6 +1,6 @@
 'use client'
 
-import { startTransition, useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { startTransition, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -177,6 +177,7 @@ export default function ReaderPage() {
   const scrollProgressRef = useRef(0)
   const quoteTargetParagraphIdRef = useRef<string | null>(null)
   const quoteTargetParagraphEndIdRef = useRef<string | null>(null)
+  const lastQuoteTargetSearchRef = useRef<string | null>(null)
   const chapterSectionCacheRef = useRef(new Map<string, FeedSectionData>())
   const chapterSectionRequestRef = useRef(new Map<string, Promise<FeedSectionData | null>>())
   const feedWindowPrefetchRef = useRef(new Set<string>())
@@ -937,13 +938,32 @@ export default function ReaderPage() {
     }
 
     const currentUrl = new URL(window.location.href)
+    const currentSearchParams = new URLSearchParams(currentUrl.search)
+    const currentUrlParagraphId = currentSearchParams.get('paragraph')
+    const currentUrlParagraphEndId = currentSearchParams.get('paragraphEnd')
+    const currentUrlStartOffsetRaw = currentSearchParams.get('startOffset')
+    const currentUrlEndOffsetRaw = currentSearchParams.get('endOffset')
+    const currentUrlStartOffset = Number.isFinite(Number(currentUrlStartOffsetRaw))
+      ? Number(currentUrlStartOffsetRaw)
+      : null
+    const currentUrlEndOffset = Number.isFinite(Number(currentUrlEndOffsetRaw))
+      ? Number(currentUrlEndOffsetRaw)
+      : null
+    const shouldPreserveUrlQuoteTarget = (
+      !quoteTargetParagraphId
+      && !quoteTargetParagraphEndId
+      && Boolean(currentUrlParagraphId || currentUrlParagraphEndId)
+      && currentSearchParams.get('chapter') === activeChapterId
+      && (currentSearchParams.get('variant') || variantType) === variantType
+    )
+
     const nextSearch = buildReaderLocationSearch({
       chapterId: activeChapterId,
       variantType,
-      paragraphId: quoteTargetParagraphId,
-      paragraphEndId: quoteTargetParagraphEndId,
-      startOffset: quoteTargetStartOffset,
-      endOffset: quoteTargetEndOffset,
+      paragraphId: shouldPreserveUrlQuoteTarget ? currentUrlParagraphId : quoteTargetParagraphId,
+      paragraphEndId: shouldPreserveUrlQuoteTarget ? currentUrlParagraphEndId : quoteTargetParagraphEndId,
+      startOffset: shouldPreserveUrlQuoteTarget ? currentUrlStartOffset : quoteTargetStartOffset,
+      endOffset: shouldPreserveUrlQuoteTarget ? currentUrlEndOffset : quoteTargetEndOffset,
       readingMode,
     })
     const nextHref = nextSearch ? `${currentUrl.pathname}?${nextSearch}` : currentUrl.pathname
@@ -952,6 +972,31 @@ export default function ReaderPage() {
       window.history.replaceState(window.history.state, '', nextHref)
     }
   }, [activeChapterId, quoteTargetEndOffset, quoteTargetParagraphEndId, quoteTargetParagraphId, quoteTargetStartOffset, readingMode, variantType])
+
+  useLayoutEffect(() => {
+    if (!hasResolvedInitialLocation.current) {
+      return
+    }
+
+    const effectiveSearch = resolveReaderLocationSearch(searchParams.toString(), window.location.search)
+    if (effectiveSearch === lastQuoteTargetSearchRef.current) {
+      return
+    }
+
+    lastQuoteTargetSearchRef.current = effectiveSearch
+    const effectiveSearchParams = new URLSearchParams(effectiveSearch)
+    const urlParagraph = effectiveSearchParams.get('paragraph')
+    const urlParagraphEnd = effectiveSearchParams.get('paragraphEnd')
+    const urlStartOffsetRaw = effectiveSearchParams.get('startOffset')
+    const urlEndOffsetRaw = effectiveSearchParams.get('endOffset')
+    const urlStartOffset = Number.isFinite(Number(urlStartOffsetRaw)) ? Number(urlStartOffsetRaw) : null
+    const urlEndOffset = Number.isFinite(Number(urlEndOffsetRaw)) ? Number(urlEndOffsetRaw) : null
+
+    setQuoteTargetParagraphId(urlParagraph)
+    setQuoteTargetParagraphEndId(urlParagraphEnd)
+    setQuoteTargetStartOffset(urlStartOffset)
+    setQuoteTargetEndOffset(urlEndOffset)
+  }, [searchParams])
 
   useEffect(() => {
     if (!hasResolvedInitialLocation.current || !bookData || !readerId) {
@@ -962,31 +1007,11 @@ export default function ReaderPage() {
     const effectiveSearchParams = new URLSearchParams(effectiveSearch)
     const urlChapter = effectiveSearchParams.get('chapter')
     const urlVariant = effectiveSearchParams.get('variant')
-    const urlParagraph = effectiveSearchParams.get('paragraph')
-    const urlParagraphEnd = effectiveSearchParams.get('paragraphEnd')
-    const urlStartOffsetRaw = effectiveSearchParams.get('startOffset')
-    const urlEndOffsetRaw = effectiveSearchParams.get('endOffset')
-    const urlStartOffset = Number.isFinite(Number(urlStartOffsetRaw)) ? Number(urlStartOffsetRaw) : null
-    const urlEndOffset = Number.isFinite(Number(urlEndOffsetRaw)) ? Number(urlEndOffsetRaw) : null
 
     const nextChapterId = urlChapter && bookData.chapters.some((chapter) => chapter.id === urlChapter)
       ? urlChapter
       : activeChapterRef.current
     const nextVariant = (urlVariant || variantTypeRef.current) as VariantType
-
-    if (
-      urlParagraph !== quoteTargetParagraphIdRef.current ||
-      urlParagraphEnd !== quoteTargetParagraphEndIdRef.current ||
-      urlStartOffset !== quoteTargetStartOffset ||
-      urlEndOffset !== quoteTargetEndOffset
-    ) {
-      startTransition(() => {
-        setQuoteTargetParagraphId(urlParagraph)
-        setQuoteTargetParagraphEndId(urlParagraphEnd)
-        setQuoteTargetStartOffset(urlStartOffset)
-        setQuoteTargetEndOffset(urlEndOffset)
-      })
-    }
 
     if (!nextChapterId) {
       return
@@ -1032,8 +1057,6 @@ export default function ReaderPage() {
     bookData,
     feedSections,
     fetchSingleChapter,
-    quoteTargetEndOffset,
-    quoteTargetStartOffset,
     readerId,
     readingMode,
     replaceFeedSections,
@@ -1103,7 +1126,11 @@ export default function ReaderPage() {
     setScrollProgress(progress)
     saveReadingProgress(nextChapterId, progress)
 
-    if (fromScroll) {
+    const hasActiveQuoteTarget = Boolean(
+      quoteTargetParagraphIdRef.current || quoteTargetParagraphEndIdRef.current,
+    )
+
+    if (fromScroll && !hasActiveQuoteTarget) {
       setQuoteTargetParagraphId(null)
       setQuoteTargetParagraphEndId(null)
       setQuoteTargetStartOffset(null)
@@ -1711,6 +1738,8 @@ export default function ReaderPage() {
               key={`${activeChapterId}-${variantType}-book`}
               paragraphs={bookModeSection.variant.paragraphs}
               variantId={bookModeSection.variant.id}
+              authorSlug={authorSlug}
+              bookSlug={bookSlug}
               hasNextChapter={hasNextChapter}
               hasPrevChapter={hasPrevChapter}
               bookProgressPercent={bookProgressPercent}

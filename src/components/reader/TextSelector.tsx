@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { Copy, Flame, Quote, Reply, SmilePlus } from 'lucide-react'
+import { Copy, Flame, Link2, Quote, Reply, SmilePlus } from 'lucide-react'
 import { useReaderStore } from '@/lib/store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import type { AnnotationKind } from '@/lib/annotations'
 import { getOfflineBookRecord, toggleOfflineAnnotation } from '@/lib/offline-client'
+import { buildQuoteReadHref } from '@/lib/quote-navigation'
 
 export interface SelectionAnnotationRange {
   id?: string
@@ -25,6 +26,8 @@ export interface SelectionAnnotationRange {
 interface TextSelectorProps {
   containerRef: React.RefObject<HTMLDivElement | null>
   variantId: string
+  authorSlug: string
+  bookSlug: string
   onSelectionAnnotation?: (range: SelectionAnnotationRange, active: boolean) => void
 }
 
@@ -48,7 +51,7 @@ interface ReactionBurst {
 }
 
 const TOOLBAR_HEIGHT = 56
-const TOOLBAR_WIDTH = 248
+const TOOLBAR_WIDTH = 296
 const TOOLBAR_MARGIN = 8
 const TOOLBAR_OFFSET = 12
 const EMOJI_PICKER_GROUPS: Array<{ title: string; emojis: string[] }> = [
@@ -104,9 +107,29 @@ function ToolbarButton({ label, onClick, children }: ToolbarButtonProps): React.
   )
 }
 
-export default function TextSelector({ containerRef, variantId, onSelectionAnnotation }: TextSelectorProps) {
+async function copyToClipboard(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    return
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+}
+
+export default function TextSelector({
+  containerRef,
+  variantId,
+  authorSlug,
+  bookSlug,
+  onSelectionAnnotation,
+}: TextSelectorProps) {
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copiedState, setCopiedState] = useState<'text' | 'link' | null>(null)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [activeParagraphIds, setActiveParagraphIds] = useState<string[]>([])
   const [reactionBurst, setReactionBurst] = useState<ReactionBurst | null>(null)
@@ -285,29 +308,34 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
     window.getSelection()?.removeAllRanges()
   }
 
+  const completeCopyAction = useCallback((kind: 'text' | 'link'): void => {
+    setCopiedState(kind)
+    window.setTimeout(() => {
+      setCopiedState(null)
+      setToolbar(null)
+    }, 1000)
+  }, [])
+
   const handleCopy = async () => {
     if (!toolbar) return
-    try {
-      await navigator.clipboard.writeText(toolbar.selectedText)
-      setCopied(true)
-      setTimeout(() => {
-        setCopied(false)
-        setToolbar(null)
-      }, 1000)
-    } catch {
-      // fallback
-      const ta = document.createElement('textarea')
-      ta.value = toolbar.selectedText
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-      setCopied(true)
-      setTimeout(() => {
-        setCopied(false)
-        setToolbar(null)
-      }, 1000)
-    }
+    await copyToClipboard(toolbar.selectedText)
+    completeCopyAction('text')
+  }
+
+  const handleCopyLink = async () => {
+    if (!toolbar) return
+
+    const href = buildQuoteReadHref(authorSlug, bookSlug, {
+      chapterId: toolbar.chapterId,
+      variantType: toolbar.variantType,
+      paragraphId: toolbar.paragraphId,
+      paragraphEndId: toolbar.endParagraphId,
+      startOffset: toolbar.startOffset,
+      endOffset: toolbar.endOffset,
+    })
+
+    await copyToClipboard(new URL(href, window.location.origin).toString())
+    completeCopyAction('link')
   }
 
   const handleAnnotationToggle = async (kind: AnnotationKind, emoji?: string | null) => {
@@ -441,10 +469,17 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
       window.dispatchEvent(
         new CustomEvent('bookstream:annotation-updated', {
           detail: {
+            action: payload.action || 'added',
+            annotationId: payload.annotation?.id || null,
             kind,
+            chapterId: toolbar.chapterId,
+            variantType: toolbar.variantType,
+            selectedText: toolbar.selectedText,
             paragraphId: toolbar.paragraphId,
             endParagraphId: toolbar.endParagraphId,
             chapterVariantId: toolbar.variantId,
+            startOffset: toolbar.startOffset,
+            endOffset: toolbar.endOffset,
           },
         }),
       )
@@ -492,8 +527,17 @@ export default function TextSelector({ containerRef, variantId, onSelectionAnnot
           <ToolbarButton label="Ответить" onClick={handleReply}>
             <Reply size={16} />
           </ToolbarButton>
-          <ToolbarButton label={copied ? 'Скопировано' : 'Копировать'} onClick={handleCopy}>
+          <ToolbarButton
+            label={copiedState === 'text' ? 'Текст скопирован' : 'Копировать текст'}
+            onClick={() => void handleCopy()}
+          >
             <Copy size={16} />
+          </ToolbarButton>
+          <ToolbarButton
+            label={copiedState === 'link' ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+            onClick={() => void handleCopyLink()}
+          >
+            <Link2 size={16} />
           </ToolbarButton>
           <ToolbarButton label="В цитаты" onClick={() => void handleAnnotationToggle('quote')}>
             <Quote size={16} />

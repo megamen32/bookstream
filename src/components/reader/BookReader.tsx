@@ -33,6 +33,8 @@ interface Paragraph {
 interface BookReaderProps {
   paragraphs: Paragraph[]
   variantId: string
+  authorSlug: string
+  bookSlug: string
   hasNextChapter: boolean
   hasPrevChapter: boolean
   onNextChapter: () => void
@@ -71,6 +73,8 @@ type ReaderPage = PageParagraphBlock[]
 export default function BookReader({
   paragraphs,
   variantId,
+  authorSlug,
+  bookSlug,
   hasNextChapter,
   hasPrevChapter,
   onNextChapter,
@@ -1018,6 +1022,8 @@ export default function BookReader({
       <TextSelector
         containerRef={activePageRef}
         variantId={variantId}
+        authorSlug={authorSlug}
+        bookSlug={bookSlug}
         onSelectionAnnotation={handleSelectionAnnotation}
       />
 
