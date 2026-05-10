@@ -145,7 +145,7 @@ export function EditorToolbar({
   }
 
   return (
-    <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-t-3xl border-b bg-background/85 px-3 py-2 backdrop-blur md:px-4">
+    <div className="sticky top-0 z-20 flex w-full flex-col gap-3 rounded-t-3xl border-b bg-background/85 px-3 py-2 backdrop-blur md:px-4 xl:flex-row xl:items-center xl:justify-between">
       <input
         ref={fileInputRef}
         type="file"
@@ -156,7 +156,7 @@ export function EditorToolbar({
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-1 xl:flex-1">
         <ToolbarButton
           title="Обычный текст"
           active={editor.isActive('paragraph')}
@@ -427,7 +427,7 @@ export function EditorToolbar({
         </ToolbarButton>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
         <div className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:block">
           {getSaveStatusLabel(saveStatus, saving)}
         </div>

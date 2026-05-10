@@ -3,10 +3,10 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type React from 'react'
 import { useReaderStore } from '@/lib/store'
-import type { ReplyQuote } from '@/lib/store'
 import './FeedReader.css'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
+import type { ReaderComment } from './comment-types'
 import type { BookChapterManifestItem, FeedSectionData } from './feed-types'
 import { findQuoteParagraphElement, scrollQuoteTargetIntoView } from '@/lib/quote-navigation'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
@@ -24,6 +24,7 @@ import { resolveActiveChapterFromVirtualLayout, useVirtualBookFeed } from './use
 import { useInitialScrollLock } from './useInitialScrollLock'
 
 interface FeedReaderProps {
+  bookId: string
   manifest: BookChapterManifestItem[]
   initialSections: FeedSectionData[]
   activeChapterId: string | null
@@ -34,6 +35,7 @@ interface FeedReaderProps {
   onToggleBookmark?: (chapterId: string, stableKey: string) => void
   authorSlug: string
   bookSlug: string
+  onSendComment?: (body: string) => Promise<ReaderComment | null>
   showCommentsAfterChapter?: boolean
   showReactionBar?: boolean
   highlightParagraphId?: string | null
@@ -43,7 +45,8 @@ interface FeedReaderProps {
   restoreRequest?: { chapterId: string; scrollPercent: number; token: number } | null
   scrollToChapterId?: string | null
   onScrollToChapterHandled?: () => void
-  onOpenChapterComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
+  composerOpenChapterId?: string | null
+  composerOpenRequest?: number
   onSurfaceTap?: () => void
   onNavigate?: () => void
 }
@@ -62,6 +65,7 @@ interface PointerGestureState {
 type VirtualStatus = 'stub' | 'loading' | 'ready' | 'error'
 
 export default function FeedReader({
+  bookId,
   manifest,
   initialSections,
   activeChapterId,
@@ -72,6 +76,7 @@ export default function FeedReader({
   onToggleBookmark,
   authorSlug,
   bookSlug,
+  onSendComment,
   showCommentsAfterChapter = true,
   showReactionBar = true,
   highlightParagraphId,
@@ -81,11 +86,12 @@ export default function FeedReader({
   restoreRequest,
   scrollToChapterId,
   onScrollToChapterHandled,
-  onOpenChapterComments,
+  composerOpenChapterId,
+  composerOpenRequest = 0,
   onSurfaceTap,
   onNavigate,
 }: FeedReaderProps) {
-  const { fontSize, lineHeight, lineWidth, bookId, readerId, showMobileReactionBar } = useReaderStore()
+  const { fontSize, lineHeight, lineWidth, readerId, showMobileReactionBar } = useReaderStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const restoreAppliedTokenRef = useRef<number | null>(null)
@@ -619,16 +625,19 @@ export default function FeedReader({
                     lineWidth={lineWidth}
                     bookmarkedKeys={bookmarkedKeys}
                     onToggleBookmark={onToggleBookmark}
-                    authorSlug={authorSlug}
-                    bookSlug={bookSlug}
-                    showCommentsAfterChapter={showCommentsAfterChapter}
-                    showReactionBar={showReactionBar}
-                    showMobileReactionBar={showMobileReactionBar}
-                    highlightParagraphId={highlightParagraphId}
-                    hasPreciseQuoteHighlight={hasPreciseQuoteHighlight}
-                    onOpenChapterComments={onOpenChapterComments}
-                    getTextRangesForParagraph={getTextRangesForParagraph}
-                  />
+                  authorSlug={authorSlug}
+                  bookSlug={bookSlug}
+                  showCommentsAfterChapter={showCommentsAfterChapter}
+                  showReactionBar={showReactionBar}
+                  showMobileReactionBar={showMobileReactionBar}
+                  highlightParagraphId={highlightParagraphId}
+                  hasPreciseQuoteHighlight={hasPreciseQuoteHighlight}
+                  bookId={bookId}
+                  composerOpenChapterId={composerOpenChapterId}
+                  composerOpenRequest={composerOpenRequest}
+                  onSendComment={onSendComment}
+                  getTextRangesForParagraph={getTextRangesForParagraph}
+                />
                 </MeasuredChapter>
               )
             })}

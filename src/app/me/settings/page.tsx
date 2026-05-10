@@ -220,6 +220,44 @@ export default function UserSettingsPage(): React.ReactElement {
     }
   }
 
+  const handleClearPassword = async (): Promise<void> => {
+    if (!readerId) {
+      setError('readerId ещё не готов, попробуйте через секунду.')
+      setSaved(false)
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const response = await fetch('/api/readers/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerId,
+          currentUsername: draftUsername.trim() || username,
+          password: '',
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string }
+        throw new Error(payload.error || 'Не удалось снять пароль')
+      }
+
+      setHasAdminPassword(false)
+      setDraftPassword('')
+      setDraftPasswordConfirm('')
+      setError(null)
+      setSaved(true)
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : 'Не удалось снять пароль.')
+      setSaved(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <UserAreaLayout
       title="Настройки читателя"
@@ -253,7 +291,7 @@ export default function UserSettingsPage(): React.ReactElement {
                 Сейчас: <span className="font-medium text-foreground">{username || 'не задано'}</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                Логин в админку всегда совпадает с этим именем.
+                Логин в админку всегда совпадает с этим именем. Пароль можно не задавать.
               </p>
             </div>
 
@@ -321,7 +359,7 @@ export default function UserSettingsPage(): React.ReactElement {
                   Пароль для админки
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  Любой читатель может задать себе пароль и получить свою простую админку для загрузки книг.
+                  В админку можно войти по имени читателя. Пароль нужен только если хотите его включить.
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Статус: {hasAdminPassword ? 'пароль уже задан' : 'пароль ещё не задан'}
@@ -359,6 +397,24 @@ export default function UserSettingsPage(): React.ReactElement {
                   />
                 </div>
               </div>
+
+              {hasAdminPassword && (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Пароль можно убрать. Тогда вход останется только по имени читателя.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleClearPassword()}
+                    disabled={saving}
+                    className="rounded-full"
+                  >
+                    Снять пароль
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
@@ -470,7 +526,7 @@ export default function UserSettingsPage(): React.ReactElement {
               <div className="text-muted-foreground">Админка</div>
               <div className="mt-1 space-y-3">
                 <div className="font-medium text-foreground">
-                  {hasAdminPassword ? 'Доступна по имени читателя и паролю' : 'Пароль пока не задан'}
+                  {hasAdminPassword ? 'Вход по имени и паролю' : 'Вход только по имени'}
                 </div>
                 <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
                   <Link href="/admin" aria-label="Перейти в админку">

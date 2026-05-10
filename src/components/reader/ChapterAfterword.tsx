@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import Link from 'next/link'
 import { ArrowRight, MessageSquare, Quote } from 'lucide-react'
 import CommentVoteButton from '@/components/reader/CommentVoteButton'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import { sortCommentsByTop, sortQuotesByTop } from '@/lib/annotations'
 import { useReaderStore, type ReplyQuote } from '@/lib/store'
 import type { FeedSectionPreview } from './feed-types'
 import TopCommentCard from './TopCommentCard'
@@ -13,11 +14,14 @@ import TopCommentCard from './TopCommentCard'
 interface ChapterAfterwordProps {
   chapterId: string
   chapterTitle: string
+  bookId: string
   authorSlug: string
   bookSlug: string
   preview?: FeedSectionPreview | null
   showCommentsAfterChapter?: boolean
-  onOpenComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
+  composerOpenChapterId?: string | null
+  composerOpenRequest?: number
+  onSendComment?: (body: string) => Promise<ReaderComment | null>
 }
 
 function formatCount(value: number, singular: string, plural: string): string {
@@ -27,6 +31,43 @@ function formatCount(value: number, singular: string, plural: string): string {
 interface VoteState {
   reacted: boolean
   upvoteCount: number
+}
+
+interface ChapterQuote {
+  id: string
+  text: string
+  variantType: string
+  paragraphId: string
+  paragraphEndId: string | null
+  startOffset: number
+  endOffset: number
+  upvoteCount: number
+  reacted: boolean
+  chapterId: string
+  createdAt: string
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function dedupeComments(comments: ReaderComment[]): ReaderComment[] {
+  return comments.filter((comment, index, items) => (
+    items.findIndex((entry) => entry.id === comment.id) === index
+  ))
+}
+
+function dedupeQuotes(quotes: ChapterQuote[]): ChapterQuote[] {
+  const seen = new Set<string>()
+  return quotes.filter((quote) => {
+    const normalized = normalizeText(quote.text)
+    if (!normalized || seen.has(normalized)) {
+      return false
+    }
+
+    seen.add(normalized)
+    return true
+  })
 }
 
 function buildReplyQuote(comment: ReaderComment): ReplyQuote | null {
@@ -49,43 +90,125 @@ function buildReplyQuote(comment: ReaderComment): ReplyQuote | null {
 export default function ChapterAfterword({
   chapterId,
   chapterTitle,
+  bookId,
   authorSlug,
   bookSlug,
   preview = null,
   showCommentsAfterChapter = true,
-  onOpenComments,
+  composerOpenChapterId = null,
+  composerOpenRequest = 0,
+  onSendComment,
 }: ChapterAfterwordProps) {
-  const { readerId, showCommunityAnnotations, username } = useReaderStore()
+  const {
+    readerId,
+    replyingTo,
+    setReplyingTo,
+    showCommunityAnnotations,
+    username,
+  } = useReaderStore()
   const [commentVoteOverrides, setCommentVoteOverrides] = useState<Record<string, VoteState>>({})
   const [quoteVoteOverrides, setQuoteVoteOverrides] = useState<Record<string, VoteState>>({})
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [commentsExpanded, setCommentsExpanded] = useState(false)
+  const [loadedComments, setLoadedComments] = useState<ReaderComment[] | null>(null)
+  const [loadingComments, setLoadingComments] = useState(false)
+  const [visibleCommentCount, setVisibleCommentCount] = useState(3)
+  const [quotesExpanded, setQuotesExpanded] = useState(false)
+  const [loadedQuotes, setLoadedQuotes] = useState<ChapterQuote[] | null>(null)
+  const [loadingQuotes, setLoadingQuotes] = useState(false)
+  const [composerExpanded, setComposerExpanded] = useState(false)
+  const [composerText, setComposerText] = useState('')
+  const [sendingComment, setSendingComment] = useState(false)
+  const [composerError, setComposerError] = useState<string | null>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+
   const stats = preview?.stats || null
-  const comments = useMemo(() => {
+
+  useEffect(() => {
+    setCommentsExpanded(false)
+    setLoadedComments(null)
+    setLoadingComments(false)
+    setVisibleCommentCount(3)
+    setQuotesExpanded(false)
+    setLoadedQuotes(null)
+    setLoadingQuotes(false)
+    setComposerText('')
+    setComposerError(null)
+  }, [chapterId])
+
+  useEffect(() => {
+    if (composerOpenChapterId === chapterId && composerOpenRequest > 0) {
+      setComposerExpanded(true)
+    }
+  }, [chapterId, composerOpenChapterId, composerOpenRequest])
+
+  useEffect(() => {
+    if (composerExpanded) {
+      window.requestAnimationFrame(() => {
+        composerRef.current?.focus()
+      })
+    }
+  }, [composerExpanded])
+
+  const baseComments = useMemo(() => {
     const visibleComments = [
       preview?.leadComment,
       ...(preview?.freshComments || []),
     ].filter((comment): comment is ReaderComment => Boolean(comment))
 
-    const deduped = visibleComments.filter((comment, index, items) => (
-      items.findIndex((entry) => entry.id === comment.id) === index
-    ))
+    const deduped = dedupeComments(visibleComments)
 
-    const filtered = showCommunityAnnotations
+    return showCommunityAnnotations
       ? deduped
       : deduped.filter((comment) => comment.readerId === readerId)
+  }, [preview?.freshComments, preview?.leadComment, readerId, showCommunityAnnotations])
 
-    return filtered.map((comment) => ({
-      ...comment,
-      ...(commentVoteOverrides[comment.id] || {}),
-    }))
-  }, [commentVoteOverrides, preview?.freshComments, preview?.leadComment, readerId, showCommunityAnnotations])
-  const quotes = useMemo(() => {
+  const comments = useMemo(() => {
+    const source = loadedComments || baseComments
+    const filtered = showCommunityAnnotations
+      ? source
+      : source.filter((comment) => comment.readerId === readerId)
+
+    return sortCommentsByTop(filtered).slice(0, visibleCommentCount)
+  }, [baseComments, loadedComments, readerId, showCommunityAnnotations, visibleCommentCount])
+
+  const commentSourceCount = (loadedComments || baseComments).length
+  const hasMoreComments = showCommunityAnnotations
+    ? (stats?.commentsCount || 0) > comments.length
+    : commentSourceCount > comments.length
+
+  const baseQuotes = useMemo(() => {
     const visibleQuotes = preview?.quotesPreview || []
     return visibleQuotes.map((quote) => ({
-      ...quote,
-      ...(quoteVoteOverrides[quote.id] || {}),
+      id: quote.id,
+      text: quote.text,
+      variantType: quote.variantType,
+      paragraphId: quote.paragraphId || '',
+      paragraphEndId: quote.paragraphEndId || null,
+      startOffset: quote.startOffset || 0,
+      endOffset: quote.endOffset || 0,
+      upvoteCount: quote.upvoteCount,
+      reacted: quote.reacted,
+      chapterId: quote.chapterId,
+      createdAt: quote.createdAt,
     }))
-  }, [preview?.quotesPreview, quoteVoteOverrides])
+  }, [preview?.quotesPreview])
+
+  const quotes = useMemo(() => {
+    const source = loadedQuotes || baseQuotes
+    const chapterQuotes = source.filter((quote) => quote.chapterId === chapterId)
+    const deduped = dedupeQuotes(chapterQuotes)
+    const sorted = sortQuotesByTop(deduped)
+    return quotesExpanded ? sorted : sorted.slice(0, 2)
+  }, [baseQuotes, chapterId, loadedQuotes, quotesExpanded])
+
+  const fullQuoteCount = useMemo(() => {
+    const source = loadedQuotes || baseQuotes
+    const chapterQuotes = source.filter((quote) => quote.chapterId === chapterId)
+    return dedupeQuotes(chapterQuotes).length
+  }, [baseQuotes, chapterId, loadedQuotes])
+
+  const hasMoreQuotes = fullQuoteCount > quotes.length
   const hasRichContent = Boolean(
     stats && (
       stats.commentsCount > 0 ||
@@ -104,48 +227,107 @@ export default function ChapterAfterword({
         : 'chapter-afterword--quiet'
       : 'chapter-afterword--compact',
   ].join(' ')
+
   const likesLabel = formatCount(stats?.reactionsCount || 0, 'лайк', 'лайка')
   const composerAvatar = readerId
     ? (username.trim().charAt(0).toUpperCase() || '•')
     : '⋯'
 
-  if (!showCommentsAfterChapter) {
-    return (
-      <section className={afterwordClassName}>
-        <button
-          type="button"
-          className="chapter-afterword__compact-button"
-          onClick={() => onOpenComments?.(chapterId)}
-        >
-          <div className="chapter-afterword__compact-icon">
-            <MessageSquare size={18} />
-          </div>
-          <div className="chapter-afterword__compact-text">
-            <div className="chapter-afterword__compact-title">{chapterTitle}</div>
-            <div className="chapter-afterword__compact-subtitle">
-              Открыть обсуждение главы
-            </div>
-          </div>
-          <span className="chapter-afterword__arrow">
-            <ArrowRight size={18} />
-          </span>
-        </button>
-      </section>
-    )
+  const openComposer = (): void => {
+    setComposerExpanded(true)
   }
 
-  if (!stats) {
-    return (
-      <section className={`${afterwordClassName} chapter-afterword--loading`}>
-        <div className="chapter-afterword__top">
-          <div className="chapter-afterword__kicker">Обсуждение</div>
-          <div className="chapter-afterword__quiet-title">{chapterTitle}</div>
-          <div className="chapter-afterword__quiet-subtitle">
-            Подтягиваем комментарии и социальный слой этой главы.
-          </div>
-        </div>
-      </section>
-    )
+  const handleComposerSubmit = async (): Promise<void> => {
+    if (!onSendComment || !composerText.trim() || sendingComment) {
+      return
+    }
+
+    setSendingComment(true)
+    setComposerError(null)
+    try {
+      const nextComment = await onSendComment(composerText.trim())
+      if (nextComment) {
+        setComposerText('')
+      } else {
+        setComposerError('Не удалось отправить комментарий')
+      }
+    } finally {
+      setSendingComment(false)
+    }
+  }
+
+  const handleLoadMoreComments = async (): Promise<void> => {
+    if (loadingComments) {
+      return
+    }
+
+    if (!loadedComments) {
+      setLoadingComments(true)
+      try {
+        const params = new URLSearchParams()
+        if (readerId) {
+          params.set('readerId', readerId)
+        }
+        const response = await fetch(`/api/chapters/${chapterId}/comments?${params.toString()}`)
+        if (!response.ok) {
+          return
+        }
+
+        const data = await response.json() as { comments?: ReaderComment[] }
+        const fetchedComments = Array.isArray(data.comments) ? data.comments : []
+        setLoadedComments(sortCommentsByTop(dedupeComments(fetchedComments)))
+      } catch (error) {
+        console.error('Failed to load chapter comments:', error)
+      } finally {
+        setLoadingComments(false)
+      }
+    }
+
+    setCommentsExpanded(true)
+    setVisibleCommentCount((current) => current + 10)
+  }
+
+  const handleLoadMoreQuotes = async (): Promise<void> => {
+    if (loadingQuotes) {
+      return
+    }
+
+    if (!loadedQuotes && bookId) {
+      setLoadingQuotes(true)
+      try {
+        const params = new URLSearchParams()
+        if (readerId) {
+          params.set('readerId', readerId)
+        }
+        const query = params.toString()
+        const response = await fetch(`/api/books/${bookId}/quotes${query ? `?${query}` : ''}`)
+        if (!response.ok) {
+          return
+        }
+
+        const data = await response.json() as { quotes?: ChapterQuote[] }
+        const fetchedQuotes = Array.isArray(data.quotes) ? data.quotes : []
+        setLoadedQuotes(fetchedQuotes.map((quote) => ({
+          id: quote.id,
+          text: quote.text,
+          variantType: quote.variantType,
+          paragraphId: quote.paragraphId,
+          paragraphEndId: quote.paragraphEndId ?? null,
+          startOffset: quote.startOffset,
+          endOffset: quote.endOffset,
+          upvoteCount: quote.upvoteCount,
+          reacted: quote.reacted,
+          chapterId: quote.chapterId,
+          createdAt: quote.createdAt,
+        })))
+      } catch (error) {
+        console.error('Failed to load chapter quotes:', error)
+      } finally {
+        setLoadingQuotes(false)
+      }
+    }
+
+    setQuotesExpanded(true)
   }
 
   const handleToggleVote = async (
@@ -212,6 +394,45 @@ export default function ChapterAfterword({
     }
   }
 
+  if (!showCommentsAfterChapter) {
+    return (
+      <section className={afterwordClassName}>
+        <button
+          type="button"
+          className="chapter-afterword__compact-button"
+          onClick={openComposer}
+        >
+          <div className="chapter-afterword__compact-icon">
+            <MessageSquare size={18} />
+          </div>
+          <div className="chapter-afterword__compact-text">
+            <div className="chapter-afterword__compact-title">{chapterTitle}</div>
+            <div className="chapter-afterword__compact-subtitle">
+              Написать комментарий
+            </div>
+          </div>
+          <span className="chapter-afterword__arrow">
+            <ArrowRight size={18} />
+          </span>
+        </button>
+      </section>
+    )
+  }
+
+  if (!stats) {
+    return (
+      <section className={`${afterwordClassName} chapter-afterword--loading`}>
+        <div className="chapter-afterword__top">
+          <div className="chapter-afterword__kicker">Обсуждение</div>
+          <div className="chapter-afterword__quiet-title">{chapterTitle}</div>
+          <div className="chapter-afterword__quiet-subtitle">
+            Подтягиваем комментарии и социальный слой этой главы.
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className={afterwordClassName}>
       <div className="chapter-afterword__quiet-orb" aria-hidden="true" />
@@ -230,24 +451,79 @@ export default function ChapterAfterword({
           </div>
         </div>
 
-        <button
-          type="button"
-          className="chapter-afterword__composer"
-          onClick={() => onOpenComments?.(chapterId, null)}
-        >
-          <span className="chapter-afterword__composer-avatar" aria-hidden="true">
-            {composerAvatar}
-          </span>
-          <span className="chapter-afterword__composer-copy">
-            <span className="chapter-afterword__composer-placeholder">
-              Введите комментарий
+        {composerExpanded ? (
+          <div className="chapter-afterword__composer-panel">
+            {replyingTo ? (
+              <div className="chapter-afterword__composer-reply">
+                <span className="chapter-afterword__composer-reply-label">Ответ на цитату</span>
+                <span className="chapter-afterword__composer-reply-text">{replyingTo.text}</span>
+                <button
+                  type="button"
+                  className="chapter-afterword__composer-reply-clear"
+                  onClick={() => setReplyingTo(null)}
+                  aria-label="Убрать цитату для ответа"
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+
+            <textarea
+              ref={composerRef}
+              value={composerText}
+              onChange={(event) => setComposerText(event.target.value)}
+              placeholder="Написать комментарий..."
+              className="chapter-afterword__composer-input"
+              rows={3}
+            />
+
+            {composerError ? (
+              <div className="chapter-afterword__composer-error">{composerError}</div>
+            ) : null}
+
+            <div className="chapter-afterword__composer-actions">
+              <button
+                type="button"
+                className="chapter-afterword__composer-secondary"
+                onClick={() => {
+                  setComposerExpanded(false)
+                  setReplyingTo(null)
+                  setComposerError(null)
+                }}
+              >
+                Свернуть
+              </button>
+
+              <button
+                type="button"
+                className="chapter-afterword__composer-send"
+                onClick={() => void handleComposerSubmit()}
+                disabled={!composerText.trim() || sendingComment}
+              >
+                {sendingComment ? 'Отправка…' : 'Отправить'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="chapter-afterword__composer"
+            onClick={openComposer}
+          >
+            <span className="chapter-afterword__composer-avatar" aria-hidden="true">
+              {composerAvatar}
             </span>
-          </span>
-        </button>
+            <span className="chapter-afterword__composer-copy">
+              <span className="chapter-afterword__composer-placeholder">
+                Написать комментарий
+              </span>
+            </span>
+          </button>
+        )}
 
         {comments.length > 0 ? (
           <div className="chapter-afterword__comments">
-            {comments.slice(0, 4).map((comment, index) => {
+            {comments.map((comment, index) => {
               const replyQuote = buildReplyQuote(comment)
               return (
                 <TopCommentCard
@@ -268,7 +544,12 @@ export default function ChapterAfterword({
                   showChapterLink={false}
                   metaLabel={index === 0 ? 'Главный комментарий' : 'Свежий комментарий'}
                   secondaryActionLabel="Ответить"
-                  onSecondaryAction={() => onOpenComments?.(chapterId, replyQuote)}
+                  onSecondaryAction={() => {
+                    if (replyQuote) {
+                      setReplyingTo(replyQuote)
+                    }
+                    setComposerExpanded(true)
+                  }}
                   className={index === 0 ? 'chapter-afterword__comment-card chapter-afterword__comment-card--lead' : 'chapter-afterword__comment-card'}
                 />
               )
@@ -280,32 +561,53 @@ export default function ChapterAfterword({
             <div className="chapter-afterword__quiet-subtitle">
               Вы только что дочитали главу. Начните обсуждение, пока мысль ещё живая.
             </div>
-            <button
-              type="button"
-              className="chapter-afterword__footer-button"
-              onClick={() => onOpenComments?.(chapterId, null)}
-            >
-              <MessageSquare size={16} />
-              Войти в обсуждение
-            </button>
+            {composerExpanded ? null : (
+              <button
+                type="button"
+                className="chapter-afterword__footer-button"
+                onClick={openComposer}
+              >
+                <MessageSquare size={16} />
+                Написать комментарий
+              </button>
+            )}
           </div>
         )}
+
+        {comments.length > 0 && hasMoreComments ? (
+          <button
+            type="button"
+            className="chapter-afterword__footer-button chapter-afterword__footer-button--secondary"
+            onClick={() => void handleLoadMoreComments()}
+            disabled={loadingComments}
+          >
+            <MessageSquare size={16} />
+            {loadingComments ? 'Загрузка…' : commentsExpanded ? 'Показать ещё 10 комментариев' : 'Все комментарии'}
+          </button>
+        ) : null}
 
         {quotes.length > 0 ? (
           <div className="chapter-afterword__quotes">
             <div className="chapter-afterword__quotes-header">
               <span className="chapter-afterword__quotes-title">Цитаты из этой главы</span>
-              <button
-                type="button"
-                className="chapter-afterword__quotes-open"
-                onClick={() => onOpenComments?.(chapterId, null)}
-              >
-                Все комментарии
-              </button>
+              {hasMoreQuotes ? (
+                <button
+                  type="button"
+                  className="chapter-afterword__quotes-open"
+                  onClick={() => void handleLoadMoreQuotes()}
+                  disabled={loadingQuotes}
+                >
+                  {loadingQuotes
+                    ? 'Загрузка…'
+                    : quotesExpanded
+                      ? 'Свернуть цитаты'
+                      : 'Все цитаты показать'}
+                </button>
+              ) : null}
             </div>
 
             <div className="chapter-afterword__quotes-list">
-              {quotes.slice(0, 2).map((quote) => (
+              {quotes.map((quote) => (
                 <div key={quote.id} className="chapter-afterword__quote-row">
                   <Link
                     href={buildQuoteReadHref(authorSlug, bookSlug, {
@@ -335,15 +637,18 @@ export default function ChapterAfterword({
                     <button
                       type="button"
                       className="chapter-afterword__reply-button"
-                      onClick={() => onOpenComments?.(chapterId, {
-                        text: quote.text,
-                        variantType: quote.variantType,
-                        paragraphId: quote.paragraphId || '',
-                        endParagraphId: quote.paragraphEndId,
-                        startOffset: quote.startOffset,
-                        endOffset: quote.endOffset,
-                        selectedText: quote.text,
-                      })}
+                      onClick={() => {
+                        setReplyingTo({
+                          text: quote.text,
+                          variantType: quote.variantType,
+                          paragraphId: quote.paragraphId,
+                          endParagraphId: quote.paragraphEndId,
+                          startOffset: quote.startOffset,
+                          endOffset: quote.endOffset,
+                          selectedText: quote.text,
+                        })
+                        setComposerExpanded(true)
+                      }}
                     >
                       Ответить
                     </button>
@@ -352,17 +657,6 @@ export default function ChapterAfterword({
               ))}
             </div>
           </div>
-        ) : null}
-
-        {comments.length > 0 ? (
-          <button
-            type="button"
-            className="chapter-afterword__footer-button chapter-afterword__footer-button--secondary"
-            onClick={() => onOpenComments?.(chapterId, null)}
-          >
-            <MessageSquare size={16} />
-            Все комментарии
-          </button>
         ) : null}
       </div>
     </section>

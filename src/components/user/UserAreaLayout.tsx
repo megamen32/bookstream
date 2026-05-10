@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft, DownloadCloud, Settings2, Shapes } from 'lucide-react'
+import { ArrowLeft, DownloadCloud, Settings2, Shapes, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserAreaLayoutProps {
@@ -46,6 +46,15 @@ export default function UserAreaLayout({
           >
             <ArrowLeft size={16} />
             К книгам
+          </Link>
+
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+            aria-label="Перейти в админку"
+          >
+            <Shield size={16} />
+            Админка
           </Link>
         </div>
 

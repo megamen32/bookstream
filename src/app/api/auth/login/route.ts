@@ -5,15 +5,15 @@ import {
   getAdminSessionCookieOptions,
 } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
-import { verifyPassword } from '@/lib/password-auth'
+import { canAuthenticateAdmin } from '@/lib/admin-login'
 
 export async function POST(request: NextRequest) {
   const body = await request.json() as { username?: string; password?: string }
   const username = body.username?.trim()
   const password = body.password?.trim()
 
-  if (!username || !password) {
-    return NextResponse.json({ error: 'Имя и пароль обязательны' }, { status: 400 })
+  if (!username) {
+    return NextResponse.json({ error: 'Имя обязательно' }, { status: 400 })
   }
 
   const reader = await db.reader.findUnique({
@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  if (!reader?.passwordHash || !verifyPassword(password, reader.passwordHash)) {
+  if (!reader) {
+    return NextResponse.json({ error: 'Неверное имя или пароль' }, { status: 401 })
+  }
+
+  if (reader.passwordHash && !password) {
+    return NextResponse.json({ error: 'Пароль обязателен для этого профиля' }, { status: 400 })
+  }
+
+  if (reader.passwordHash && !canAuthenticateAdmin(reader.passwordHash, password || '')) {
     return NextResponse.json({ error: 'Неверное имя или пароль' }, { status: 401 })
   }
 

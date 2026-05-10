@@ -51,24 +51,7 @@ function signReaderId(readerId: string): string {
   return createHmac('sha256', getSessionSecret()).update(readerId).digest('hex')
 }
 
-/**
- * Builds a signed cookie value for the given reader id.
- *
- * @param readerId Authenticated reader id.
- * @returns Signed cookie payload.
- */
-export function createAdminSessionValue(readerId: string): string {
-  return `${readerId}.${signReaderId(readerId)}`
-}
-
-/**
- * Reads and verifies the authenticated reader id from the request cookie.
- *
- * @param request Incoming request.
- * @returns Reader id when the cookie is valid, otherwise `null`.
- */
-export function getAuthenticatedReaderId(request: NextRequest): string | null {
-  const raw = request.cookies.get(ADMIN_COOKIE_NAME)?.value
+function readReaderIdFromSessionValue(raw: string | null | undefined): string | null {
   if (!raw) {
     return null
   }
@@ -92,6 +75,36 @@ export function getAuthenticatedReaderId(request: NextRequest): string | null {
 }
 
 /**
+ * Builds a signed cookie value for the given reader id.
+ *
+ * @param readerId Authenticated reader id.
+ * @returns Signed cookie payload.
+ */
+export function createAdminSessionValue(readerId: string): string {
+  return `${readerId}.${signReaderId(readerId)}`
+}
+
+/**
+ * Reads and verifies the authenticated reader id from a raw cookie value.
+ *
+ * @param raw Signed cookie payload.
+ * @returns Reader id when the cookie is valid, otherwise `null`.
+ */
+export function getAuthenticatedReaderIdFromValue(raw: string | null | undefined): string | null {
+  return readReaderIdFromSessionValue(raw)
+}
+
+/**
+ * Reads and verifies the authenticated reader id from the request cookie.
+ *
+ * @param request Incoming request.
+ * @returns Reader id when the cookie is valid, otherwise `null`.
+ */
+export function getAuthenticatedReaderId(request: NextRequest): string | null {
+  return getAuthenticatedReaderIdFromValue(request.cookies.get(ADMIN_COOKIE_NAME)?.value)
+}
+
+/**
  * Loads the authenticated admin reader from the cookie-backed session.
  *
  * @param request Incoming request.
@@ -99,6 +112,42 @@ export function getAuthenticatedReaderId(request: NextRequest): string | null {
  */
 export async function getAdminSessionReader(request: NextRequest): Promise<AdminSessionReader | null> {
   const readerId = getAuthenticatedReaderId(request)
+  if (!readerId) {
+    return null
+  }
+
+  const reader = await db.reader.findUnique({
+    where: { id: readerId },
+    select: {
+      id: true,
+      currentUsername: true,
+      loginName: true,
+      isMainAdmin: true,
+    },
+  })
+
+  if (!reader?.loginName) {
+    return null
+  }
+
+  return {
+    id: reader.id,
+    currentUsername: reader.currentUsername,
+    loginName: reader.loginName,
+    isMainAdmin: reader.isMainAdmin,
+  }
+}
+
+/**
+ * Loads the authenticated admin reader from a raw signed cookie value.
+ *
+ * @param raw Signed admin session cookie.
+ * @returns Authenticated reader or `null` when the session is missing or stale.
+ */
+export async function getAdminSessionReaderFromValue(
+  raw: string | null | undefined
+): Promise<AdminSessionReader | null> {
+  const readerId = getAuthenticatedReaderIdFromValue(raw)
   if (!readerId) {
     return null
   }
@@ -141,6 +190,6 @@ export async function isAdminRequest(request: NextRequest): Promise<boolean> {
  * @param reader Reader row fetched from the database.
  * @returns `true` when the reader has a configured admin login.
  */
-export function hasAdminLogin(reader: Pick<Reader, 'loginName' | 'passwordHash'>): boolean {
-  return Boolean(reader.loginName && reader.passwordHash)
+export function hasAdminLogin(reader: Pick<Reader, 'loginName'>): boolean {
+  return Boolean(reader.loginName)
 }

@@ -170,18 +170,6 @@ The main principle:
 
 ## Product principles
 
-### Real product, not a demo
-
-This repository is being built as the final product surface.
-
-That means:
-
-- features should be maintainable;
-- UI should be usable, not just impressive;
-- admin flows matter as much as reader flows;
-- moderation and publishing should be treated as core product logic;
-- long-term development should be possible without rewriting everything.
-
 ### Reader first
 
 The reader experience is the center of the product.
@@ -209,6 +197,18 @@ Some want fragments, notes and discussion.
 Some return to a book many times.
 
 BookStream should support all of these patterns.
+
+### Real product, not a demo
+
+This repository is being built as the final product surface.
+
+That means:
+
+- features should be maintainable;
+- UI should be usable, not just impressive;
+- admin flows matter as much as reader flows;
+- moderation and publishing should be treated as core product logic;
+- long-term development should be possible without rewriting everything.
 
 ---
 
@@ -379,7 +379,7 @@ npx playwright test
 
 - [x] Annotation flows
 - [x] Quote-related UI foundation
-- [ ] Personal quote library
+- [x] Personal quote library
 - [ ] Public quote pages
 - [ ] Export notes
 - [ ] Search inside personal annotations
@@ -402,13 +402,13 @@ npx playwright test
 - [ ] Moderation queue
 - [ ] Publisher roles
 - [ ] Author pages
-- [ ] Content versioning
+- [x] Content versioning
 
 ### AI / LLM features
 
-- [ ] Short versions of books
+- [x] Short versions of books
 - [ ] Chapter summaries
-- [ ] Core 20% reading mode
+- [x] Core 20% reading mode
 - [ ] Semantic search across books
 - [ ] Personal reading assistant
 - [ ] Comment and discussion summarization
@@ -430,13 +430,12 @@ Additional documentation lives in `docs/`.
 Suggested docs:
 
 ```text
-docs/
-├── architecture.md
-├── deployment.md
-├── product.md
-├── reader.md
-├── admin.md
-└── screenshots/
+- docs/book/00-prologue.md
+- docs/book/01-reading-modes.md
+- docs/book/02-social-layer.md
+- docs/book/03-variants-and-ai.md
+- docs/book/04-offline-and-identity.md
+- docs/book/05-admin-and-editing.md
 ```
 
 ---
@@ -570,7 +569,7 @@ BookStream не навязывает один “правильный” спо�
 ### Офлайн-чтение
 
 ![Offline reading](docs/screenshots/offline-reader.png)
-
+ 
 ### Админка
 
 ![Admin panel](docs/screenshots/admin.png)

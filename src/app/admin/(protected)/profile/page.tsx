@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import AdminLinkDeviceCard from '@/components/admin/AdminLinkDeviceCard'
 import { Save, Loader2, ShieldCheck, Sparkles, User } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { slugify } from '@/lib/slugify'
 
 interface Author {
@@ -52,10 +54,20 @@ export default function AdminProfilePage() {
   const [savingLlm, setSavingLlm] = useState(false)
 
   const { toast } = useToast()
+  const router = useRouter()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   useEffect(() => {
-    fetch('/api/authors')
-      .then((res) => res.json())
+    adminFetch('/api/authors')
+      .then((res) => {
+        if (!res) {
+          return null
+        }
+        return res.json()
+      })
       .then((data) => {
         if (data) {
           // API returns array of authors; use the first one
@@ -70,11 +82,14 @@ export default function AdminProfilePage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [adminFetch])
 
   useEffect(() => {
-    fetch('/api/admin/settings')
+    adminFetch('/api/admin/settings')
       .then(async (res) => {
+        if (!res) {
+          return null
+        }
         if (!res.ok) {
           return null
         }
@@ -90,15 +105,18 @@ export default function AdminProfilePage() {
         setAllowUserPublishing(payload.settings.allowUserPublishing)
       })
       .catch(console.error)
-  }, [])
+  }, [adminFetch])
 
   useEffect(() => {
     if (!readerId) {
       return
     }
 
-    fetch(`/api/readers?id=${encodeURIComponent(readerId)}`)
+    adminFetch(`/api/readers?id=${encodeURIComponent(readerId)}`)
       .then(async (res) => {
+        if (!res) {
+          return null
+        }
         if (!res.ok) {
           return null
         }
@@ -120,7 +138,7 @@ export default function AdminProfilePage() {
         setLlmConfigSource(payload.llmConfigSource || 'none')
       })
       .catch(console.error)
-  }, [readerId])
+  }, [adminFetch, readerId])
 
   const handleNameChange = (value: string) => {
     setName(value)
@@ -137,11 +155,15 @@ export default function AdminProfilePage() {
     setSaving(true)
     try {
       const method = author ? 'PUT' : 'POST'
-      const res = await fetch('/api/authors', {
+      const res = await adminFetch('/api/authors', {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, slug, bio }),
       })
+
+      if (!res) {
+        return
+      }
 
       if (res.ok) {
         const data = await res.json()
@@ -171,13 +193,17 @@ export default function AdminProfilePage() {
     setSavingSettings(true)
 
     try {
-      const response = await fetch('/api/admin/settings', {
+      const response = await adminFetch('/api/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           allowUserPublishing: checked,
         }),
       })
+
+      if (!response) {
+        return
+      }
 
       const payload = await response.json() as { error?: string; settings?: { allowUserPublishing: boolean } }
       if (!response.ok || !payload.settings) {
@@ -220,7 +246,7 @@ export default function AdminProfilePage() {
     setSavingLlm(true)
 
     try {
-      const response = await fetch('/api/readers/llm', {
+      const response = await adminFetch('/api/readers/llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,6 +256,10 @@ export default function AdminProfilePage() {
           model: llmModel,
         }),
       })
+
+      if (!response) {
+        return
+      }
 
       const payload = await response.json() as {
         error?: string

@@ -4,15 +4,16 @@ import type React from 'react'
 import { Bookmark, BookmarkCheck } from 'lucide-react'
 import ReactionBar from './ReactionBar'
 import ChapterAfterword from './ChapterAfterword'
-import type { ReplyQuote } from '@/lib/store'
 import type { AnnotationParagraphRange } from '@/lib/annotations'
 import { splitTextByAnnotationRanges } from '@/lib/annotations'
 import type { FeedSectionData } from './feed-types'
+import type { ReaderComment } from './comment-types'
 
 interface ReaderChapterSectionProps {
   section: FeedSectionData
   isActiveSection: boolean
   isInitialReveal: boolean
+  bookId: string
   contentMaxWidth: string
   fontSize: number
   lineHeight: number
@@ -26,7 +27,9 @@ interface ReaderChapterSectionProps {
   showMobileReactionBar: boolean
   highlightParagraphId?: string | null
   hasPreciseQuoteHighlight?: boolean
-  onOpenChapterComments?: (chapterId: string, replyTo?: ReplyQuote | null) => void
+  composerOpenChapterId?: string | null
+  composerOpenRequest?: number
+  onSendComment?: (body: string) => Promise<ReaderComment | null>
   getTextRangesForParagraph: (chapterId: string, paragraphId: string) => AnnotationParagraphRange[]
 }
 
@@ -37,6 +40,7 @@ export default function ReaderChapterSection({
   section,
   isActiveSection,
   isInitialReveal,
+  bookId,
   contentMaxWidth,
   fontSize,
   lineHeight,
@@ -50,7 +54,9 @@ export default function ReaderChapterSection({
   showMobileReactionBar,
   highlightParagraphId,
   hasPreciseQuoteHighlight = false,
-  onOpenChapterComments,
+  composerOpenChapterId,
+  composerOpenRequest = 0,
+  onSendComment,
   getTextRangesForParagraph,
 }: ReaderChapterSectionProps) {
   const bookmarkedKey = bookmarkedKeys[section.chapter.id] || null
@@ -212,11 +218,14 @@ export default function ReaderChapterSection({
       <ChapterAfterword
         chapterId={section.chapter.id}
         chapterTitle={section.chapter.title}
+        bookId={bookId}
         authorSlug={authorSlug}
         bookSlug={bookSlug}
         preview={section.preview}
         showCommentsAfterChapter={showCommentsAfterChapter}
-        onOpenComments={(targetChapterId, replyTo) => onOpenChapterComments?.(targetChapterId, replyTo)}
+        composerOpenChapterId={composerOpenChapterId === section.chapter.id ? section.chapter.id : null}
+        composerOpenRequest={composerOpenRequest}
+        onSendComment={onSendComment}
       />
 
       <div className="feed-chapter-footer">

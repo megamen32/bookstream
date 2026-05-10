@@ -18,16 +18,17 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as SetReaderPasswordBody
     const readerId = body.readerId?.trim()
     const currentUsername = body.currentUsername?.trim()
-    const password = body.password?.trim()
+    const hasPasswordField = typeof body.password === 'string'
+    const password = body.password?.trim() || ''
 
-    if (!readerId || !currentUsername || !password) {
+    if (!readerId || !currentUsername || !hasPasswordField) {
       return NextResponse.json(
         { error: 'readerId, currentUsername and password are required' },
         { status: 400 }
       )
     }
 
-    if (password.length < 4) {
+    if (password && password.length < 4) {
       return NextResponse.json(
         { error: 'Пароль должен быть не короче 4 символов' },
         { status: 400 }
@@ -65,14 +66,14 @@ export async function POST(request: NextRequest) {
       update: {
         currentUsername,
         loginName: currentUsername,
-        passwordHash: hashPassword(password),
+        passwordHash: password ? hashPassword(password) : null,
         ...(shouldBecomeMainAdmin ? { isMainAdmin: true } : {}),
       },
       create: {
         id: readerId,
         currentUsername,
         loginName: currentUsername,
-        passwordHash: hashPassword(password),
+        passwordHash: password ? hashPassword(password) : null,
         isMainAdmin: shouldBecomeMainAdmin,
       },
       select: {

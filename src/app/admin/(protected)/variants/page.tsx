@@ -26,6 +26,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Plus, Edit, Trash2, Palette, Sparkles, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { useToast } from '@/hooks/use-toast'
 
 interface VariantPreset {
@@ -100,11 +102,19 @@ export default function AdminVariantsPage() {
   const [generating, setGenerating] = useState(false)
   const [genProgress, setGenProgress] = useState({ current: 0, total: 0 })
 
+  const router = useRouter()
   const { toast } = useToast()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   const fetchPresets = useCallback(async () => {
     try {
-      const res = await fetch('/api/variant-presets')
+      const res = await adminFetch('/api/variant-presets')
+      if (!res) {
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setPresets(Array.isArray(data) ? data : Array.isArray(data.presets) ? data.presets : [])
@@ -114,7 +124,7 @@ export default function AdminVariantsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [adminFetch])
 
   useEffect(() => {
     const run = async () => {
@@ -128,7 +138,10 @@ export default function AdminVariantsPage() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/variant-presets/${deleteTarget.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/variant-presets/${deleteTarget.id}`, { method: 'DELETE' })
+      if (!res) {
+        return
+      }
       if (res.ok) {
         toast({ title: 'Пресет удалён' })
         setPresets((prev) => prev.filter((p) => p.id !== deleteTarget.id))
@@ -172,20 +185,24 @@ export default function AdminVariantsPage() {
     setSaving(true)
     try {
       const payload = formToPayload(form)
-      let res: Response
+      let res: Response | null
 
       if (editingPreset) {
-        res = await fetch(`/api/variant-presets/${editingPreset.id}`, {
+        res = await adminFetch(`/api/variant-presets/${editingPreset.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
       } else {
-        res = await fetch('/api/variant-presets', {
+        res = await adminFetch('/api/variant-presets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
+      }
+
+      if (!res) {
+        return
       }
 
       if (res.ok) {
@@ -211,14 +228,20 @@ export default function AdminVariantsPage() {
 
     try {
       // 1. Fetch all books
-      const booksRes = await fetch('/api/books')
+      const booksRes = await adminFetch('/api/books')
+      if (!booksRes) {
+        return
+      }
       if (!booksRes.ok) throw new Error('Не удалось загрузить книги')
       const books = await booksRes.json()
 
       // 2. Collect all chapters across all books
       const allChapters: { bookId: string; chapterId: string }[] = []
       for (const book of books) {
-        const chaptersRes = await fetch(`/api/books/${book.id}/chapters`)
+        const chaptersRes = await adminFetch(`/api/books/${book.id}/chapters`)
+        if (!chaptersRes) {
+          continue
+        }
         if (chaptersRes.ok) {
           const chapters = await chaptersRes.json()
           const chapterArray = Array.isArray(chapters) ? chapters : []
@@ -234,7 +257,7 @@ export default function AdminVariantsPage() {
       for (let i = 0; i < allChapters.length; i++) {
         const { chapterId } = allChapters[i]
         try {
-          await fetch(`/api/chapters/${chapterId}/summarize`, { method: 'POST' })
+          await adminFetch(`/api/chapters/${chapterId}/summarize`, { method: 'POST' })
         } catch {
           // Continue even if one fails
         }

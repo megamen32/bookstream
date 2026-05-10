@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { useToast } from '@/hooks/use-toast'
 
 interface Book {
@@ -61,10 +62,17 @@ export default function AdminLibraryPage() {
   const [deleting, setDeleting] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   const fetchBooks = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch('/api/books?includeDrafts=1')
+      const res = await adminFetch('/api/books?includeDrafts=1')
+      if (!res) {
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setBooks(data)
@@ -74,7 +82,7 @@ export default function AdminLibraryPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [adminFetch])
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -89,7 +97,10 @@ export default function AdminLibraryPage() {
 
     setDeleting(true)
     try {
-      const res = await fetch(`/api/books/${deleteTarget.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/books/${deleteTarget.id}`, { method: 'DELETE' })
+      if (!res) {
+        return
+      }
       if (res.ok) {
         toast({ title: 'Книга удалена' })
         setBooks((prev) => prev.filter((book) => book.id !== deleteTarget.id))

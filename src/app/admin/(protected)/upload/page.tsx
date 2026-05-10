@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { slugify } from '@/lib/slugify'
 import { cn } from '@/lib/utils'
 
@@ -97,11 +98,18 @@ export default function AdminUploadPage() {
   const coverFileRef = useRef<File | null>(null)
   const router = useRouter()
   const { toast } = useToast()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   useEffect(() => {
     async function loadAuthors(): Promise<void> {
       try {
-        const response = await fetch('/api/authors')
+        const response = await adminFetch('/api/authors')
+        if (!response) {
+          return
+        }
         if (!response.ok) {
           throw new Error('Не удалось загрузить авторов')
         }
@@ -128,14 +136,17 @@ export default function AdminUploadPage() {
     }
 
     void loadAuthors()
-  }, [toast])
+  }, [adminFetch, toast])
 
   useEffect(() => {
     let active = true
 
     async function loadAdminSettings(): Promise<void> {
       try {
-        const response = await fetch('/api/admin/settings')
+        const response = await adminFetch('/api/admin/settings')
+        if (!response) {
+          return
+        }
         if (!response.ok) {
           return
         }
@@ -157,7 +168,7 @@ export default function AdminUploadPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [adminFetch])
 
   useEffect(() => (
     () => {
@@ -235,10 +246,14 @@ export default function AdminUploadPage() {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      const response = await fetch('/api/books/import-preview', {
+      const response = await adminFetch('/api/books/import-preview', {
         method: 'POST',
         body: formData,
       })
+
+      if (!response) {
+        return
+      }
 
       if (!response.ok) {
         throw new Error('Не удалось получить подсказки из файла')
@@ -343,7 +358,7 @@ export default function AdminUploadPage() {
           throw new Error('Укажите имя и slug автора')
         }
 
-        const authorResponse = await fetch('/api/authors', {
+        const authorResponse = await adminFetch('/api/authors', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -352,6 +367,10 @@ export default function AdminUploadPage() {
             bio: newAuthorBio.trim(),
           }),
         })
+
+        if (!authorResponse) {
+          return
+        }
 
         if (!authorResponse.ok) {
           const payload = await authorResponse.json()
@@ -369,7 +388,7 @@ export default function AdminUploadPage() {
         throw new Error('Выберите автора')
       }
 
-      const bookResponse = await fetch('/api/books', {
+      const bookResponse = await adminFetch('/api/books', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,6 +399,10 @@ export default function AdminUploadPage() {
           readingModeDefault: readingMode,
         }),
       })
+
+      if (!bookResponse) {
+        return
+      }
 
       if (!bookResponse.ok) {
         const payload = await bookResponse.json()
@@ -406,10 +429,14 @@ export default function AdminUploadPage() {
         setUploadProgress(progress)
       }, 300)
 
-      const uploadResponse = await fetch(`/api/books/${createdBook.id}/upload`, {
+      const uploadResponse = await adminFetch(`/api/books/${createdBook.id}/upload`, {
         method: 'POST',
         body: formData,
       })
+
+      if (!uploadResponse) {
+        return
+      }
 
       window.clearInterval(intervalId)
       setUploadProgress(100)

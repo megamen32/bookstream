@@ -1,7 +1,7 @@
 'use client'
 
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { BookCoverSection } from '@/components/admin/BookCoverSection'
 import { BookMetadataSection } from '@/components/admin/BookMetadataSection'
@@ -50,6 +50,7 @@ import {
 } from 'lucide-react'
 import { BookTextEditor } from '@/components/editor/BookTextEditor'
 import type { EditorSaveStatus } from '@/components/editor/editor-types'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -149,6 +150,11 @@ interface VariantTab {
   placeholder: string
 }
 
+type PendingEditorTransition =
+  | { type: 'navigate'; href: string }
+  | { type: 'chapter'; chapterId: string; variantType: string }
+  | { type: 'variant'; variantType: string }
+
 const DEFAULT_VARIANT_TABS: Array<VariantTab> = [
   {
     value: 'original',
@@ -224,8 +230,13 @@ function formatDurationLabel(totalSeconds: number): string {
 
 export default function BookEditorPage() {
   const params = useParams()
+  const router = useRouter()
   const bookId = params.bookId as string
   const { toast } = useToast()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   const [book, setBook] = useState<BookData | null>(null)
   const [variantPresets, setVariantPresets] = useState<VariantPreset[]>([])
@@ -248,6 +259,8 @@ export default function BookEditorPage() {
   const [revisionHistory, setRevisionHistory] = useState<VariantRevisionSummary[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [restoringRevisionId, setRestoringRevisionId] = useState<string | null>(null)
+  const [unsavedTransitionOpen, setUnsavedTransitionOpen] = useState(false)
+  const [pendingTransition, setPendingTransition] = useState<PendingEditorTransition | null>(null)
 
   const [editTitle, setEditTitle] = useState('')
   const [editSlug, setEditSlug] = useState('')
@@ -284,9 +297,18 @@ export default function BookEditorPage() {
 
   const fetchBook = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch(`/api/books/${bookId}`)
+      const res = await adminFetch(`/api/books/${bookId}?includeDrafts=1`)
+      if (!res) {
+        return
+      }
 
       if (!res.ok) {
+        if (res.status === 404) {
+          toast({ title: 'Книга недоступна', variant: 'destructive' })
+          router.replace('/admin')
+          return
+        }
+
         toast({ title: 'Не удалось загрузить книгу', variant: 'destructive' })
         return
       }
@@ -313,11 +335,14 @@ export default function BookEditorPage() {
     } finally {
       setLoading(false)
     }
-  }, [bookId, selectedChapterId, toast])
+  }, [adminFetch, bookId, router, selectedChapterId, toast])
 
   const fetchVariantPresets = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch('/api/variant-presets')
+      const res = await adminFetch('/api/variant-presets')
+      if (!res) {
+        return
+      }
 
       if (!res.ok) {
         return
@@ -328,15 +353,19 @@ export default function BookEditorPage() {
     } catch (error) {
       console.error('Error fetching variant presets:', error)
     }
-  }, [])
+  }, [adminFetch])
 
   const fetchBookStats = useCallback(async (): Promise<void> => {
     setLoadingBookStats(true)
 
     try {
-      const response = await fetch(`/api/books/${bookId}/stats`)
+      const response = await adminFetch(`/api/books/${bookId}/stats`)
+      if (!response) {
+        return
+      }
       if (!response.ok) {
-        throw new Error('stats fetch failed')
+        setBookStats(null)
+        return
       }
 
       const payload = (await response.json()) as BookStatsResponse
@@ -347,23 +376,33 @@ export default function BookEditorPage() {
     } finally {
       setLoadingBookStats(false)
     }
-  }, [bookId])
+  }, [adminFetch, bookId])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       void fetchBook()
-      void fetchBookStats()
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [fetchBook, fetchBookStats])
+  }, [fetchBook])
+
+  useEffect(() => {
+    if (!book) {
+      return
+    }
+
+    void fetchBookStats()
+  }, [book, fetchBookStats])
 
   useEffect(() => {
     let active = true
 
     async function loadAdminSettings(): Promise<void> {
       try {
-        const response = await fetch('/api/admin/settings')
+        const response = await adminFetch('/api/admin/settings')
+        if (!response) {
+          return
+        }
         if (!response.ok) {
           return
         }
@@ -386,7 +425,7 @@ export default function BookEditorPage() {
     return () => {
       active = false
     }
-  }, [fetchVariantPresets])
+  }, [adminFetch, fetchVariantPresets])
 
   const selectedChapter = book?.chapters.find((chapter) => chapter.id === selectedChapterId)
   const currentVariant = selectedChapter?.variants.find(
@@ -422,6 +461,7 @@ export default function BookEditorPage() {
   }, [currentVariant?.id, currentVariant?.contentHtml, selectedChapter?.title])
   const chapterHasChanges =
     editChapterTitle !== initialChapterTitle || editContent !== initialChapterContent
+  const hasUnsavedChapterChanges = chapterHasChanges && !saving
   const canPublishThisBook = isMainAdmin || allowUserPublishing
   const bookInfoHasChanges =
     book !== null &&
@@ -467,9 +507,9 @@ export default function BookEditorPage() {
     setSaveStatus(title !== initialChapterTitle || editContent !== initialChapterContent ? 'dirty' : 'idle')
   }
 
-  const handleSaveChapter = async (): Promise<void> => {
+  const handleSaveChapter = async (): Promise<boolean> => {
     if (!selectedChapterId) {
-      return
+      return false
     }
 
     setSaving(true)
@@ -480,18 +520,22 @@ export default function BookEditorPage() {
         throw new Error('Название главы не может быть пустым')
       }
 
-      const chapterRes = await fetch(`/api/chapters/${selectedChapterId}`, {
+      const chapterRes = await adminFetch(`/api/chapters/${selectedChapterId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: editChapterTitle }),
       })
+
+      if (!chapterRes) {
+        return false
+      }
 
       if (!chapterRes.ok) {
         const payload = await chapterRes.json()
         throw new Error(payload.error || 'Не удалось сохранить название главы')
       }
 
-      const variantRes = await fetch(
+      const variantRes = await adminFetch(
         `/api/chapters/${selectedChapterId}/variants/${activeVariant}`,
         {
           method: 'PUT',
@@ -500,14 +544,23 @@ export default function BookEditorPage() {
         }
       )
 
+      if (!variantRes) {
+        return false
+      }
+
       if (!variantRes.ok) {
         const payload = await variantRes.json()
         throw new Error(payload.error || 'Не удалось сохранить вариант главы')
       }
 
+      // Keep the local baseline aligned with the saved state before any
+      // follow-up transition runs.
+      setInitialChapterTitle(editChapterTitle)
+      setInitialChapterContent(editContent)
       setSaveStatus('saved')
       toast({ title: 'Сохранено', description: 'Название и текст главы обновлены' })
       void fetchBook()
+      return true
     } catch (error) {
       setSaveStatus('error')
       toast({
@@ -515,10 +568,80 @@ export default function BookEditorPage() {
         description: error instanceof Error ? error.message : undefined,
         variant: 'destructive',
       })
+      return false
     } finally {
       setSaving(false)
     }
   }
+
+  const executeTransition = useCallback((transition: PendingEditorTransition): void => {
+    if (transition.type === 'navigate') {
+      router.push(transition.href)
+      return
+    }
+
+    if (transition.type === 'chapter') {
+      setActiveVariant(transition.variantType)
+      setSelectedChapterId(transition.chapterId)
+      return
+    }
+
+    setActiveVariant(transition.variantType)
+  }, [router])
+
+  const requestTransition = useCallback((transition: PendingEditorTransition): void => {
+    if (hasUnsavedChapterChanges) {
+      setPendingTransition(transition)
+      setUnsavedTransitionOpen(true)
+      return
+    }
+
+    executeTransition(transition)
+  }, [executeTransition, hasUnsavedChapterChanges])
+
+  const handleDiscardAndContinue = useCallback((): void => {
+    if (!pendingTransition) {
+      return
+    }
+
+    const transition = pendingTransition
+    setPendingTransition(null)
+    setUnsavedTransitionOpen(false)
+    executeTransition(transition)
+  }, [executeTransition, pendingTransition])
+
+  const handleSaveAndContinue = useCallback(async (): Promise<void> => {
+    if (!pendingTransition) {
+      return
+    }
+
+    const saved = await handleSaveChapter()
+    if (!saved) {
+      return
+    }
+
+    const transition = pendingTransition
+    setPendingTransition(null)
+    setUnsavedTransitionOpen(false)
+    executeTransition(transition)
+  }, [executeTransition, handleSaveChapter, pendingTransition])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+      if (!hasUnsavedChapterChanges) {
+        return
+      }
+
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasUnsavedChapterChanges])
 
   useEffect(() => {
     if (!selectedChapterId) {
@@ -530,7 +653,10 @@ export default function BookEditorPage() {
       setLoadingHistory(true)
 
       try {
-        const response = await fetch(`/api/chapters/${selectedChapterId}/variants/${activeVariant}/history`)
+        const response = await adminFetch(`/api/chapters/${selectedChapterId}/variants/${activeVariant}/history`)
+        if (!response) {
+          return
+        }
 
         if (!response.ok) {
           throw new Error('history fetch failed')
@@ -555,7 +681,7 @@ export default function BookEditorPage() {
     return () => {
       cancelled = true
     }
-  }, [activeVariant, selectedChapterId])
+  }, [activeVariant, adminFetch, selectedChapterId])
 
   const handleRestoreRevision = async (revisionId: string): Promise<void> => {
     if (!selectedChapterId) {
@@ -565,12 +691,16 @@ export default function BookEditorPage() {
     setRestoringRevisionId(revisionId)
 
     try {
-      const response = await fetch(
+      const response = await adminFetch(
         `/api/chapters/${selectedChapterId}/variants/${activeVariant}/history/${revisionId}`,
         {
           method: 'POST',
         },
       )
+
+      if (!response) {
+        return
+      }
 
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string }
@@ -606,11 +736,15 @@ export default function BookEditorPage() {
         ? {}
         : { variantType: activeVariant }
 
-      const res = await fetch(`/api/chapters/${selectedChapterId}/summarize`, {
+      const res = await adminFetch(`/api/chapters/${selectedChapterId}/summarize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+
+      if (!res) {
+        return
+      }
 
       if (!res.ok) {
         throw new Error('AI generation failed')
@@ -634,7 +768,7 @@ export default function BookEditorPage() {
     setSavingBook(true)
 
     try {
-      const res = await fetch(`/api/books/${bookId}`, {
+      const res = await adminFetch(`/api/books/${bookId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -652,6 +786,10 @@ export default function BookEditorPage() {
         }),
       })
 
+      if (!res) {
+        return
+      }
+
       if (!res.ok) {
         throw new Error('Book save failed')
       }
@@ -664,15 +802,19 @@ export default function BookEditorPage() {
     } finally {
       setSavingBook(false)
     }
-  }, [bookId, clampSyntheticCount, editAllowReaderVariantsAtOwnerExpense, editDescription, editIsPublic, editOpenStatsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
+  }, [adminFetch, bookId, clampSyntheticCount, editAllowReaderVariantsAtOwnerExpense, editDescription, editIsPublic, editOpenStatsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
 
   const handleSeedSyntheticEngagement = useCallback(async (): Promise<void> => {
     setSeedingEngagement(true)
 
     try {
-      const response = await fetch(`/api/books/${bookId}/synthetic-engagement`, {
+      const response = await adminFetch(`/api/books/${bookId}/synthetic-engagement`, {
         method: 'POST',
       })
+
+      if (!response) {
+        return
+      }
 
       const payload = (await response.json()) as {
         error?: string
@@ -702,7 +844,7 @@ export default function BookEditorPage() {
     } finally {
       setSeedingEngagement(false)
     }
-  }, [bookId, fetchBook, fetchBookStats, toast])
+  }, [adminFetch, bookId, fetchBook, fetchBookStats, toast])
 
   const replaceCoverPreview = useCallback((nextPreviewUrl: string | null): void => {
     setCoverPreviewUrl((currentPreviewUrl) => {
@@ -766,10 +908,14 @@ export default function BookEditorPage() {
       const formData = new FormData()
       formData.append('cover', coverFile)
 
-      const response = await fetch(`/api/books/${book.id}/cover`, {
+      const response = await adminFetch(`/api/books/${book.id}/cover`, {
         method: 'PUT',
         body: formData,
       })
+
+      if (!response) {
+        return
+      }
 
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string }
@@ -797,7 +943,7 @@ export default function BookEditorPage() {
     } finally {
       setSavingCover(false)
     }
-  }, [book, clearPendingCover, coverFile, toast])
+  }, [adminFetch, book, clearPendingCover, coverFile, toast])
 
   const openReaderInNewTab = (): void => {
     if (!book) {
@@ -815,13 +961,17 @@ export default function BookEditorPage() {
     setCreatingChapter(true)
 
     try {
-      const res = await fetch(`/api/books/${bookId}/chapters`, {
+      const res = await adminFetch(`/api/books/${bookId}/chapters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: `Новая глава ${book.chapters.length + 1}`,
         }),
       })
+
+      if (!res) {
+        return
+      }
 
       if (!res.ok) {
         const payload = await res.json()
@@ -862,9 +1012,13 @@ export default function BookEditorPage() {
     setDeletingChapter(true)
 
     try {
-      const res = await fetch(`/api/chapters/${selectedChapterId}`, {
+      const res = await adminFetch(`/api/chapters/${selectedChapterId}`, {
         method: 'DELETE',
       })
+
+      if (!res) {
+        return
+      }
 
       if (!res.ok) {
         const payload = await res.json()
@@ -938,7 +1092,19 @@ export default function BookEditorPage() {
 
       <div className="mb-6 flex items-center gap-3">
         <Link href="/admin">
-          <Button variant="ghost" size="icon" className="-ml-2 rounded-full">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-2 rounded-full"
+            onClick={(event) => {
+              if (!hasUnsavedChapterChanges) {
+                return
+              }
+
+              event.preventDefault()
+              requestTransition({ type: 'navigate', href: '/admin' })
+            }}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
@@ -1246,7 +1412,19 @@ export default function BookEditorPage() {
           </Sheet>
 
           <Link href={`/admin/books/${bookId}/comments`}>
-            <Button variant="outline" size="sm" className="hidden rounded-full sm:flex">
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden rounded-full sm:flex"
+              onClick={(event) => {
+                if (!hasUnsavedChapterChanges) {
+                  return
+                }
+
+                event.preventDefault()
+                requestTransition({ type: 'navigate', href: `/admin/books/${bookId}/comments` })
+              }}
+            >
               <MessageSquare className="mr-2 h-4 w-4" />
               Комментарии ({book._count.comments})
             </Button>
@@ -1477,7 +1655,16 @@ export default function BookEditorPage() {
               </CardHeader>
 
               <CardContent>
-                <Tabs value={activeVariant} onValueChange={setActiveVariant}>
+                <Tabs
+                  value={activeVariant}
+                  onValueChange={(value) => {
+                    if (value === activeVariant) {
+                      return
+                    }
+
+                    requestTransition({ type: 'variant', variantType: value })
+                  }}
+                >
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <TabsList className="flex min-w-0 flex-1 flex-wrap rounded-full">
                       {visibleVariantTabs.map((tab) => {
@@ -1527,7 +1714,9 @@ export default function BookEditorPage() {
                         onTitleChange={handleChapterTitleChange}
                         titlePlaceholder="Название главы"
                         placeholder={activeTab?.placeholder || tab.placeholder}
-                        onSave={handleSaveChapter}
+                        onSave={async () => {
+                          await handleSaveChapter()
+                        }}
                         saving={saving}
                         saveStatus={saveStatus}
                         saveDisabled={!chapterHasChanges}
@@ -1639,8 +1828,11 @@ export default function BookEditorPage() {
                           ? activeVariant
                           : 'original'
 
-                        setActiveVariant(nextVariant)
-                        setSelectedChapterId(chapter.id)
+                        requestTransition({
+                          type: 'chapter',
+                          chapterId: chapter.id,
+                          variantType: nextVariant,
+                        })
                       }}
                       className={cn(
                         'flex w-full items-center gap-2 overflow-hidden rounded-2xl px-3 py-2.5 text-left text-sm transition-colors',
@@ -1760,9 +1952,74 @@ export default function BookEditorPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={unsavedTransitionOpen}
+        onOpenChange={(open) => {
+          if (!open && saving) {
+            return
+          }
+
+          setUnsavedTransitionOpen(open)
+          if (!open) {
+            setPendingTransition(null)
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Есть несохранённые изменения</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingTransition?.type === 'navigate'
+                ? 'Если вы уйдёте со страницы сейчас, последние правки в главе будут потеряны.'
+                : 'Если вы переключите главу или версию сейчас, текущие правки будут потеряны.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="rounded-full"
+              disabled={saving}
+              onClick={() => setPendingTransition(null)}
+            >
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                handleDiscardAndContinue()
+              }}
+              className="rounded-full"
+              disabled={saving}
+            >
+              Не сохранять
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void handleSaveAndContinue()
+              }}
+              className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={saving}
+            >
+              {pendingTransition?.type === 'navigate' ? 'Сохранить и выйти' : 'Сохранить и продолжить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="mt-4 sm:hidden">
         <Link href={`/admin/books/${bookId}/comments`} className="block">
-          <Button variant="outline" className="w-full rounded-full">
+          <Button
+            variant="outline"
+            className="w-full rounded-full"
+            onClick={(event) => {
+              if (!hasUnsavedChapterChanges) {
+                return
+              }
+
+              event.preventDefault()
+              requestTransition({ type: 'navigate', href: `/admin/books/${bookId}/comments` })
+            }}
+          >
             <MessageSquare className="mr-2 h-4 w-4" />
             Комментарии ({book._count.comments})
           </Button>

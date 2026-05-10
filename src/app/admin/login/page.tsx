@@ -54,7 +54,7 @@ export default function AdminLoginPage() {
             Bookstream
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Логин это ваше имя читателя. Пароль задаётся в настройках профиля.
+            Логин это ваше имя читателя. Если пароль не задан, оставьте поле пустым.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -76,7 +76,7 @@ export default function AdminLoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="Введите пароль..."
+                placeholder="Оставьте пустым, если пароль не задан"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-11"
@@ -90,7 +90,7 @@ export default function AdminLoginPage() {
             <Button
               type="submit"
               className="w-full h-11 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium shadow-md"
-              disabled={loading || !username.trim() || !password}
+              disabled={loading || !username.trim()}
             >
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Войти

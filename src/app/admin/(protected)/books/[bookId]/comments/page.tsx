@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowLeft, MessageSquare, ShieldOff, ShieldCheck } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { fetchAdmin } from '@/lib/admin-fetch'
 import { buildQuoteReadHref } from '@/lib/quote-navigation'
 import { cn } from '@/lib/utils'
 import CommentCard, { type CommentCardComment } from '@/components/comments/CommentCard'
@@ -33,7 +34,12 @@ const filters: Array<{ value: FilterStatus; label: string }> = [
 export default function CommentsPage() {
   const params = useParams()
   const bookId = params.bookId as string
+  const router = useRouter()
   const { toast } = useToast()
+  const adminFetch = useCallback(
+    (input: RequestInfo | URL, options: RequestInit = {}) => fetchAdmin(input, router, options),
+    [router],
+  )
 
   const [comments, setComments] = useState<Comment[]>([])
   const [bookRouting, setBookRouting] = useState<BookRoutingData | null>(null)
@@ -46,7 +52,10 @@ export default function CommentsPage() {
       params.set('bookId', bookId)
       if (filter !== 'all') params.set('status', filter)
 
-      const res = await fetch(`/api/comments/list?${params}`)
+      const res = await adminFetch(`/api/comments/list?${params}`)
+      if (!res) {
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setComments(Array.isArray(data) ? data : [])
@@ -56,11 +65,14 @@ export default function CommentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [bookId, filter])
+  }, [adminFetch, bookId, filter])
 
   const fetchBookRouting = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch(`/api/books/${bookId}`)
+      const res = await adminFetch(`/api/books/${bookId}`)
+      if (!res) {
+        return
+      }
       if (!res.ok) {
         return
       }
@@ -77,7 +89,7 @@ export default function CommentsPage() {
     } catch (error) {
       console.error('Error fetching book routing:', error)
     }
-  }, [bookId])
+  }, [adminFetch, bookId])
 
   useEffect(() => {
     const run = async () => {
@@ -89,11 +101,14 @@ export default function CommentsPage() {
   const handleToggleShadowban = async (comment: Comment) => {
     const newStatus = comment.status === 'shadowbanned' ? 'active' : 'shadowbanned'
     try {
-      const res = await fetch(`/api/comments/${comment.id}`, {
+      const res = await adminFetch(`/api/comments/${comment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
+      if (!res) {
+        return
+      }
       if (res.ok) {
         setComments((prev) =>
           prev.map((c) => (c.id === comment.id ? { ...c, status: newStatus } : c))

@@ -165,6 +165,7 @@ export default function ReaderPage() {
   const [restoreRequest, setRestoreRequest] = useState<RestoreRequest | null>(null)
   const [scrollToChapterId, setScrollToChapterId] = useState<string | null>(null)
   const [commentsChapterId, setCommentsChapterId] = useState<string | null>(null)
+  const [commentsComposerRequest, setCommentsComposerRequest] = useState(0)
   const commentsSectionRef = useRef<HTMLDivElement>(null)
   const searchContentRef = useRef<HTMLDivElement | null>(null)
   const initialized = useRef(false)
@@ -1526,6 +1527,13 @@ export default function ReaderPage() {
       return
     }
 
+    if (readingMode === 'feed') {
+      setReplyingTo(replyTo || null)
+      setCommentsChapterId(nextChapterId)
+      setCommentsComposerRequest((current) => current + 1)
+      return
+    }
+
     if (activeOverlay === 'comments' && commentsChapterId === nextChapterId && !replyTo) {
       closeOverlay()
       return
@@ -1534,7 +1542,7 @@ export default function ReaderPage() {
     setReplyingTo(replyTo || null)
     setCommentsChapterId(nextChapterId)
     openOverlay('comments')
-  }, [activeChapterId, activeOverlay, closeOverlay, commentsChapterId, openOverlay, setReplyingTo])
+  }, [activeChapterId, activeOverlay, closeOverlay, commentsChapterId, openOverlay, readingMode, setReplyingTo])
 
   const handleQuickActionVariants = useCallback((open: boolean) => {
     setChromeVisible(true)
@@ -1674,6 +1682,7 @@ export default function ReaderPage() {
         <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', display: 'flex' }}>
           {readingMode === 'feed' ? (
             <FeedReader
+              bookId={bookData.id}
               manifest={feedManifest}
               initialSections={feedSections}
               activeChapterId={activeChapterId}
@@ -1684,6 +1693,7 @@ export default function ReaderPage() {
               onToggleBookmark={handleToggleBookmark}
               authorSlug={authorSlug}
               bookSlug={bookSlug}
+              onSendComment={handleSendComment}
               highlightParagraphId={quoteTargetParagraphId}
               highlightParagraphEndId={quoteTargetParagraphEndId}
               highlightStartOffset={quoteTargetStartOffset}
@@ -1691,7 +1701,8 @@ export default function ReaderPage() {
               restoreRequest={restoreRequest}
               scrollToChapterId={scrollToChapterId}
               onScrollToChapterHandled={handleScrollToChapterHandled}
-              onOpenChapterComments={handleOpenComments}
+              composerOpenChapterId={readingMode === 'feed' ? commentsChapterId : null}
+              composerOpenRequest={commentsComposerRequest}
               onSurfaceTap={toggleChrome}
               onNavigate={closeChrome}
             />
@@ -1726,16 +1737,18 @@ export default function ReaderPage() {
         </main>
       </div>
 
-      <ReaderCommentsOverlay
-        open={activeOverlay === 'comments'}
-        chapterId={commentsChapterId}
-        chapterTitle={commentsChapter?.title || currentTitle}
-        onOpenChange={handleCommentsOpenChange}
-        onSendComment={handleSendComment}
-        commentsSectionRef={commentsSectionRef}
-        authorSlug={authorSlug}
-        bookSlug={bookSlug}
-      />
+      {readingMode !== 'feed' ? (
+        <ReaderCommentsOverlay
+          open={activeOverlay === 'comments'}
+          chapterId={commentsChapterId}
+          chapterTitle={commentsChapter?.title || currentTitle}
+          onOpenChange={handleCommentsOpenChange}
+          onSendComment={handleSendComment}
+          commentsSectionRef={commentsSectionRef}
+          authorSlug={authorSlug}
+          bookSlug={bookSlug}
+        />
+      ) : null}
 
       <UserActivityPanel
         open={activeOverlay === 'activity' && Boolean(bookData.id)}

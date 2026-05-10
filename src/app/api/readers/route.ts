@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { hasAdminLogin } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 import { summarizeReaderLlmConfig } from '@/lib/llm'
 
@@ -35,48 +34,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const existingReader = await db.reader.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        loginName: true,
-        passwordHash: true,
-        isMainAdmin: true,
-        llmApiKey: true,
-        llmBaseUrl: true,
-        llmModel: true,
+    const conflictingReader = await db.reader.findFirst({
+      where: {
+        loginName: currentUsername,
+        NOT: { id },
       },
+      select: { id: true },
     })
 
-    if (hasAdminLogin({
-      loginName: existingReader?.loginName || null,
-      passwordHash: existingReader?.passwordHash || null,
-    })) {
-      const conflictingReader = await db.reader.findFirst({
-        where: {
-          loginName: currentUsername,
-          NOT: { id },
-        },
-        select: { id: true },
-      })
-
-      if (conflictingReader) {
-        return NextResponse.json(
-          { error: 'Это имя уже занято другим пользователем для входа в админку' },
-          { status: 409 }
-        )
-      }
+    if (conflictingReader) {
+      return NextResponse.json(
+        { error: 'Это имя уже занято другим пользователем для входа в админку' },
+        { status: 409 }
+      )
     }
 
     const reader = await db.reader.upsert({
       where: { id },
       update: {
         currentUsername,
-        ...(existingReader?.passwordHash ? { loginName: currentUsername } : {}),
+        loginName: currentUsername,
       },
       create: {
         id,
         currentUsername,
+        loginName: currentUsername,
       },
       select: {
         id: true,
