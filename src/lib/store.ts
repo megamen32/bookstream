@@ -33,6 +33,7 @@ interface ReaderState {
   theme: ReaderTheme
   accentTheme: AccentTheme
   showMobileReactionBar: boolean
+  createQuoteCardsOnCopy: boolean
 
   // Reader identity
   readerId: string
@@ -53,6 +54,7 @@ interface ReaderState {
   setTheme: (theme: ReaderTheme) => void
   setAccentTheme: (theme: AccentTheme) => void
   setShowMobileReactionBar: (show: boolean) => void
+  setCreateQuoteCardsOnCopy: (value: boolean) => void
   setReaderId: (id: string) => void
   setUsername: (name: string) => void
   setShowCommunityAnnotations: (value: boolean) => void
@@ -93,6 +95,7 @@ interface StoredState {
   theme?: ReaderTheme
   readingMode?: ReadingMode
   showMobileReactionBar?: boolean
+  createQuoteCardsOnCopy?: boolean
 }
 
 function createReaderStore(): ReaderStore {
@@ -111,6 +114,7 @@ function createReaderStore(): ReaderStore {
     theme: 'light',
     accentTheme: 'sky',
     showMobileReactionBar: false,
+    createQuoteCardsOnCopy: false,
 
     // Reader identity
     readerId: '',
@@ -152,6 +156,10 @@ function createReaderStore(): ReaderStore {
       set({ showMobileReactionBar })
       get().saveToStorage()
     },
+    setCreateQuoteCardsOnCopy: (createQuoteCardsOnCopy: boolean) => {
+      set({ createQuoteCardsOnCopy })
+      get().saveToStorage()
+    },
     setReaderId: (id: string) => {
       set({ readerId: id })
       get().saveToStorage()
@@ -177,8 +185,16 @@ function createReaderStore(): ReaderStore {
         if (!raw) {
           const readerId = generateReaderId()
           const username = generateRussianUsername()
-          set({ readerId, username })
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerId, username, accentTheme: 'sky' }))
+          set({ readerId, username, createQuoteCardsOnCopy: false })
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              readerId,
+              username,
+              accentTheme: 'sky',
+              createQuoteCardsOnCopy: false,
+            }),
+          )
           return
         }
         const stored: StoredState = JSON.parse(raw)
@@ -194,11 +210,12 @@ function createReaderStore(): ReaderStore {
           readingMode: stored.readingMode || 'feed',
           hasStoredReadingMode: stored.readingMode !== undefined,
           showMobileReactionBar: stored.showMobileReactionBar || false,
+          createQuoteCardsOnCopy: stored.createQuoteCardsOnCopy ?? false,
         })
       } catch {
         const readerId = generateReaderId()
         const username = generateRussianUsername()
-        set({ readerId, username, hasStoredReadingMode: false })
+        set({ readerId, username, hasStoredReadingMode: false, createQuoteCardsOnCopy: false })
       }
     },
 
@@ -217,6 +234,7 @@ function createReaderStore(): ReaderStore {
           theme: state.theme,
           readingMode: state.readingMode,
           showMobileReactionBar: state.showMobileReactionBar,
+          createQuoteCardsOnCopy: state.createQuoteCardsOnCopy,
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
       } catch {

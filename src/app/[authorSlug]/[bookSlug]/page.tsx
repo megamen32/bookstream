@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, BookOpen, Download, MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Download, Link2, MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useToast } from '@/hooks/use-toast'
 import { useReaderStore } from '@/lib/store'
+import { buildPublicBookUrl } from '@/lib/public-sharing'
 import {
   downloadBook,
   getOfflineBookBySlugs,
@@ -69,6 +71,23 @@ function formatDurationLabel(totalSeconds: number): string {
   return `${minutes} мин`
 }
 
+async function copyTextToClipboard(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    return
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+}
+
 export default function BookCoverPage() {
   const params = useParams()
   const authorSlug = params.authorSlug as string
@@ -80,6 +99,7 @@ export default function BookCoverPage() {
   const [offlineError, setOfflineError] = useState<string | null>(null)
   const [stats, setStats] = useState<PublicBookStats | null>(null)
   const { readerId, loadFromStorage } = useReaderStore()
+  const { toast } = useToast()
 
   useEffect(() => {
     if (!authorSlug || !bookSlug) return
@@ -181,6 +201,40 @@ export default function BookCoverPage() {
     }
   }
 
+  const handleShare = async (): Promise<void> => {
+    if (!book) return
+
+    const publicUrl = buildPublicBookUrl(authorSlug, bookSlug)
+    try {
+      await copyTextToClipboard(publicUrl)
+    } catch (error) {
+      console.error('Failed to copy public book link:', error)
+      toast({
+        title: 'Не удалось скопировать ссылку',
+        description: 'Попробуйте еще раз.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      try {
+        await navigator.share({
+          title: `Книга «${book.title}»`,
+          text: book.description?.trim() || `Книга «${book.title}»`,
+          url: publicUrl,
+        })
+      } catch {
+        // User cancelled the share sheet or the platform blocked it.
+      }
+    }
+
+    toast({
+      title: 'Ссылка на книгу скопирована',
+      description: 'Публичный адрес книги готов к отправке.',
+    })
+  }
+
   if (loading) {
     return (
       <div className="poster-stage min-h-screen">
@@ -265,15 +319,26 @@ export default function BookCoverPage() {
                 </div>
               ) : null}
 
-              <Link href={`/${authorSlug}/${bookSlug}/read`} className="mt-8 inline-flex w-full sm:w-auto">
+              <div className="mt-8 grid gap-3 sm:grid-cols-2 sm:max-w-2xl">
+                <Link href={`/${authorSlug}/${bookSlug}/read`} className="inline-flex w-full">
+                  <Button
+                    size="lg"
+                    className="h-14 w-full rounded-full bg-white text-slate-950 shadow-[0_18px_40px_rgba(255,255,255,0.18)] hover:bg-white/95"
+                  >
+                    <BookOpen className="mr-2" size={20} />
+                    Читать
+                  </Button>
+                </Link>
                 <Button
+                  type="button"
                   size="lg"
-                  className="h-14 min-w-[220px] rounded-full bg-white text-slate-950 shadow-[0_18px_40px_rgba(255,255,255,0.18)] hover:bg-white/95"
+                  className="h-14 w-full rounded-full border border-white/15 bg-white/10 text-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] backdrop-blur-md hover:bg-white/15 hover:text-white"
+                  onClick={() => void handleShare()}
                 >
-                  <BookOpen className="mr-2" size={20} />
-                  Читать книгу
+                  <Link2 className="mr-2" size={18} />
+                  Поделиться
                 </Button>
-              </Link>
+              </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {!downloaded ? (

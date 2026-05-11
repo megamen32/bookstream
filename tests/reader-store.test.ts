@@ -27,12 +27,17 @@ describe('reader store persistence', () => {
       const { useReaderStore } = await import('../src/lib/store.ts')
 
       useReaderStore.getState().setReadingMode('book')
+      useReaderStore.getState().setCreateQuoteCardsOnCopy(true)
 
       const storedStateRaw = storedValues.get('bookstream-reader-state')
       assert.ok(storedStateRaw)
 
-      const storedState = JSON.parse(storedStateRaw as string) as { readingMode?: string }
+      const storedState = JSON.parse(storedStateRaw as string) as {
+        readingMode?: string
+        createQuoteCardsOnCopy?: boolean
+      }
       assert.equal(storedState.readingMode, 'book')
+      assert.equal(storedState.createQuoteCardsOnCopy, true)
     } finally {
       ;(globalThis as typeof globalThis & { window?: unknown }).window = originalWindow
       ;(globalThis as typeof globalThis & { localStorage?: unknown }).localStorage = originalLocalStorage

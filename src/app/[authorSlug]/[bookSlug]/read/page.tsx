@@ -32,6 +32,7 @@ import {
   buildReaderLocationSearch,
   resolveReaderLocationSearch,
 } from '@/lib/reader-location'
+import { buildPublicBookPath } from '@/lib/public-sharing'
 import {
   getEffectiveOfflineProgress,
   getOfflineBookRecord,
@@ -1606,7 +1607,7 @@ const handleQuoteFocusHandled = useCallback(() => {
     : null
 
   const handleBackToBook = useCallback(() => {
-    router.push(`/${authorSlug}/${bookSlug}`)
+    router.push(buildPublicBookPath(authorSlug, bookSlug))
   }, [authorSlug, bookSlug, router])
 
   const handleOpenComments = useCallback((targetChapterId?: string | null, replyTo?: ReplyQuote | null) => {

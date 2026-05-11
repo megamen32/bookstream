@@ -8,72 +8,74 @@ datasource db {
 }
 
 model Author {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  bio       String?
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  bio           String?
   ownerReaderId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  books     Book[]
-  owner     Reader?  @relation(fields: [ownerReaderId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  books         Book[]
+  owner         Reader?  @relation(fields: [ownerReaderId], references: [id])
 
   @@index([ownerReaderId])
 }
 
 model Book {
-  id                 String            @id @default(cuid())
-  slug               String
-  title              String
-  description        String?
-  coverUrl           String?
-  authorId           String
-  readingModeDefault String            @default("feed")
-  openStatsPublic    Boolean           @default(false)
-  allowReaderVariantsAtOwnerExpense Boolean @default(false)
-  syntheticCommentsPerChapter Int      @default(3)
-  syntheticQuotesPerChapter   Int      @default(1)
-  syntheticReactionsPerChapter Int     @default(5)
-  syntheticCommentsUseLlm    Boolean   @default(false)
-  isPublic           Boolean           @default(false)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  author             Author            @relation(fields: [authorId], references: [id])
-  chapters           Chapter[]
-  annotations        Annotation[]
-  readingProgress    ReadingProgress[]
-  readerStats        BookReaderStat[]
-  chapterReaderStats ChapterReaderStat[]
+  id                                String              @id @default(cuid())
+  slug                              String
+  title                             String
+  description                       String?
+  coverUrl                          String?
+  authorId                          String
+  readingModeDefault                String              @default("feed")
+  openStatsPublic                   Boolean             @default(false)
+  allowReaderVariantsAtOwnerExpense Boolean             @default(false)
+  syntheticCommentsPerChapter       Int                 @default(3)
+  syntheticQuotesPerChapter         Int                 @default(1)
+  syntheticReactionsPerChapter      Int                 @default(5)
+  syntheticCommentsUseLlm           Boolean             @default(false)
+  isPublic                          Boolean             @default(false)
+  createdAt                         DateTime            @default(now())
+  updatedAt                         DateTime            @updatedAt
+  author                            Author              @relation(fields: [authorId], references: [id])
+  chapters                          Chapter[]
+  annotations                       Annotation[]
+  moments                           BookMoment[]
+  readingProgress                   ReadingProgress[]
+  readerStats                       BookReaderStat[]
+  chapterReaderStats                ChapterReaderStat[]
 
   @@unique([authorId, slug])
 }
 
 model Chapter {
-  id        String           @id @default(cuid())
-  bookId    String
-  title     String
-  level     Int              @default(1)
-  position  Int
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  book      Book             @relation(fields: [bookId], references: [id])
-  variants  ChapterVariant[]
+  id          String              @id @default(cuid())
+  bookId      String
+  title       String
+  level       Int                 @default(1)
+  position    Int
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  book        Book                @relation(fields: [bookId], references: [id])
+  variants    ChapterVariant[]
   annotations Annotation[]
+  moments     BookMoment[]
   readerStats ChapterReaderStat[]
 
   @@unique([bookId, position])
 }
 
 model ChapterVariant {
-  id             String      @id @default(cuid())
+  id             String                   @id @default(cuid())
   chapterId      String
-  variantType    String      @default("original")
+  variantType    String                   @default("original")
   contentHtml    String
-  editedByAuthor Boolean     @default(false)
-  headRevisionId String?      @unique
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  chapter        Chapter     @relation(fields: [chapterId], references: [id])
+  editedByAuthor Boolean                  @default(false)
+  headRevisionId String?                  @unique
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  chapter        Chapter                  @relation(fields: [chapterId], references: [id])
   paragraphs     Paragraph[]
   reactions      Reaction[]
   annotations    Annotation[]
@@ -97,30 +99,30 @@ model Paragraph {
 }
 
 model ChapterVariantRevision {
-  id              String                         @id @default(cuid())
+  id               String                            @id @default(cuid())
   chapterVariantId String
-  revisionNumber  Int
+  revisionNumber   Int
   parentRevisionId String?
-  contentHtml     String
-  source          String                         @default("manual")
-  createdAt       DateTime                       @default(now())
-  chapterVariant  ChapterVariant                 @relation("VariantRevisionHistory", fields: [chapterVariantId], references: [id], onDelete: Cascade)
-  parentRevision  ChapterVariantRevision?        @relation("VariantRevisionParent", fields: [parentRevisionId], references: [id], onDelete: SetNull)
-  childRevisions  ChapterVariantRevision[]       @relation("VariantRevisionParent")
-  paragraphs      ChapterVariantRevisionParagraph[]
-  headForVariant  ChapterVariant?                @relation("VariantHeadRevision")
+  contentHtml      String
+  source           String                            @default("manual")
+  createdAt        DateTime                          @default(now())
+  chapterVariant   ChapterVariant                    @relation("VariantRevisionHistory", fields: [chapterVariantId], references: [id], onDelete: Cascade)
+  parentRevision   ChapterVariantRevision?           @relation("VariantRevisionParent", fields: [parentRevisionId], references: [id], onDelete: SetNull)
+  childRevisions   ChapterVariantRevision[]          @relation("VariantRevisionParent")
+  paragraphs       ChapterVariantRevisionParagraph[]
+  headForVariant   ChapterVariant?                   @relation("VariantHeadRevision")
 
   @@unique([chapterVariantId, revisionNumber])
   @@index([chapterVariantId, createdAt])
 }
 
 model ChapterVariantRevisionParagraph {
-  id          String                 @id @default(cuid())
-  revisionId  String
-  stableKey   String
-  position    Int
-  text        String
-  revision    ChapterVariantRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  id         String                 @id @default(cuid())
+  revisionId String
+  stableKey  String
+  position   Int
+  text       String
+  revision   ChapterVariantRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@unique([revisionId, position])
   @@index([revisionId, stableKey])
@@ -144,37 +146,37 @@ model Reaction {
 }
 
 model Annotation {
-  id               String           @id @default(cuid())
-  bookId           String
-  chapterId        String
-  chapterVariantId String?
-  sourceRevisionId String?
+  id                 String           @id @default(cuid())
+  bookId             String
+  chapterId          String
+  chapterVariantId   String?
+  sourceRevisionId   String?
   resolvedRevisionId String?
-  variantType      String           @default("original")
-  readerId         String
-  username         String
-  kind             String
-  status           String           @default("active")
-  isSynthetic      Boolean          @default(false)
-  body             String?
-  emoji            String?
-  selectedText     String?
-  paragraphId      String?
-  endParagraphId   String?
-  startStableKey   String?
-  endStableKey     String?
-  anchorPrefix     String?
-  anchorSuffix     String?
-  anchorStatus     String           @default("exact")
-  anchorScore      Float            @default(1)
-  startOffset      Int              @default(0)
-  endOffset        Int              @default(0)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  book             Book             @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  chapter          Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  chapterVariant   ChapterVariant?  @relation(fields: [chapterVariantId], references: [id], onDelete: Cascade)
-  votes            AnnotationVote[]
+  variantType        String           @default("original")
+  readerId           String
+  username           String
+  kind               String
+  status             String           @default("active")
+  isSynthetic        Boolean          @default(false)
+  body               String?
+  emoji              String?
+  selectedText       String?
+  paragraphId        String?
+  endParagraphId     String?
+  startStableKey     String?
+  endStableKey       String?
+  anchorPrefix       String?
+  anchorSuffix       String?
+  anchorStatus       String           @default("exact")
+  anchorScore        Float            @default(1)
+  startOffset        Int              @default(0)
+  endOffset          Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  book               Book             @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter            Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapterVariant     ChapterVariant?  @relation(fields: [chapterVariantId], references: [id], onDelete: Cascade)
+  votes              AnnotationVote[]
 
   @@index([bookId, kind])
   @@index([chapterId, kind])
@@ -184,40 +186,62 @@ model Annotation {
   @@index([sourceRevisionId])
 }
 
+model BookMoment {
+  id             String   @id @default(cuid())
+  authorSlug     String
+  bookSlug       String
+  bookId         String
+  chapterId      String
+  variantType    String
+  readingMode    String
+  paragraphStart String
+  paragraphEnd   String?
+  startOffset    Int
+  endOffset      Int
+  quoteText      String
+  createdAt      DateTime @default(now())
+  book           Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter        Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([bookId, createdAt])
+  @@index([authorSlug, bookSlug])
+  @@index([chapterId])
+}
+
 model AnnotationVote {
-  id            String      @id @default(cuid())
-  annotationId  String
-  readerId      String
-  createdAt     DateTime    @default(now())
-  annotation    Annotation  @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  annotationId String
+  readerId     String
+  createdAt    DateTime   @default(now())
+  annotation   Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
 
   @@unique([annotationId, readerId])
 }
 
 model Reader {
-  id              String   @id @default(cuid())
+  id              String          @id @default(cuid())
   currentUsername String
-  loginName       String?  @unique
+  loginName       String?         @unique
   passwordHash    String?
-  isMainAdmin     Boolean  @default(false)
+  isMainAdmin     Boolean         @default(false)
   llmApiKey       String?
   llmBaseUrl      String?
   llmModel        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   authors         Author[]
   adminLinkCodes  AdminLinkCode[]
 }
 
 model AdminLinkCode {
-  id          String   @id @default(cuid())
-  readerId    String
-  codeHash    String   @unique
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
-  usedAt      DateTime?
-  revokedAt   DateTime?
-  reader      Reader   @relation(fields: [readerId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  readerId  String
+  codeHash  String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  reader    Reader    @relation(fields: [readerId], references: [id], onDelete: Cascade)
 
   @@index([readerId, createdAt])
   @@index([expiresAt])
@@ -249,34 +273,34 @@ model ReadingProgress {
 }
 
 model BookReaderStat {
-  id                     String   @id @default(cuid())
-  bookId                 String
-  readerId               String
-  firstOpenedAt          DateTime @default(now())
-  lastOpenedAt           DateTime @default(now())
-  totalReadSeconds       Int      @default(0)
-  furthestProgressPercent Float   @default(0)
-  lastChapterId          String?
-  completedChaptersCount Int      @default(0)
-  isCompleted            Boolean  @default(false)
-  book                   Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  id                      String   @id @default(cuid())
+  bookId                  String
+  readerId                String
+  firstOpenedAt           DateTime @default(now())
+  lastOpenedAt            DateTime @default(now())
+  totalReadSeconds        Int      @default(0)
+  furthestProgressPercent Float    @default(0)
+  lastChapterId           String?
+  completedChaptersCount  Int      @default(0)
+  isCompleted             Boolean  @default(false)
+  book                    Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
   @@unique([bookId, readerId])
   @@index([bookId])
 }
 
 model ChapterReaderStat {
-  id                     String   @id @default(cuid())
-  bookId                 String
-  chapterId              String
-  readerId               String
-  firstOpenedAt          DateTime @default(now())
-  lastOpenedAt           DateTime @default(now())
-  totalReadSeconds       Int      @default(0)
-  furthestProgressPercent Float   @default(0)
-  isCompleted            Boolean  @default(false)
-  book                   Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  chapter                Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  id                      String   @id @default(cuid())
+  bookId                  String
+  chapterId               String
+  readerId                String
+  firstOpenedAt           DateTime @default(now())
+  lastOpenedAt            DateTime @default(now())
+  totalReadSeconds        Int      @default(0)
+  furthestProgressPercent Float    @default(0)
+  isCompleted             Boolean  @default(false)
+  book                    Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter                 Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@unique([chapterId, readerId])
   @@index([bookId])

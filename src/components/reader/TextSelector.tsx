@@ -8,7 +8,8 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import type { AnnotationKind } from '@/lib/annotations'
 import { getOfflineBookRecord, toggleOfflineAnnotation } from '@/lib/offline-client'
-import { buildQuoteReadHref } from '@/lib/quote-navigation'
+import { shareQuoteSelection } from '@/lib/quote-sharing'
+import { useToast } from '@/hooks/use-toast'
 
 export interface SelectionAnnotationRange {
   id?: string
@@ -135,7 +136,15 @@ export default function TextSelector({
   const [reactionBurst, setReactionBurst] = useState<ReactionBurst | null>(null)
   const activeSelectionNodesRef = useRef<HTMLElement[]>([])
   const preserveSelectionFrameRef = useRef(false)
-  const { setReplyingTo, readerId, bookId, username } = useReaderStore()
+  const {
+    setReplyingTo,
+    readerId,
+    bookId,
+    username,
+    readingMode,
+    createQuoteCardsOnCopy,
+  } = useReaderStore()
+  const { toast } = useToast()
 
   const clearSelectionHighlight = useCallback(() => {
     for (const node of activeSelectionNodesRef.current) {
@@ -325,16 +334,75 @@ export default function TextSelector({
   const handleCopyLink = async () => {
     if (!toolbar) return
 
-    const href = buildQuoteReadHref(authorSlug, bookSlug, {
-      chapterId: toolbar.chapterId,
-      variantType: toolbar.variantType,
-      paragraphId: toolbar.paragraphId,
-      paragraphEndId: toolbar.endParagraphId,
-      startOffset: toolbar.startOffset,
-      endOffset: toolbar.endOffset,
-    })
+    try {
+      const result = await shareQuoteSelection(
+        {
+          authorSlug,
+          bookSlug,
+          chapterId: toolbar.chapterId,
+          variantType: toolbar.variantType,
+          paragraphStart: toolbar.paragraphId,
+          paragraphEnd: toolbar.endParagraphId,
+          startOffset: toolbar.startOffset,
+          endOffset: toolbar.endOffset,
+          readingMode,
+          quoteText: toolbar.selectedText,
+          createQuoteCardsOnCopy,
+        },
+        {
+          origin: window.location.origin,
+          copyToClipboard,
+          createQuoteCard: async (payload) => {
+            if (!bookId) {
+              throw new Error('bookId is missing')
+            }
 
-    await copyToClipboard(new URL(href, window.location.origin).toString())
+            const response = await fetch(`/api/books/${bookId}/moments`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(payload),
+            })
+
+            if (!response.ok) {
+              const payloadData = await response.json().catch(() => null) as { error?: string } | null
+              throw new Error(payloadData?.error || 'Failed to create public moment')
+            }
+
+            const responseData = await response.json() as {
+              publicUrl?: string
+            }
+
+            if (!responseData.publicUrl) {
+              throw new Error('publicUrl is missing in moment response')
+            }
+
+            return { publicUrl: responseData.publicUrl }
+          },
+        },
+      )
+
+      if (!result.createdQuoteCard) {
+        toast({
+          title: 'Ссылка на цитату скопирована',
+          description: 'Скопирована внутренняя ссылка на нужное место в книге.',
+        })
+      } else {
+        toast({
+          title: 'Ссылка на цитату скопирована',
+          description: 'Публичная карточка цитаты готова.',
+        })
+      }
+    } catch (error) {
+      console.error('Failed to create public moment:', error)
+      toast({
+        title: 'Скопирована техническая ссылка',
+        description: 'Не удалось создать публичную карточку цитаты.',
+        variant: 'destructive',
+      })
+    }
+
     completeCopyAction('link')
   }
 
@@ -534,7 +602,7 @@ export default function TextSelector({
             <Copy size={16} />
           </ToolbarButton>
           <ToolbarButton
-            label={copiedState === 'link' ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+            label={copiedState === 'link' ? 'Ссылка на цитату скопирована' : 'Скопировать ссылку на цитату'}
             onClick={() => void handleCopyLink()}
           >
             <Link2 size={16} />

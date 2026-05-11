@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { ArrowRight, Eye, EyeOff, KeyRound, Palette, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, KeyRound, Link2, Palette, Sparkles, UserRound } from 'lucide-react'
 import UserAreaLayout from '@/components/user/UserAreaLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,14 +26,17 @@ export default function UserSettingsPage(): React.ReactElement {
     readerId,
     username,
     showCommunityAnnotations,
+    createQuoteCardsOnCopy,
     accentTheme,
     setUsername,
     setShowCommunityAnnotations,
+    setCreateQuoteCardsOnCopy,
     setAccentTheme,
     loadFromStorage,
   } = useReaderStore()
   const [draftUsername, setDraftUsername] = useState('')
   const [draftVisibility, setDraftVisibility] = useState(true)
+  const [draftCreateQuoteCardsOnCopy, setDraftCreateQuoteCardsOnCopy] = useState(false)
   const [draftAccentTheme, setDraftAccentTheme] = useState<AccentTheme>('sky')
   const [draftPassword, setDraftPassword] = useState('')
   const [draftPasswordConfirm, setDraftPasswordConfirm] = useState('')
@@ -67,6 +70,14 @@ export default function UserSettingsPage(): React.ReactElement {
 
     return () => window.cancelAnimationFrame(frameId)
   }, [showCommunityAnnotations])
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      setDraftCreateQuoteCardsOnCopy(createQuoteCardsOnCopy)
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [createQuoteCardsOnCopy])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -209,6 +220,7 @@ export default function UserSettingsPage(): React.ReactElement {
 
       setUsername(trimmedUsername)
       setShowCommunityAnnotations(draftVisibility)
+      setCreateQuoteCardsOnCopy(draftCreateQuoteCardsOnCopy)
       setAccentTheme(draftAccentTheme)
       setError(null)
       setSaved(true)
@@ -440,6 +452,30 @@ export default function UserSettingsPage(): React.ReactElement {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Link2 size={16} />
+                    Создавать отдельную карточку для цитаты
+                  </div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    Если настройка включена, при копировании цитаты будет создаваться публичная карточка и
+                    копироваться её короткая ссылка. Если выключена, останется только техническая ссылка на
+                    место в книге.
+                  </p>
+                </div>
+                <Switch
+                  checked={draftCreateQuoteCardsOnCopy}
+                  onCheckedChange={(checked) => {
+                    setDraftCreateQuoteCardsOnCopy(checked)
+                    setSaved(false)
+                  }}
+                  aria-label="Создавать отдельную карточку для цитаты"
+                />
+              </div>
+            </div>
+
             <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -548,6 +584,13 @@ export default function UserSettingsPage(): React.ReactElement {
               <div className="text-muted-foreground">Чужие аннотации</div>
               <div className="mt-1 font-medium text-foreground">
                 {showCommunityAnnotations ? 'Показываются' : 'Скрыты во время чтения'}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-background/80 p-4">
+              <div className="text-muted-foreground">Карточки цитат</div>
+              <div className="mt-1 font-medium text-foreground">
+                {createQuoteCardsOnCopy ? 'Создаются при копировании' : 'Только внутренняя ссылка'}
               </div>
             </div>
 
