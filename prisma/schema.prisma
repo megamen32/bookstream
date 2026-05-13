@@ -41,6 +41,7 @@ model Book {
   author                            Author              @relation(fields: [authorId], references: [id])
   chapters                          Chapter[]
   annotations                       Annotation[]
+  bibliographyItems                 BibliographyItem[]
   moments                           BookMoment[]
   readingProgress                   ReadingProgress[]
   readerStats                       BookReaderStat[]
@@ -60,6 +61,7 @@ model Chapter {
   book        Book                @relation(fields: [bookId], references: [id])
   variants    ChapterVariant[]
   annotations Annotation[]
+  bibliographyItems BibliographyItem[]
   moments     BookMoment[]
   readerStats ChapterReaderStat[]
 
@@ -184,6 +186,23 @@ model Annotation {
   @@index([chapterVariantId])
   @@index([resolvedRevisionId])
   @@index([sourceRevisionId])
+}
+
+model BibliographyItem {
+  id               String   @id @default(cuid())
+  bookId           String
+  chapterId        String?
+  number           Int
+  rawText          String
+  normalizedText   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  book             Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter          Chapter? @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+
+  @@unique([bookId, number])
+  @@index([bookId, number])
+  @@index([chapterId])
 }
 
 model BookMoment {

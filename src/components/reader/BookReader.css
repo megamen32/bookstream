@@ -134,6 +134,23 @@
   max-width: 100%;
 }
 
+.book-reader-paragraph a {
+  color: color-mix(in srgb, var(--r-accent) 82%, var(--r-text) 18%);
+  text-decoration-line: underline;
+  text-decoration-thickness: 0.09em;
+  text-underline-offset: 0.14em;
+  text-decoration-color: color-mix(in srgb, var(--r-accent) 54%, transparent);
+}
+
+.book-reader-paragraph a[href^='http']::after {
+  content: '↗';
+  display: inline-block;
+  margin-left: 0.15em;
+  font-size: 0.82em;
+  line-height: 1;
+  opacity: 0.82;
+}
+
 .book-reader-paragraph img,
 .book-reader-paragraph video {
   display: block;
@@ -152,6 +169,7 @@
 }
 
 .book-reader-page-inner {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;

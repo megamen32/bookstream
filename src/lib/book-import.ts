@@ -1,10 +1,18 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import mammoth from 'mammoth'
 import { marked } from 'marked'
 import sharp from 'sharp'
-import { resolveCoverDirectories } from '@/lib/cover-storage'
-import { buildDocxImportOptions } from '@/lib/docx-conversion'
+import { resolveCoverDirectories } from './cover-storage.ts'
+import { hasReadableHtmlContent } from './book-content.ts'
+import { buildDocxImportOptions } from './docx-conversion.ts'
+import {
+  flattenImportedSections,
+  normalizeImportedHtml,
+  splitImportedHtmlIntoSections,
+  type ImportedBookSection,
+} from './imported-book-html.ts'
 
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
@@ -25,6 +33,7 @@ export interface ImportedChapter {
   title: string
   content: string
   level: number
+  isReadable?: boolean
 }
 
 /**
@@ -35,7 +44,10 @@ export interface ImportedChapter {
  * @returns Parsed content in normalized formats.
  * @throws Error When the file type is not supported.
  */
-export async function readImportedBookFile(file: File): Promise<ImportedBookContent> {
+export async function readImportedBookFile(
+  file: File,
+  docxOverrides: Partial<Parameters<typeof mammoth.convertToHtml>[1]> = {},
+): Promise<ImportedBookContent> {
   const extension = getFileExtension(file.name)
 
   if (!SUPPORTED_BOOK_EXTENSIONS.includes(extension)) {
@@ -63,12 +75,14 @@ export async function readImportedBookFile(file: File): Promise<ImportedBookCont
 
   const buffer = Buffer.from(await file.arrayBuffer())
   const htmlResult = await mammoth.convertToHtml({ buffer }, buildDocxImportOptions({
-    convertImage: mammoth.images.imgElement(async (image) => ({
-      src: `data:${image.contentType};base64,${await image.read('base64')}`,
-    })),
+    ...docxOverrides,
+    convertImage: docxOverrides.convertImage
+      || mammoth.images.imgElement(async (image) => ({
+        src: `data:${image.contentType};base64,${await image.read('base64')}`,
+      })),
   }))
   const rawTextResult = await mammoth.extractRawText({ buffer })
-  const html = htmlResult.value
+  const html = normalizeImportedHtml(htmlResult.value)
   const text = normalizeText(rawTextResult.value)
 
   return {
@@ -118,65 +132,19 @@ export function splitImportedHtmlIntoChaptersWithFallbackTitle(
   html: string,
   fallbackTitle = 'Глава 1'
 ): ImportedChapter[] {
-  const headings = extractHeadingBoundaries(html)
+  const sections = splitImportedHtmlIntoSections(html, fallbackTitle)
+  const flattened = flattenImportedSections(sections)
 
-  if (headings.length > 0) {
-    const candidates = shouldSkipLeadingStructuralHeading(headings, html)
-      ? headings.slice(1)
-      : headings
-    const chapterBoundaries = selectTopLevelChapterHeadings(candidates)
-
-    const chapters: ImportedChapter[] = []
-    const leadingTitle = fallbackTitle
-    const leadingContent = removeDuplicateLeadingTitleBlock(
-      html.slice(0, chapterBoundaries[0]?.index ?? html.length).trim(),
-      leadingTitle
-    )
-    if (hasReadableBlockContent(leadingContent)) {
-      chapters.push({
-        title: leadingTitle,
-        content: leadingContent,
-        level: 1,
-      })
-    }
-
-    for (let index = 0; index < chapterBoundaries.length; index += 1) {
-      const start = chapterBoundaries[index].endIndex
-      const end = index + 1 < chapterBoundaries.length ? chapterBoundaries[index + 1].index : html.length
-      const chapterTitle = chapterBoundaries[index].title
-      const rawContent = html.slice(start, end).trim()
-      const content = removeDuplicateLeadingTitleBlock(rawContent, chapterTitle)
-
-      if (!hasReadableBlockContent(content)) {
-        continue
-      }
-
-      chapters.push({
-        title: chapterTitle,
-        content,
-        level: 1,
-      })
-    }
-
-    if (chapters.length > 0) {
-      return chapters
-    }
+  if (flattened.length === 0) {
+    return [{ title: fallbackTitle, content: html, level: 1, isReadable: hasReadableHtmlContent(html) }]
   }
 
-  const paragraphs = html.split(/<\/p>/i).filter((paragraph) => paragraph.trim())
-  const chapters: ImportedChapter[] = []
-  const chunkSize = 10
-
-  for (let index = 0; index < paragraphs.length; index += chunkSize) {
-    const chunk = paragraphs.slice(index, index + chunkSize)
-    chapters.push({
-      title: `Глава ${chapters.length + 1}`,
-      content: `${chunk.join('</p>').trim()}</p>`,
-      level: 1,
-    })
-  }
-
-  return chapters.length > 0 ? chapters : [{ title: fallbackTitle, content: html, level: 1 }]
+  return flattened.map((section) => ({
+    title: section.title,
+    content: section.contentHtml,
+    level: section.level,
+    isReadable: section.isReadable,
+  }))
 }
 
 interface HeadingBoundary {
@@ -312,6 +280,38 @@ export async function persistImportedBookCover(params: {
   }
 
   return `/uploads/covers/${fileName}`
+}
+
+interface ImportedDocxImage {
+  contentType: string
+  read(format: 'base64'): Promise<string>
+}
+
+/**
+ * Persists an image extracted from a DOCX file into the public book asset tree.
+ *
+ * @param params Book identity and source image payload.
+ * @returns Public URL for the saved asset.
+ */
+export async function persistImportedBookImage(params: {
+  bookId: string
+  image: ImportedDocxImage
+}): Promise<string> {
+  const { bookId, image } = params
+  const imageBuffer = Buffer.from(await image.read('base64'), 'base64')
+  const extension = resolveImageExtension(image.contentType)
+  const fileName = `${sanitizePathSegment(bookId)}-${randomUUID()}${extension}`
+  const publicPath = `/uploads/books/${sanitizePathSegment(bookId)}/${fileName}`
+  const assetDirectories = resolveImportedBookAssetDirectories()
+
+  for (const assetDirectory of assetDirectories) {
+    const targetDirectory = path.join(assetDirectory, sanitizePathSegment(bookId))
+    const targetPath = path.join(targetDirectory, fileName)
+    await mkdir(targetDirectory, { recursive: true })
+    await writeFile(targetPath, imageBuffer)
+  }
+
+  return publicPath
 }
 
 function inferBookTitle(fileName: string, content: ImportedBookContent): string | null {
@@ -500,6 +500,41 @@ function parseDataUrlImage(dataUrl: string): Buffer | null {
   }
 
   return Buffer.from(match[1], 'base64')
+}
+
+function resolveImportedBookAssetDirectories(): string[] {
+  const directories = new Set<string>()
+  const configuredPublicDirectory = process.env.BOOKSTREAM_PUBLIC_DIR
+  const currentWorkingDirectory = process.cwd()
+
+  if (configuredPublicDirectory) {
+    directories.add(path.resolve(configuredPublicDirectory))
+  }
+
+  directories.add(path.join(currentWorkingDirectory, 'public'))
+
+  const entryScriptPath = process.argv[1]
+  if (entryScriptPath) {
+    const normalizedEntryDirectory = path.dirname(path.resolve(entryScriptPath))
+    const standaloneSuffix = `${path.sep}.next${path.sep}standalone`
+
+    if (normalizedEntryDirectory.endsWith(standaloneSuffix)) {
+      directories.add(path.join(normalizedEntryDirectory, 'public'))
+    }
+  }
+
+  return Array.from(directories).map((publicDirectory) => (
+    path.join(publicDirectory, 'uploads', 'books')
+  ))
+}
+
+function resolveImageExtension(contentType: string): string {
+  if (contentType === 'image/jpeg') return '.jpg'
+  if (contentType === 'image/png') return '.png'
+  if (contentType === 'image/webp') return '.webp'
+  if (contentType === 'image/avif') return '.avif'
+  if (contentType === 'image/gif') return '.gif'
+  return '.img'
 }
 
 function plainTextToHtml(text: string): string {

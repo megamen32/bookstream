@@ -1,14 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { List, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { ChevronRight, List, X } from 'lucide-react'
+import { buildChapterTree, type ChapterTreeNode, type ChapterTreeSource } from './chapter-tree'
 
-interface Chapter {
-  id: string
-  title: string
-  level?: number
-  position: number
-}
+type Chapter = ChapterTreeSource
 
 interface TableOfContentsProps {
   chapters: Chapter[]
@@ -30,6 +27,7 @@ export default function TableOfContents({
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = typeof open === 'boolean'
   const isOpen = isControlled ? open : internalOpen
+  const chapterTree = useMemo(() => buildChapterTree(chapters), [chapters])
 
   const setOpen = (nextOpen: boolean): void => {
     if (!isControlled) {
@@ -135,60 +133,106 @@ export default function TableOfContents({
             />
 
             <div style={{ overflowY: 'auto', padding: '0.75rem 0.5rem', flex: 1 }}>
-              {chapters.map((chapter) => {
-                const isCurrent = chapter.id === currentChapterId
-                return (
-                  <button
-                    key={chapter.id}
-                    onClick={() => {
-                      onChapterChange(chapter.id)
-                      setOpen(false)
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      width: '100%',
-                      padding: '0.82rem 0.85rem',
-                      borderRadius: '1rem',
-                      border: `1px solid ${isCurrent ? 'color-mix(in srgb, var(--r-accent) 26%, transparent)' : 'transparent'}`,
-                      background: isCurrent
-                        ? 'color-mix(in srgb, var(--r-accent) 14%, var(--r-bg) 86%)'
-                        : 'transparent',
-                      color: isCurrent ? 'var(--r-text)' : 'var(--r-text)',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      textAlign: 'left',
-                      minHeight: '48px',
-                      fontWeight: isCurrent ? 600 : 450,
-                      paddingInlineStart: `${0.85 + Math.max(0, (chapter.level ?? 1) - 1) * 1.25}rem`,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: isCurrent ? 'var(--r-accent)' : 'var(--r-text-secondary)',
-                        fontSize: '0.75rem',
-                        minWidth: '1.5rem',
-                      }}
-                    >
-                      {chapter.position + 1}.
-                    </span>
-                    <span
-                      style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {chapter.title}
-                    </span>
-                  </button>
-                )
-              })}
+              {chapterTree.length > 0 ? renderChapterTree(chapterTree, currentChapterId, onChapterChange, setOpen) : null}
             </div>
           </div>
         </>
       )}
     </>
   )
+}
+
+function renderChapterTree(
+  nodes: ChapterTreeNode[],
+  currentChapterId: string,
+  onChapterChange: (chapterId: string) => void,
+  closeTOC: (nextOpen: boolean) => void,
+  depth = 0,
+): ReactNode[] {
+  return nodes.flatMap((node) => {
+    const isCurrent = node.id === currentChapterId
+    const targetChapterId = node.isContainer && node.firstReadableDescendantId
+      ? node.firstReadableDescendantId
+      : node.id
+    const isDisabled = !targetChapterId
+
+    return [
+      <div
+        key={node.id}
+        style={{
+          marginLeft: depth > 0 ? `${depth * 0.85}rem` : 0,
+        }}
+      >
+        <button
+          onClick={() => {
+            if (isDisabled) {
+              return
+            }
+            onChapterChange(targetChapterId)
+            closeTOC(false)
+          }}
+          disabled={isDisabled}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            width: '100%',
+            padding: '0.82rem 0.85rem',
+            borderRadius: '1rem',
+            border: `1px solid ${isCurrent ? 'color-mix(in srgb, var(--r-accent) 26%, transparent)' : 'transparent'}`,
+            background: isCurrent
+              ? 'color-mix(in srgb, var(--r-accent) 14%, var(--r-bg) 86%)'
+              : node.isContainer
+                ? 'color-mix(in srgb, var(--r-bg-secondary) 38%, transparent)'
+                : 'transparent',
+            color: isCurrent ? 'var(--r-text)' : 'var(--r-text)',
+            cursor: isDisabled ? 'default' : 'pointer',
+            fontSize: '0.875rem',
+            textAlign: 'left',
+            minHeight: '48px',
+            fontWeight: node.isContainer ? 600 : isCurrent ? 600 : 450,
+            opacity: node.isContainer && !node.firstReadableDescendantId ? 0.58 : 1,
+          }}
+        >
+          <span
+            style={{
+              color: isCurrent ? 'var(--r-accent)' : 'var(--r-text-secondary)',
+              fontSize: '0.75rem',
+              minWidth: '1.5rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {node.isContainer ? <ChevronRight size={14} /> : `${node.position + 1}.`}
+          </span>
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}
+          >
+            {node.title}
+          </span>
+          {node.isContainer ? (
+            <span
+              style={{
+                fontSize: '0.66rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--r-text-secondary)',
+              }}
+            >
+              Раздел
+            </span>
+          ) : null}
+        </button>
+      </div>,
+      ...(node.children.length > 0
+        ? renderChapterTree(node.children, currentChapterId, onChapterChange, closeTOC, depth + 1)
+        : []),
+    ]
+  })
 }

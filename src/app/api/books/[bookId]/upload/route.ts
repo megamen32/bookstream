@@ -5,9 +5,15 @@ import { db } from '@/lib/db'
 import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import {
   persistImportedBookCover,
+  persistImportedBookImage,
   readImportedBookFile,
-  splitImportedHtmlIntoChaptersWithFallbackTitle,
 } from '@/lib/book-import'
+import { transformBibliographicAnnotations } from '@/lib/books/annotations'
+import {
+  flattenImportedSections,
+  splitImportedHtmlIntoSections,
+} from '@/lib/imported-book-html'
+import mammoth from 'mammoth'
 
 const COVER_ACCEPTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif'] as const
 const COVER_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
@@ -96,18 +102,43 @@ export async function POST(
       )
     }
 
-    const importedContent = await readImportedBookFile(file)
-    const chapterParts = splitImportedHtmlIntoChaptersWithFallbackTitle(
-      importedContent.html,
-      book.title
+    const importedContent = await readImportedBookFile(file, {
+      convertImage: mammoth.images.imgElement(async (image) => ({
+        src: await persistImportedBookImage({
+          bookId: book.id,
+          image,
+        }),
+      })),
+    })
+    const chapterParts = flattenImportedSections(
+      splitImportedHtmlIntoSections(importedContent.html, book.title),
     )
     const detectedCoverDataUrl =
       typeof suggestedCoverDataUrl === 'string'
         ? suggestedCoverDataUrl
         : importedContent.coverDataUrl
+    let bibliographyDetected = false
+    let bibliographyDetectionMethod: 'heading' | 'tail-heuristic' | 'none' = 'none'
+    let bibliographyItemsCount = 0
+    let annotationMarkersCount = 0
+    let unresolvedMarkersCount = 0
 
     for (let index = 0; index < chapterParts.length; index += 1) {
       const chapterTitle = chapterParts[index].title || `Глава ${index + 1}`
+      const bibliographicTransform = transformBibliographicAnnotations(chapterParts[index].contentHtml)
+      bibliographyDetected = bibliographyDetected || bibliographicTransform.diagnostics.bibliographyDetected
+      if (bibliographicTransform.diagnostics.detectionMethod === 'heading') {
+        bibliographyDetectionMethod = 'heading'
+      } else if (
+        bibliographyDetectionMethod === 'none'
+        && bibliographicTransform.diagnostics.detectionMethod === 'tail-heuristic'
+      ) {
+        bibliographyDetectionMethod = 'tail-heuristic'
+      }
+      bibliographyItemsCount += bibliographicTransform.diagnostics.bibliographyItemsCount
+      annotationMarkersCount += bibliographicTransform.diagnostics.annotationMarkersCount
+      unresolvedMarkersCount += bibliographicTransform.diagnostics.unresolvedMarkersCount
+
       const chapter = await db.chapter.create({
         data: {
           bookId: ownedBook.id,
@@ -120,10 +151,35 @@ export async function POST(
       await db.$transaction((tx) => saveChapterVariantRevision(tx, {
         chapterId: chapter.id,
         variantType: 'original',
-        contentHtml: chapterParts[index].content,
+        contentHtml: bibliographicTransform.html,
         editedByAuthor: true,
         source: 'import',
       }))
+
+      if (bibliographicTransform.items.length > 0) {
+        for (const item of bibliographicTransform.items) {
+          await db.bibliographyItem.upsert({
+            where: {
+              bookId_number: {
+                bookId: book.id,
+                number: item.number,
+              },
+            },
+            create: {
+              bookId: book.id,
+              chapterId: chapter.id,
+              number: item.number,
+              rawText: item.rawText,
+              normalizedText: item.normalizedText,
+            },
+            update: {
+              chapterId: chapter.id,
+              rawText: item.rawText,
+              normalizedText: item.normalizedText,
+            },
+          })
+        }
+      }
     }
 
     const coverUrl = await persistImportedBookCover({
@@ -144,6 +200,11 @@ export async function POST(
       success: true,
       chaptersCreated: chapterParts.length,
       coverAttached: Boolean(coverUrl),
+      bibliographyDetected,
+      detectionMethod: bibliographyDetectionMethod,
+      bibliographyItemsCount,
+      annotationMarkersCount,
+      unresolvedMarkersCount,
     })
   } catch (error) {
     console.error('Error uploading file:', error)

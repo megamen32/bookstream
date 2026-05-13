@@ -8,6 +8,7 @@ import type { AnnotationParagraphRange } from '@/lib/annotations'
 import { splitTextByAnnotationRanges } from '@/lib/annotations'
 import type { FeedSectionData } from './feed-types'
 import type { ReaderComment } from './comment-types'
+import { renderTextWithBibliographyMarkers } from './bibliography-render'
 
 interface ReaderChapterSectionProps {
   section: FeedSectionData
@@ -167,7 +168,7 @@ export default function ReaderChapterSection({
                           className="bookstream-inline-annotation"
                         >
                           <span className="bookstream-word-highlight">
-                            {segment.text}
+                            {renderTextWithBibliographyMarkers(segment.text, `${paragraph.id}-hl-${index}`)}
                           </span>
 
                           {segment.badges.map((badge, badgeIndex) => (
@@ -193,7 +194,7 @@ export default function ReaderChapterSection({
                         </span>
                       ) : (
                         <span key={`${paragraph.id}-txt-${index}`}>
-                          {segment.text}
+                          {renderTextWithBibliographyMarkers(segment.text, `${paragraph.id}-txt-${index}`)}
                         </span>
                       )
                     ))}

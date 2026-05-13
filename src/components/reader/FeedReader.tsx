@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type React from 'react'
 import { useReaderStore } from '@/lib/store'
 import './FeedReader.css'
+import './annotations.css'
 import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import type { ReaderComment } from './comment-types'
@@ -15,6 +16,7 @@ import {
   type AnnotationParagraphRange,
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
+import { type BibliographyItem } from '@/lib/books/annotations'
 import { estimateChapterHeight } from './chapter-height'
 import ChapterSkeleton from './ChapterSkeleton'
 import MeasuredChapter from './MeasuredChapter'
@@ -22,6 +24,8 @@ import ReaderChapterSection from './ReaderChapterSection'
 import { useBackgroundChapterLoader } from './useBackgroundChapterLoader'
 import { resolveActiveChapterFromVirtualLayout, useVirtualBookFeed } from './useVirtualBookFeed'
 import { useInitialScrollLock } from './useInitialScrollLock'
+import AnnotationPopover from './AnnotationPopover'
+import { resolveBibliographyMarkerNumbers } from './bibliography-render'
 
 interface FeedReaderProps {
   bookId: string
@@ -127,16 +131,22 @@ export default function FeedReader({
   const scrollRef = useRef<HTMLDivElement>(null)
   const quoteHighlightNodesRef = useRef<HTMLElement[]>([])
   const quoteFocusPulseNodesRef = useRef<HTMLElement[]>([])
-  const quoteFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const quoteFocusTimeoutRef = useRef<number | null>(null)
   const lastHandledQuoteFocusKeyRef = useRef<string | null>(null)
   const restoreAppliedTokenRef = useRef<number | null>(null)
   const tickingRef = useRef(false)
   const pointerGestureRef = useRef<PointerGestureState | null>(null)
   const initialRevealSetRef = useRef(false)
+  const annotationPopoverTimeoutRef = useRef<number | null>(null)
+  const annotationPopoverPinnedRef = useRef(false)
+  const annotationPopoverMarkerKeyRef = useRef<string | null>(null)
 
   const [selectionHighlights, setSelectionHighlights] = useState<StoredSelectionAnnotationRange[]>([])
   const [initialRevealChapterId, setInitialRevealChapterId] = useState<string | null>(null)
   const [initialScrollReady, setInitialScrollReady] = useState(false)
+  const [annotationPopoverOpen, setAnnotationPopoverOpen] = useState(false)
+  const [annotationPopoverAnchorRect, setAnnotationPopoverAnchorRect] = useState<DOMRect | null>(null)
+  const [annotationPopoverItems, setAnnotationPopoverItems] = useState<BibliographyItem[]>([])
 
   const hasPreciseQuoteHighlight = Number.isFinite(highlightStartOffset) && Number.isFinite(highlightEndOffset)
   const chapterIds = useMemo(() => manifest.map((item) => item.chapterId), [manifest])
@@ -281,6 +291,104 @@ export default function FeedReader({
     })
   }, [])
 
+  const closeBibliographyPopover = useCallback(() => {
+    if (annotationPopoverTimeoutRef.current !== null) {
+      clearTimeout(annotationPopoverTimeoutRef.current)
+      annotationPopoverTimeoutRef.current = null
+    }
+
+    annotationPopoverPinnedRef.current = false
+    annotationPopoverMarkerKeyRef.current = null
+    setAnnotationPopoverOpen(false)
+    setAnnotationPopoverItems([])
+    setAnnotationPopoverAnchorRect(null)
+  }, [])
+
+  useEffect(() => {
+    closeBibliographyPopover()
+  }, [activeChapterId, closeBibliographyPopover])
+
+  useEffect(() => () => {
+    closeBibliographyPopover()
+  }, [closeBibliographyPopover])
+
+  const resolveSectionForMarker = useCallback((markerElement: HTMLElement): FeedSectionData | null => {
+    const chapterElement = markerElement.closest<HTMLElement>('[data-chapter-id]')
+    const chapterId = chapterElement?.dataset.chapterId || null
+
+    if (chapterId) {
+      const section = loadedSections.find((entry) => entry.chapter.id === chapterId)
+      if (section) {
+        return section
+      }
+    }
+
+    return loadedSections[0] || null
+  }, [loadedSections])
+
+  const openBibliographyPopover = useCallback((
+    markerElement: HTMLElement,
+    pinned: boolean,
+  ) => {
+    const section = resolveSectionForMarker(markerElement)
+    if (!section) {
+      return
+    }
+
+    const markerKey = markerElement.dataset.annotationId
+      || markerElement.dataset.markerText
+      || markerElement.textContent
+      || markerElement.dataset.bibliographyItems
+      || null
+    const itemNumbers = resolveBibliographyMarkerNumbers(markerElement)
+    const items = itemNumbers
+      .map((number) => section.bibliographyItemsByNumber[String(number)])
+      .filter((item): item is BibliographyItem => Boolean(item))
+
+    if (items.length === 0) {
+      return
+    }
+
+    if (annotationPopoverTimeoutRef.current) {
+      clearTimeout(annotationPopoverTimeoutRef.current)
+      annotationPopoverTimeoutRef.current = null
+    }
+
+    annotationPopoverPinnedRef.current = pinned
+    annotationPopoverMarkerKeyRef.current = markerKey
+    setAnnotationPopoverItems(items)
+    setAnnotationPopoverAnchorRect(markerElement.getBoundingClientRect())
+    setAnnotationPopoverOpen(true)
+  }, [resolveSectionForMarker])
+
+  const scheduleBibliographyPopover = useCallback((markerElement: HTMLElement) => {
+    const markerKey = markerElement.dataset.annotationId
+      || markerElement.dataset.markerText
+      || markerElement.textContent
+      || markerElement.dataset.bibliographyItems
+      || null
+
+    if (annotationPopoverPinnedRef.current && annotationPopoverMarkerKeyRef.current === markerKey) {
+      return
+    }
+
+    if (annotationPopoverTimeoutRef.current) {
+      clearTimeout(annotationPopoverTimeoutRef.current)
+    }
+
+      annotationPopoverTimeoutRef.current = window.setTimeout(() => {
+        openBibliographyPopover(markerElement, false)
+      }, 120)
+  }, [openBibliographyPopover])
+
+  const resolveMarkerTarget = useCallback((target: EventTarget | null): HTMLElement | null => {
+    if (!(target instanceof HTMLElement)) {
+      return null
+    }
+
+    return target.closest<HTMLElement>('.book-annotation-marker[data-bibliography-items]')
+  }, [])
+
   const getTextRangesForParagraph = useCallback((
     chapterId: string,
     paragraphId: string,
@@ -301,6 +409,32 @@ export default function FeedReader({
 
     return [...ranges, ...quoteRanges].filter((range) => range.paragraphId === paragraphId)
   }, [loadedParagraphIndexMaps, loadedSections, quoteHighlightRangesByChapter, selectionHighlights])
+
+  const handleBibliographyMouseOver = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const marker = resolveMarkerTarget(event.target)
+    if (!marker) {
+      return
+    }
+
+    scheduleBibliographyPopover(marker)
+  }, [resolveMarkerTarget, scheduleBibliographyPopover])
+
+  const handleBibliographyClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const marker = resolveMarkerTarget(event.target)
+    if (!marker) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    openBibliographyPopover(marker, true)
+  }, [openBibliographyPopover, resolveMarkerTarget])
+
+  const handleBibliographyMouseLeave = useCallback(() => {
+    if (!annotationPopoverPinnedRef.current) {
+      closeBibliographyPopover()
+    }
+  }, [closeBibliographyPopover])
 
   const manifestItems = useMemo(() => {
     const resolveStatus = (chapterId: string): VirtualStatus => {
@@ -578,6 +712,10 @@ export default function FeedReader({
       return
     }
 
+    if (annotationPopoverOpen && !annotationPopoverPinnedRef.current) {
+      closeBibliographyPopover()
+    }
+
     onNavigate?.()
     virtualFeed.handleScroll()
 
@@ -600,7 +738,7 @@ export default function FeedReader({
 
       tickingRef.current = false
     })
-  }, [onActiveChapterChange, onNavigate, virtualFeed])
+  }, [annotationPopoverOpen, closeBibliographyPopover, onActiveChapterChange, onNavigate, virtualFeed])
 
   const clearPointerGesture = useCallback((): void => {
     pointerGestureRef.current = null
@@ -612,7 +750,7 @@ export default function FeedReader({
     }
 
     return Boolean(target.closest(
-      'button, a, input, textarea, select, label, [role="dialog"], [data-reader-ignore-chrome], .selection-toolbar',
+      'button, a, input, textarea, select, label, [role="dialog"], [data-reader-ignore-chrome], .selection-toolbar, .book-annotation-marker, .book-annotation-popover',
     ))
   }, [])
 
@@ -695,6 +833,9 @@ export default function FeedReader({
         }}
         className="reader-scrollbar feed-reader"
         onScroll={handleVirtualScroll}
+        onMouseOver={handleBibliographyMouseOver}
+        onClick={handleBibliographyClick}
+        onMouseLeave={handleBibliographyMouseLeave}
         style={{ overflowY: 'auto', height: '100%' }}
       >
         <TextSelector
@@ -758,6 +899,17 @@ export default function FeedReader({
           </div>
         </div>
       </div>
+
+      <AnnotationPopover
+        open={annotationPopoverOpen}
+        anchorRect={annotationPopoverAnchorRect}
+        items={annotationPopoverItems}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeBibliographyPopover()
+          }
+        }}
+      />
     </div>
   )
 }

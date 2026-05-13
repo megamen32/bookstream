@@ -3,6 +3,8 @@ import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/cha
 import { getOwnedChapter } from '@/lib/admin-ownership'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
+import { type BibliographyItem } from '@/lib/books/annotations'
+import { hasReadableHtmlContent } from '@/lib/book-content'
 
 async function canViewDrafts(request: NextRequest): Promise<boolean> {
   const { searchParams } = new URL(request.url)
@@ -11,11 +13,6 @@ async function canViewDrafts(request: NextRequest): Promise<boolean> {
   }
 
   return Boolean(await getAdminSessionReader(request))
-}
-
-function hasReadableChapterContent(contentHtml: string): boolean {
-  const text = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  return text.length > 0 || /<(img|table|blockquote|hr|ul|ol|pre)\b/i.test(contentHtml)
 }
 
 export async function GET(
@@ -101,6 +98,12 @@ export async function GET(
       return NextResponse.json({ error: 'Variant not found' }, { status: 404 })
     }
 
+    const bibliographyItems = await db.bibliographyItem.findMany({
+      where: { bookId: chapter.book.id },
+      orderBy: { number: 'asc' },
+    })
+    const bibliographyItemsByNumber = buildBibliographyItemsByNumber(bibliographyItems)
+
     const paragraphs = await ensureVariantParagraphs(
       db,
       variantWithParagraphs.id,
@@ -123,7 +126,7 @@ export async function GET(
     const visibleChapters = chapter.book.chapters
       .map(({ variants: chapterVariants, ...bookChapter }) => ({
         ...bookChapter,
-        hasReadableContent: hasReadableChapterContent(chapterVariants[0]?.contentHtml ?? ''),
+        hasReadableContent: hasReadableHtmlContent(chapterVariants[0]?.contentHtml ?? ''),
       }))
       .filter((bookChapter) => bookChapter.hasReadableContent)
 
@@ -143,6 +146,7 @@ export async function GET(
         contentHtml: variantWithParagraphs.contentHtml,
         paragraphs: enrichedParagraphs,
       },
+      bibliographyItemsByNumber,
       variantPresets: presetMap,
       prevChapter: [...visibleChapters].reverse().find((bookChapter) => bookChapter.position < chapter.position) || null,
       nextChapter: visibleChapters.find((bookChapter) => bookChapter.position > chapter.position) || null,
@@ -151,6 +155,21 @@ export async function GET(
     console.error('Error fetching chapter:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+function buildBibliographyItemsByNumber(items: Array<{
+  number: number
+  rawText: string
+  normalizedText: string | null
+}>): Record<string, BibliographyItem> {
+  return Object.fromEntries(items.map((item) => [
+    String(item.number),
+    {
+      number: item.number,
+      rawText: item.rawText,
+      normalizedText: item.normalizedText,
+    } satisfies BibliographyItem,
+  ]))
 }
 
 export async function PUT(

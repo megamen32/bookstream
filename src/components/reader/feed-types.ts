@@ -1,4 +1,5 @@
 import type { ReaderComment } from './comment-types'
+import type { BibliographyItem } from '@/lib/books/annotations'
 
 export interface ReaderParagraph {
   id: string
@@ -15,6 +16,8 @@ export interface ReaderChapterListItem {
   title: string
   position: number
   level?: number
+  isReadable?: boolean
+  firstReadableDescendantId?: string | null
   paragraphCount?: number
   estimatedChars?: number
   hasImages?: boolean
@@ -72,6 +75,7 @@ export interface FeedSectionData {
     revisionNumber?: number | null
     paragraphs: ReaderParagraph[]
   }
+  bibliographyItemsByNumber: Record<string, BibliographyItem>
   preview: FeedSectionPreview
   commentsPreview: ReaderComment[]
   commentCount: number

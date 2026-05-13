@@ -1,0 +1,153 @@
+.book-annotation-marker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.08em;
+  padding: 0 0.08em 0.04em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+  color: color-mix(in srgb, currentColor 88%, var(--r-accent) 12%);
+  border-radius: 0.08em;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.book-annotation-marker:hover,
+.book-annotation-marker:focus-visible {
+  color: var(--r-text);
+  border-bottom-color: color-mix(in srgb, var(--r-accent) 55%, currentColor);
+  background-color: color-mix(in srgb, var(--r-accent) 8%, transparent);
+}
+
+.book-annotation-marker.book-bibliography-marker {
+  white-space: nowrap;
+}
+
+.book-annotation-popover {
+  z-index: 80;
+  pointer-events: auto;
+}
+
+.book-annotation-popover__inner {
+  overflow: hidden;
+  border-radius: 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--r-border) 82%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--r-bg) 96%, white 1%), var(--r-bg)),
+    var(--r-bg);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in srgb, var(--r-accent) 8%, transparent);
+  backdrop-filter: blur(20px) saturate(1.18);
+  -webkit-backdrop-filter: blur(20px) saturate(1.18);
+}
+
+.book-annotation-popover__title {
+  padding: 0.9rem 1rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--r-text-secondary) 78%, transparent);
+}
+
+.book-annotation-popover__list {
+  max-height: min(48vh, 18rem);
+  overflow: auto;
+  padding: 0 0.9rem 1rem;
+}
+
+.book-annotation-popover__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55rem;
+  padding: 0.42rem 0;
+}
+
+.book-annotation-popover__item + .book-annotation-popover__item {
+  border-top: 1px solid color-mix(in srgb, var(--r-border) 60%, transparent);
+}
+
+.book-annotation-popover__number {
+  padding-top: 0.08rem;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--r-text) 82%, var(--r-accent) 18%);
+}
+
+.book-annotation-popover__text {
+  min-width: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--r-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.book-page-annotations {
+  position: absolute;
+  left: 0.15rem;
+  right: 0.15rem;
+  bottom: 0.1rem;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 34%;
+  padding: 0.75rem 0.85rem 0.85rem;
+  overflow: auto;
+  border-top: 1px solid color-mix(in srgb, var(--r-border) 72%, transparent);
+  border-radius: 0.85rem 0.85rem 0 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--r-bg) 94%, transparent), var(--r-bg)),
+    var(--r-bg);
+  box-shadow: 0 -16px 42px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.book-page-annotations__rule {
+  width: 100%;
+  height: 1px;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--r-border) 70%, transparent);
+}
+
+.book-page-annotations__list {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.book-page-annotations__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--r-text-secondary);
+}
+
+.book-page-annotations__number {
+  min-width: 1.4rem;
+  font-weight: 750;
+  color: color-mix(in srgb, var(--r-text) 80%, var(--r-accent) 20%);
+}
+
+.book-page-annotations__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .book-annotation-popover__list {
+    max-height: 42vh;
+  }
+
+  .book-page-annotations {
+    max-height: 38%;
+    left: 0.05rem;
+    right: 0.05rem;
+    padding-inline: 0.7rem;
+  }
+}
+

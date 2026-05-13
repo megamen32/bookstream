@@ -105,7 +105,7 @@ function SidebarProvider({
         target instanceof HTMLElement &&
         (target.isContentEditable ||
           target.closest("[contenteditable='true']") ||
-          target.closest("input, textarea, select, [role='textbox']"))
+          target.closest("input, textarea, select, [role='textbox'], .ProseMirror"))
       ) {
         return
       }

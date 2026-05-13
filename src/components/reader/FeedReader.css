@@ -110,6 +110,23 @@
   text-wrap: pretty;
 }
 
+.feed-paragraph__article a {
+  color: color-mix(in srgb, rgb(139, 92, 246) 80%, currentColor 20%);
+  text-decoration-line: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
+  text-decoration-color: color-mix(in srgb, rgb(139, 92, 246) 52%, transparent);
+}
+
+.feed-paragraph__article a[href^='http']::after {
+  content: '↗';
+  display: inline-block;
+  margin-left: 0.15em;
+  font-size: 0.82em;
+  line-height: 1;
+  opacity: 0.82;
+}
+
 .feed-section.is-initial-reveal .feed-paragraph {
   opacity: 0;
   transform: translateY(10px);

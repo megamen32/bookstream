@@ -16,6 +16,7 @@ import SearchPanel from '@/components/reader/SearchPanel'
 import UserActivityPanel from '@/components/reader/UserActivityPanel'
 import ReaderChrome, { type ReaderChromeOverlay } from '@/components/reader/ReaderChrome'
 import ReaderCommentsOverlay from '@/components/reader/ReaderCommentsOverlay'
+import { resolveReadableChapterId } from '@/components/reader/chapter-tree'
 import type { ReaderComment } from '@/components/reader/comment-types'
 import type {
   BookChapterManifestItem,
@@ -525,6 +526,7 @@ export default function ReaderPage() {
             book: BookData
           }
           variant: FeedSectionData['variant']
+          bibliographyItemsByNumber: FeedSectionData['bibliographyItemsByNumber']
           variantPresets?: Record<string, VariantPresetRecord>
           prevChapter?: { id: string } | null
           nextChapter?: { id: string } | null
@@ -546,6 +548,7 @@ export default function ReaderPage() {
             })),
           },
           variant: data.variant,
+          bibliographyItemsByNumber: data.bibliographyItemsByNumber || {},
           preview: {
             leadComment: null,
             freshComments: [],
@@ -832,7 +835,7 @@ export default function ReaderPage() {
         const urlEndOffset = Number.isFinite(Number(urlEndOffsetRaw)) ? Number(urlEndOffsetRaw) : null
 
         if (urlChapter && book.chapters.some((chapter) => chapter.id === urlChapter)) {
-          targetChapterId = urlChapter
+          targetChapterId = resolveReadableChapterId(book.chapters, urlChapter) ?? urlChapter
           restoreScrollPercent = 0
         }
         if (urlVariant) {
@@ -855,6 +858,8 @@ export default function ReaderPage() {
         setQuoteHighlightParagraphEndId(urlParagraphEnd)
         setQuoteHighlightStartOffset(urlStartOffset)
         setQuoteHighlightEndOffset(urlEndOffset)
+
+        targetChapterId = resolveReadableChapterId(book.chapters, targetChapterId || '') ?? targetChapterId
 
         if (!targetChapterId) {
           setLoading(false)
@@ -884,6 +889,7 @@ export default function ReaderPage() {
             },
             commentsPreview: [],
             commentCount: 0,
+            bibliographyItemsByNumber: {},
             prevChapterId: null,
             nextChapterId: null,
           })),
@@ -1024,7 +1030,7 @@ export default function ReaderPage() {
     const urlVariant = effectiveSearchParams.get('variant')
 
     const nextChapterId = urlChapter && bookData.chapters.some((chapter) => chapter.id === urlChapter)
-      ? urlChapter
+      ? resolveReadableChapterId(bookData.chapters, urlChapter) ?? urlChapter
       : activeChapterRef.current
     const nextVariant = (urlVariant || variantTypeRef.current) as VariantType
 
@@ -1327,7 +1333,25 @@ const handleQuoteFocusHandled = useCallback(() => {
     variantPresets,
   ])
 
+  const chapters = useMemo(() => bookData?.chapters || [], [bookData])
+  const readableChapters = useMemo(
+    () => chapters.filter((chapter) => chapter.isReadable !== false),
+    [chapters],
+  )
+  const resolveChapterTarget = useCallback((chapterId: string | null): string | null => {
+    if (!chapterId) {
+      return null
+    }
+
+    return resolveReadableChapterId(chapters, chapterId) ?? chapterId
+  }, [chapters])
+
   const handleChapterChange = useCallback(async (newChapterId: string) => {
+    const resolvedChapterId = resolveChapterTarget(newChapterId)
+    if (!resolvedChapterId) {
+      return
+    }
+
     setQuoteTargetParagraphId(null)
     setQuoteTargetParagraphEndId(null)
     setQuoteTargetStartOffset(null)
@@ -1338,26 +1362,26 @@ const handleQuoteFocusHandled = useCallback(() => {
     setQuoteHighlightEndOffset(null)
 
     if (readingMode === 'feed') {
-      if (shouldReuseLoadedFeedSection(feedSections, newChapterId, variantType)) {
-        applyActiveVariantOptions(feedSections, newChapterId)
-        setActiveChapterId(newChapterId)
-        setChapterId(newChapterId)
+      if (shouldReuseLoadedFeedSection(feedSections, resolvedChapterId, variantType)) {
+        applyActiveVariantOptions(feedSections, resolvedChapterId)
+        setActiveChapterId(resolvedChapterId)
+        setChapterId(resolvedChapterId)
         setScrollProgress(0)
-        setScrollToChapterId(newChapterId)
+        setScrollToChapterId(resolvedChapterId)
         return
       }
 
-      setActiveChapterId(newChapterId)
-      setChapterId(newChapterId)
+      setActiveChapterId(resolvedChapterId)
+      setChapterId(resolvedChapterId)
       setScrollProgress(0)
-      await replaceFeedSections(newChapterId, variantType, 1, 1, 0, true)
+      await replaceFeedSections(resolvedChapterId, variantType, 1, 1, 0, true)
     } else {
-      const section = await fetchSingleChapter(newChapterId, variantType)
+      const section = await fetchSingleChapter(resolvedChapterId, variantType)
       if (section) {
         setBookModeSection(section)
         setAvailableVariants(section.chapter.variants.map((variant) => variant.variantType))
-        setActiveChapterId(newChapterId)
-        setChapterId(newChapterId)
+        setActiveChapterId(resolvedChapterId)
+        setChapterId(resolvedChapterId)
         setScrollProgress(0)
       }
     }
@@ -1368,26 +1392,27 @@ const handleQuoteFocusHandled = useCallback(() => {
     readingMode,
     replaceFeedSections,
     setChapterId,
+    resolveChapterTarget,
     variantType,
   ])
 
   const goToNextChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
-    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
-    if (currentIndex < 0 || currentIndex >= bookData.chapters.length - 1) return
-    const nextChapterId = bookData.chapters[currentIndex + 1].id
+    const currentIndex = readableChapters.findIndex((chapter) => chapter.id === activeChapterId)
+    if (currentIndex < 0 || currentIndex >= readableChapters.length - 1) return
+    const nextChapterId = readableChapters[currentIndex + 1].id
     setBookReaderPage(localStorage, nextChapterId, 1)
     void handleChapterChange(nextChapterId)
-  }, [activeChapterId, bookData, handleChapterChange])
+  }, [activeChapterId, bookData, handleChapterChange, readableChapters])
 
   const goToPrevChapter = useCallback(() => {
     if (!bookData || !activeChapterId) return
-    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
+    const currentIndex = readableChapters.findIndex((chapter) => chapter.id === activeChapterId)
     if (currentIndex <= 0) return
-    const prevChapterId = bookData.chapters[currentIndex - 1].id
+    const prevChapterId = readableChapters[currentIndex - 1].id
     setBookReaderPageToLastPage(localStorage, prevChapterId)
     void handleChapterChange(prevChapterId)
-  }, [activeChapterId, bookData, handleChapterChange])
+  }, [activeChapterId, bookData, handleChapterChange, readableChapters])
 
   const buildChapterHref = useCallback((targetChapterId: string): string => {
     const searchParams = new URLSearchParams()
@@ -1401,10 +1426,10 @@ const handleQuoteFocusHandled = useCallback(() => {
   const prefetchNextChapter = useCallback((): void => {
     if (!bookData || !activeChapterId) return
 
-    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
-    if (currentIndex < 0 || currentIndex >= bookData.chapters.length - 1) return
+    const currentIndex = readableChapters.findIndex((chapter) => chapter.id === activeChapterId)
+    if (currentIndex < 0 || currentIndex >= readableChapters.length - 1) return
 
-    const nextChapterId = bookData.chapters[currentIndex + 1].id
+    const nextChapterId = readableChapters[currentIndex + 1].id
     router.prefetch(buildChapterHref(nextChapterId))
 
     if (readingMode === 'book') {
@@ -1412,15 +1437,15 @@ const handleQuoteFocusHandled = useCallback(() => {
     } else {
       void prefetchFeedWindow(activeChapterId, variantType, 0, 1)
     }
-  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readingMode, router, variantType])
+  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readableChapters, readingMode, router, variantType])
 
   const prefetchPrevChapter = useCallback((): void => {
     if (!bookData || !activeChapterId) return
 
-    const currentIndex = bookData.chapters.findIndex((chapter) => chapter.id === activeChapterId)
+    const currentIndex = readableChapters.findIndex((chapter) => chapter.id === activeChapterId)
     if (currentIndex <= 0) return
 
-    const prevChapterId = bookData.chapters[currentIndex - 1].id
+    const prevChapterId = readableChapters[currentIndex - 1].id
     router.prefetch(buildChapterHref(prevChapterId))
 
     if (readingMode === 'book') {
@@ -1428,7 +1453,7 @@ const handleQuoteFocusHandled = useCallback(() => {
     } else {
       void prefetchFeedWindow(activeChapterId, variantType, 1, 0)
     }
-  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readingMode, router, variantType])
+  }, [activeChapterId, bookData, buildChapterHref, fetchSingleChapter, prefetchFeedWindow, readableChapters, readingMode, router, variantType])
 
   const handleSendComment = useCallback(async (body: string): Promise<ReaderComment | null> => {
     if (!activeChapterId || !bookId || !readerId || !username) return null
@@ -1571,9 +1596,8 @@ const handleQuoteFocusHandled = useCallback(() => {
     await replaceFeedSections(activeChapterId, variantType, before, after, scrollProgress, false)
   }, [activeChapterId, feedSections, fetchSingleChapter, readingMode, replaceFeedSections, saveReadingMode, scrollProgress, setReadingMode, variantType])
 
-  const chapters = useMemo(() => bookData?.chapters || [], [bookData])
   const feedManifest = useMemo<BookChapterManifestItem[]>(() => {
-    return chapters.map((chapter) => ({
+    return readableChapters.map((chapter) => ({
       chapterId: chapter.id,
       title: chapter.title,
       position: chapter.position,
@@ -1581,7 +1605,7 @@ const handleQuoteFocusHandled = useCallback(() => {
       estimatedChars: chapter.estimatedChars || 0,
       hasImages: Boolean(chapter.hasImages),
     }))
-  }, [chapters])
+  }, [readableChapters])
   const loadFeedChapter = useCallback(async (chapterId: string, signal: AbortSignal) => {
     const section = await fetchSingleChapter(chapterId, variantType, signal)
     if (!section) {
@@ -1597,10 +1621,10 @@ const handleQuoteFocusHandled = useCallback(() => {
     ? activeFeedSection?.chapter.title || bookModeSection?.chapter.title || ''
     : bookModeSection?.chapter.title || activeFeedSection?.chapter.title || ''
   const currentBookmark = activeChapterId ? bookmarksByChapter[activeChapterId] || null : null
-  const currentChapterIndex = chapters.findIndex((entry) => entry.id === activeChapterId)
-  const hasNextChapter = currentChapterIndex >= 0 && currentChapterIndex < chapters.length - 1
+  const currentChapterIndex = readableChapters.findIndex((entry) => entry.id === activeChapterId)
+  const hasNextChapter = currentChapterIndex >= 0 && currentChapterIndex < readableChapters.length - 1
   const hasPrevChapter = currentChapterIndex > 0
-  const bookProgressPercent = resolveBookProgressPercent(currentChapterIndex, scrollProgress, chapters.length)
+  const bookProgressPercent = resolveBookProgressPercent(currentChapterIndex, scrollProgress, readableChapters.length)
   const themeVars = applyTheme(theme, accentTheme)
   const commentsChapter = commentsChapterId
     ? chapters.find((chapter) => chapter.id === commentsChapterId) || null
@@ -1804,6 +1828,7 @@ const handleQuoteFocusHandled = useCallback(() => {
             <BookReader
               key={`${activeChapterId}-${variantType}-book`}
               paragraphs={bookModeSection.variant.paragraphs}
+              bibliographyItemsByNumber={bookModeSection.bibliographyItemsByNumber}
               variantId={bookModeSection.variant.id}
               authorSlug={authorSlug}
               bookSlug={bookSlug}

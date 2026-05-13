@@ -4,6 +4,7 @@ import { buildOwnedBookWhere, getOwnedBook } from '@/lib/admin-ownership'
 import { buildBookUpdateData, BookUpdateValidationError } from '@/lib/book-update'
 import { db } from '@/lib/db'
 import { getAdminSessionReader } from '@/lib/admin-auth'
+import { hasReadableHtmlContent } from '@/lib/book-content'
 
 function estimateTextLengthFromHtml(contentHtml: string): number {
   return contentHtml
@@ -128,12 +129,14 @@ export async function GET(
       const sourceVariant = chapter.variants.find((variant) => variant.variantType === 'original')
         || chapter.variants[0]
       const sourceHtml = sourceVariant?.contentHtml || ''
+      const isReadable = hasReadableHtmlContent(sourceHtml)
 
       return {
         id: chapter.id,
         title: chapter.title,
         level: chapter.level,
         position: chapter.position,
+        isReadable,
         paragraphCount: sourceVariant?._count.paragraphs || 0,
         estimatedChars: estimateTextLengthFromHtml(sourceHtml),
         hasImages: /<img[\s>]/i.test(sourceHtml),

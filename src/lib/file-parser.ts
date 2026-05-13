@@ -1,6 +1,11 @@
 import mammoth from 'mammoth';
 import { marked } from 'marked';
 import { buildDocxImportOptions } from './docx-conversion.ts';
+import {
+  flattenImportedSections,
+  normalizeImportedHtml,
+  splitImportedHtmlIntoSections,
+} from './imported-book-html.ts';
 
 export interface ParsedChapter {
   title: string;
@@ -22,64 +27,15 @@ export interface ParsedParagraph {
  */
 export async function parseDocx(buffer: ArrayBuffer): Promise<{ chapters: ParsedChapter[] }> {
   const result = await mammoth.convertToHtml({ arrayBuffer: buffer }, buildDocxImportOptions());
-  const html = result.value;
+  const html = normalizeImportedHtml(result.value);
+  const sections = flattenImportedSections(splitImportedHtmlIntoSections(html, 'Chapter 1'));
 
-  // Try to split by Heading1 (<h1>...</h1>)
-  const h1Regex = /<h1[^>]*>(.*?)<\/h1>/gi;
-  const h1Matches = [...html.matchAll(h1Regex)];
-
-  if (h1Matches.length > 1) {
-    // Multiple H1 headings found — use them as chapter dividers
-    const chapters: ParsedChapter[] = [];
-
-    for (let i = 0; i < h1Matches.length; i++) {
-      const title = h1Matches[i][1].replace(/<[^>]+>/g, '').trim();
-      const startIdx = h1Matches[i].index! + h1Matches[i][0].length;
-      const endIdx = i + 1 < h1Matches.length ? h1Matches[i + 1].index! : html.length;
-      const content = html.slice(startIdx, endIdx).trim();
-      chapters.push({ title: title || `Chapter ${i + 1}`, html: content });
-    }
-
-    return { chapters };
-  }
-
-  // Fallback: try to detect common chapter patterns in the raw text
-  // First extract raw text for pattern detection
-  const rawText = await mammoth.extractRawText({ arrayBuffer: buffer });
-  const rawValue = rawText.value;
-
-  const chapterPattern = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)/gmi;
-  const chapterMatches = [...rawValue.matchAll(chapterPattern)];
-
-  if (chapterMatches.length > 1) {
-    // Use chapter headings found in raw text to split the HTML
-    // We'll split the HTML by looking for these patterns within HTML text nodes
-    const chapters: ParsedChapter[] = [];
-    const htmlParts = splitHtmlByChapterHeadings(html, chapterPattern);
-
-    for (let i = 0; i < htmlParts.length; i++) {
-      const part = htmlParts[i].trim();
-      if (part) {
-        const titleMatch = part.match(/^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)/i);
-        const title = titleMatch ? titleMatch[0] : `Chapter ${i + 1}`;
-        // Remove the heading from content
-        const content = part.replace(/^(?:<[^>]*>)*(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)(?:<\/[^>]+>)*/i, '').trim();
-        chapters.push({ title, html: content });
-      }
-    }
-
-    if (chapters.length > 0) {
-      return { chapters };
-    }
-  }
-
-  // No chapters detected — treat the entire document as a single chapter
-  const titleMatch = html.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
-  const title = titleMatch
-    ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
-    : 'Chapter 1';
-
-  return { chapters: [{ title, html }] };
+  return {
+    chapters: sections.map((section) => ({
+      title: section.title,
+      html: section.contentHtml,
+    })),
+  };
 }
 
 /**

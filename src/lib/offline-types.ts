@@ -6,6 +6,7 @@ import type {
   ReaderParagraph,
 } from '../components/reader/feed-types.ts'
 import type { AnnotationKind, UnifiedAnnotationItem } from './annotations.ts'
+import type { BibliographyItem } from './books/annotations/types.ts'
 import type { ReadingMode, VariantType } from './store.ts'
 
 export interface VariantPresetRecord {
@@ -66,6 +67,7 @@ export interface OfflineChapterRecord {
   prevChapterId: string | null
   nextChapterId: string | null
   variants: OfflineVariantRecord[]
+  bibliographyItemsByNumber: Record<string, BibliographyItem>
   preview: FeedSectionPreview
   commentsPreview: ReaderComment[]
   commentCount: number
@@ -86,6 +88,7 @@ export interface OfflineProgressRecord {
 export interface OfflineBookRecord {
   key: string
   book: OfflineBookIdentity
+  bibliographyItemsByNumber: Record<string, BibliographyItem>
   chapters: OfflineChapterRecord[]
   chapterList: ReaderChapterListItem[]
   variantPresets: Record<string, VariantPresetRecord>

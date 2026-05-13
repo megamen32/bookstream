@@ -12,6 +12,8 @@ interface Chapter {
   id: string
   title: string
   position: number
+  isReadable?: boolean
+  firstReadableDescendantId?: string | null
 }
 
 interface ChapterNavigationProps {

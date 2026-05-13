@@ -8,6 +8,7 @@ import {
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
 import { buildParagraphInputsFromHtml, ensureVariantParagraphs } from '@/lib/chapter-variants'
+import { type BibliographyItem } from '@/lib/books/annotations'
 import type {
   OfflineBookRecord,
   OfflineBookQuoteRecord,
@@ -146,6 +147,11 @@ export async function GET(
         position: preset.position,
       } satisfies VariantPresetRecord]),
     )
+    const bibliographyItems = await db.bibliographyItem.findMany({
+      where: { bookId },
+      orderBy: { number: 'asc' },
+    })
+    const bibliographyItemsByNumber = buildBibliographyItemsByNumber(bibliographyItems)
 
     const chapterRecords = await Promise.all(book.chapters.map(async (chapter, index) => {
       const variants = await Promise.all(chapter.variants.map(async (variant) => {
@@ -262,6 +268,7 @@ export async function GET(
         prevChapterId: book.chapters[index - 1]?.id || null,
         nextChapterId: book.chapters[index + 1]?.id || null,
         variants: variants.filter((variant): variant is NonNullable<typeof variant> => Boolean(variant)),
+        bibliographyItemsByNumber,
         preview: {
           leadComment,
           freshComments,
@@ -370,6 +377,7 @@ export async function GET(
           name: book.author.name,
         },
       },
+      bibliographyItemsByNumber,
       chapters: chapterRecords,
       chapterList,
       variantPresets,
@@ -384,4 +392,19 @@ export async function GET(
     console.error('Error building offline package:', error)
     return NextResponse.json({ error: 'Failed to build offline package' }, { status: 500 })
   }
+}
+
+function buildBibliographyItemsByNumber(items: Array<{
+  number: number
+  rawText: string
+  normalizedText: string | null
+}>): Record<string, BibliographyItem> {
+  return Object.fromEntries(items.map((item) => [
+    String(item.number),
+    {
+      number: item.number,
+      rawText: item.rawText,
+      normalizedText: item.normalizedText,
+    } satisfies BibliographyItem,
+  ]))
 }

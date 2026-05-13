@@ -100,6 +100,7 @@ export function buildOfflineSection(
       })),
     },
     variant,
+    bibliographyItemsByNumber: chapter.bibliographyItemsByNumber,
     preview: chapter.preview,
     commentsPreview: chapter.commentsPreview,
     commentCount: chapter.commentCount,

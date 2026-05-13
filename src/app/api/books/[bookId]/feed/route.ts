@@ -4,6 +4,8 @@ import { mapAnnotationComment, mapAnnotationQuote, sortCommentsByTop, sortQuotes
 import { buildOwnedBookWhere } from '@/lib/admin-ownership'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
+import { type BibliographyItem } from '@/lib/books/annotations'
+import { hasReadableHtmlContent } from '@/lib/book-content'
 
 interface RouteParams {
   bookId: string
@@ -74,19 +76,36 @@ export async function GET(
       return NextResponse.json({ error: 'Book not found' }, { status: 404 })
     }
 
-    const anchorIndex = book.chapters.findIndex((chapter) => chapter.id === anchorChapterId)
+    const visibleChapters = book.chapters
+      .map(({ variants: chapterVariants, ...bookChapter }) => ({
+        ...bookChapter,
+        variants: chapterVariants,
+        hasReadableContent: hasReadableHtmlContent(
+          chapterVariants.find((variant) => variant.variantType === 'original')?.contentHtml
+            || chapterVariants[0]?.contentHtml
+            || '',
+        ),
+      }))
+      .filter((bookChapter) => bookChapter.hasReadableContent)
+
+    const anchorIndex = visibleChapters.findIndex((chapter) => chapter.id === anchorChapterId)
     if (anchorIndex < 0) {
       return NextResponse.json({ error: 'Chapter not found' }, { status: 404 })
     }
 
     const startIndex = Math.max(0, anchorIndex - before)
-    const endIndex = Math.min(book.chapters.length - 1, anchorIndex + after)
-    const windowChapters = book.chapters.slice(startIndex, endIndex + 1)
+    const endIndex = Math.min(visibleChapters.length - 1, anchorIndex + after)
+    const windowChapters = visibleChapters.slice(startIndex, endIndex + 1)
 
     const presets = await db.variantPreset.findMany({
       orderBy: { position: 'asc' },
     })
     const presetMap = Object.fromEntries(presets.map((preset) => [preset.slug, preset]))
+    const bibliographyItems = await db.bibliographyItem.findMany({
+      where: { bookId },
+      orderBy: { number: 'asc' },
+    })
+    const bibliographyItemsByNumber = buildBibliographyItemsByNumber(bibliographyItems)
 
     const sections = await Promise.all(
       windowChapters.map(async (chapter, localIndex) => {
@@ -239,6 +258,7 @@ export async function GET(
             title: chapter.title,
             level: chapter.level,
             position: chapter.position,
+            isReadable: chapter.hasReadableContent,
             variants: chapter.variants.map((variant) => ({
               id: variant.id,
               variantType: variant.variantType,
@@ -256,6 +276,7 @@ export async function GET(
               indentPx: parsedParagraphs[paragraphIndex]?.indentPx ?? 0,
             })),
           },
+          bibliographyItemsByNumber,
           preview: {
             leadComment,
             freshComments,
@@ -315,12 +336,27 @@ export async function GET(
       variantPresets: presetMap,
       anchorChapterId,
       hasPrev: startIndex > 0,
-      hasNext: endIndex < book.chapters.length - 1,
-      prevChapterId: book.chapters[startIndex - 1]?.id || null,
-      nextChapterId: book.chapters[endIndex + 1]?.id || null,
+      hasNext: endIndex < visibleChapters.length - 1,
+      prevChapterId: visibleChapters[startIndex - 1]?.id || null,
+      nextChapterId: visibleChapters[endIndex + 1]?.id || null,
     })
   } catch (error) {
     console.error('Error fetching feed sections:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+function buildBibliographyItemsByNumber(items: Array<{
+  number: number
+  rawText: string
+  normalizedText: string | null
+}>): Record<string, BibliographyItem> {
+  return Object.fromEntries(items.map((item) => [
+    String(item.number),
+    {
+      number: item.number,
+      rawText: item.rawText,
+      normalizedText: item.normalizedText,
+    } satisfies BibliographyItem,
+  ]))
 }

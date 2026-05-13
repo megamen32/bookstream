@@ -6,6 +6,7 @@ import TextSelector from './TextSelector'
 import type { SelectionAnnotationRange } from './TextSelector'
 import ReactionBar from './ReactionBar'
 import './BookReader.css'
+import './annotations.css'
 import { collectParagraphRangeElements } from '@/lib/paragraph-selection'
 import {
   buildAnnotationParagraphRanges,
@@ -13,12 +14,15 @@ import {
   type AnnotationParagraphRange,
   type UnifiedAnnotationItem,
 } from '@/lib/annotations'
+import { extractBibliographicMarkerNumbers, type BibliographyItem } from '@/lib/books/annotations'
 import {
   getBookReaderPageStorageKey,
   resolveBookReaderPage,
   setBookReaderPage,
 } from '@/lib/book-reader-progress'
 import { getOfflineAnnotations, getOfflineBookRecord } from '@/lib/offline-client'
+import PageAnnotations from './PageAnnotations'
+import { renderTextWithBibliographyMarkers } from './bibliography-render'
 
 interface Paragraph {
   id: string
@@ -32,6 +36,7 @@ interface Paragraph {
 
 interface BookReaderProps {
   paragraphs: Paragraph[]
+  bibliographyItemsByNumber: Record<string, BibliographyItem>
   variantId: string
   authorSlug: string
   bookSlug: string
@@ -74,6 +79,7 @@ type ReaderPage = PageParagraphBlock[]
 
 export default function BookReader({
   paragraphs,
+  bibliographyItemsByNumber,
   variantId,
   authorSlug,
   bookSlug,
@@ -200,6 +206,116 @@ export default function BookReader({
     }
   }, [hasPrevChapter, prefetchPrevChapter])
 
+  const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
+    setSelectionHighlights((current) => {
+      const isSameRange = (entry: SelectionAnnotationRange) =>
+        entry.kind === range.kind &&
+        entry.paragraphId === range.paragraphId &&
+        entry.endParagraphId === range.endParagraphId &&
+        entry.startOffset === range.startOffset &&
+        entry.endOffset === range.endOffset &&
+        entry.emoji === range.emoji &&
+        entry.body === range.body
+
+      if (!active) {
+        return current.filter((entry) => !isSameRange(entry))
+      }
+
+      return current.some(isSameRange) ? current : [...current, range]
+    })
+  }, [])
+
+  const clearPointerGesture = useCallback(() => {
+    pointerGestureRef.current = null
+  }, [])
+
+  const isInteractiveTarget = useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) {
+      return false
+    }
+
+    return Boolean(target.closest(
+      'button, a, input, textarea, select, label, [role="dialog"], .selection-toolbar, .book-annotation-marker, .book-annotation-popover',
+    ))
+  }, [])
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      clearPointerGesture()
+      return
+    }
+
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    }
+  }, [clearPointerGesture])
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGestureRef.current
+    clearPointerGesture()
+
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    if (isInteractiveTarget(event.target)) {
+      return
+    }
+
+    const dx = event.clientX - gesture.clientX
+    const dy = event.clientY - gesture.clientY
+    const absDx = Math.abs(dx)
+    const absDy = Math.abs(dy)
+
+    if (gesture.pointerType === 'touch' && absDx >= 36 && absDx > absDy * 1.15) {
+      if (dx < 0) {
+        goNext()
+      } else {
+        goPrev()
+      }
+      return
+    }
+
+    if (absDx > 8 || absDy > 8) {
+      return
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
+
+    window.setTimeout(() => {
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed) {
+        return
+      }
+
+      if (relativeX <= 0.3) {
+        goPrev()
+        return
+      }
+
+      if (relativeX >= 0.7) {
+        goNext()
+        return
+      }
+
+      onCenterTap?.()
+    }, 0)
+  }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
+
+  const handlePointerCancel = useCallback(() => {
+    clearPointerGesture()
+  }, [clearPointerGesture])
+
+  const handlePointerLeave = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.buttons & 1) === 0) {
+      clearPointerGesture()
+    }
+  }, [clearPointerGesture])
+
   useEffect(() => {
     if (currentPage >= Math.max(1, totalPages - 1)) {
       startPrefetchNext()
@@ -308,25 +424,6 @@ export default function BookReader({
     return () => controller.abort()
   }, [readerId, bookId, chapterId])
 
-  const handleSelectionAnnotation = useCallback((range: SelectionAnnotationRange, active: boolean) => {
-    setSelectionHighlights((current) => {
-      const isSameRange = (entry: SelectionAnnotationRange) =>
-        entry.kind === range.kind &&
-        entry.paragraphId === range.paragraphId &&
-        entry.endParagraphId === range.endParagraphId &&
-        entry.startOffset === range.startOffset &&
-        entry.endOffset === range.endOffset &&
-        entry.emoji === range.emoji &&
-        entry.body === range.body
-
-      if (!active) {
-        return current.filter((entry) => !isSameRange(entry))
-      }
-
-      return current.some(isSameRange) ? current : [...current, range]
-    })
-  }, [])
-
   useEffect(() => {
     if (!measureRef.current || pageSize.width <= 0 || pageSize.height <= 0) return
 
@@ -383,10 +480,6 @@ export default function BookReader({
       article.appendChild(p)
       wrapper.appendChild(article)
 
-      /**
-       * Для измерения учитываем reaction bar только на целых абзацах или последних кусках.
-       * Иначе длинный абзац искусственно раздувается на каждой странице.
-       */
       const shouldMeasureReactionBar =
         window.matchMedia('(min-width: 768px)').matches &&
         endOffset >= paragraph.text.length
@@ -396,11 +489,6 @@ export default function BookReader({
         reactionBar.style.display = 'flex'
         reactionBar.style.visibility = 'hidden'
         reactionBar.style.pointerEvents = 'none'
-        /**
-         * Keep the measurement placeholder in sync with the rendered desktop
-         * reaction bar. If the placeholder is shorter than the real bar, the
-         * paginator overfills the page and the last text line gets clipped.
-         */
         reactionBar.style.boxSizing = 'border-box'
         reactionBar.style.paddingTop = '0.5rem'
         reactionBar.style.minHeight = '2.4rem'
@@ -462,9 +550,6 @@ export default function BookReader({
         }
       }
 
-      /**
-       * Не режем прямо посреди слова, если есть нормальная граница.
-       */
       if (best > startOffset) {
         const candidate = paragraph.text.slice(startOffset, best)
         const lastSpace = Math.max(
@@ -505,21 +590,12 @@ export default function BookReader({
 
         const endOffset = findLargestFittingEndOffset(paragraph, startOffset)
 
-        /**
-         * Если на текущую страницу вообще ничего не помещается,
-         * закрываем страницу и пробуем этот же кусок на новой.
-         */
         if (endOffset <= startOffset) {
           if (currentPageBlocks.length > 0) {
             commitPage()
             continue
           }
 
-          /**
-           * Крайний fallback: если даже пустая страница не может вместить
-           * одну букву из-за слишком большой шапки/стилей, кладём минимальный кусок,
-           * чтобы не попасть в бесконечный цикл.
-           */
           const forcedEndOffset = Math.min(startOffset + 1, paragraph.text.length)
           currentPageBlocks.push({
             paragraph,
@@ -753,97 +829,6 @@ export default function BookReader({
     }
   }, [goNext, goPrev])
 
-  const clearPointerGesture = useCallback(() => {
-    pointerGestureRef.current = null
-  }, [])
-
-  const isInteractiveTarget = useCallback((target: EventTarget | null): boolean => {
-    if (!(target instanceof HTMLElement)) {
-      return false
-    }
-
-    return Boolean(target.closest(
-      'button, a, input, textarea, select, label, [role="dialog"], .selection-toolbar',
-    ))
-  }, [])
-
-  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
-      clearPointerGesture()
-      return
-    }
-
-    pointerGestureRef.current = {
-      pointerId: event.pointerId,
-      pointerType: event.pointerType,
-      clientX: event.clientX,
-      clientY: event.clientY,
-    }
-  }, [clearPointerGesture])
-
-  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const gesture = pointerGestureRef.current
-    clearPointerGesture()
-
-    if (!gesture || gesture.pointerId !== event.pointerId) {
-      return
-    }
-
-    if (isInteractiveTarget(event.target)) {
-      return
-    }
-
-    const dx = event.clientX - gesture.clientX
-    const dy = event.clientY - gesture.clientY
-    const absDx = Math.abs(dx)
-    const absDy = Math.abs(dy)
-
-    if (gesture.pointerType === 'touch' && absDx >= 36 && absDx > absDy * 1.15) {
-      if (dx < 0) {
-        goNext()
-      } else {
-        goPrev()
-      }
-      return
-    }
-
-    if (absDx > 8 || absDy > 8) {
-      return
-    }
-
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
-
-    window.setTimeout(() => {
-      const selection = window.getSelection()
-      if (selection && !selection.isCollapsed) {
-        return
-      }
-
-      if (relativeX <= 0.3) {
-        goPrev()
-        return
-      }
-
-      if (relativeX >= 0.7) {
-        goNext()
-        return
-      }
-
-      onCenterTap?.()
-    }, 0)
-  }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
-
-  const handlePointerCancel = useCallback(() => {
-    clearPointerGesture()
-  }, [clearPointerGesture])
-
-  const handlePointerLeave = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if ((event.buttons & 1) === 0) {
-      clearPointerGesture()
-    }
-  }, [clearPointerGesture])
-
   const renderParagraphBlock = (block: PageParagraphBlock) => {
     const { paragraph, startOffset, endOffset, isContinuationStart, isContinuationEnd } = block
     const isQuoteTarget = highlightParagraphId === paragraph.id && !hasPreciseQuoteHighlight
@@ -905,7 +890,7 @@ export default function BookReader({
                     className="bookstream-inline-annotation"
                   >
                     <span className="bookstream-word-highlight">
-                      {segment.text}
+                      {renderTextWithBibliographyMarkers(segment.text, `${paragraph.id}-hl-${startOffset}-${index}`)}
                     </span>
 
                     {segment.badges.map((badge, badgeIndex) => (
@@ -931,7 +916,7 @@ export default function BookReader({
                   </span>
                 ) : (
                   <span key={`${paragraph.id}-txt-${startOffset}-${index}`}>
-                    {segment.text}
+                    {renderTextWithBibliographyMarkers(segment.text, `${paragraph.id}-txt-${startOffset}-${index}`)}
                   </span>
                 ),
               )}
@@ -957,6 +942,34 @@ export default function BookReader({
       </h1>
     </header>
   )
+
+  const currentPageBibliographyItems = useMemo(() => {
+    const page = pages[currentPage - 1] || []
+    const orderedNumbers: number[] = []
+    const seenNumbers = new Set<number>()
+
+    for (const block of page) {
+      const markerGroups = extractBibliographicMarkerNumbers(block.paragraph.html || block.paragraph.text)
+      for (const group of markerGroups) {
+        for (const number of group) {
+          if (seenNumbers.has(number)) {
+            continue
+          }
+
+          if (!bibliographyItemsByNumber[String(number)]) {
+            continue
+          }
+
+          seenNumbers.add(number)
+          orderedNumbers.push(number)
+        }
+      }
+    }
+
+    return orderedNumbers
+      .map((number) => bibliographyItemsByNumber[String(number)])
+      .filter((item): item is BibliographyItem => Boolean(item))
+  }, [bibliographyItemsByNumber, currentPage, pages])
 
   return (
     <div
@@ -1009,6 +1022,10 @@ export default function BookReader({
                   {pageIndex === 0 && renderChapterHeader()}
                   {page.map(renderParagraphBlock)}
 
+                  {pageIndex === currentPage - 1 ? (
+                    <PageAnnotations items={currentPageBibliographyItems} />
+                  ) : null}
+
                   {pageIndex === pages.length - 1 && (
                     <footer className="book-reader-end">
                       <span>
@@ -1020,8 +1037,8 @@ export default function BookReader({
               </div>
             ))}
           </div>
-        </div>
       </div>
+    </div>
 
       <TextSelector
         containerRef={activePageRef}
@@ -1033,7 +1050,7 @@ export default function BookReader({
 
       <div
         className={`book-reader-hud ${showHud ? 'is-visible' : ''}`}
-        aria-label={`Страница ${currentPage} из ${totalPages}, прогресс книги ${bookProgressPercent}%`}
+        aria-label={`Страница ${currentPage} из ${totalPages}, прогресс чтения`}
       >
         <span className="book-reader-hud__current">
           {currentPage}/{totalPages}
