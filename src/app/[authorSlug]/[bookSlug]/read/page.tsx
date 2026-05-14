@@ -907,12 +907,16 @@ export default function ReaderPage() {
               setVariantPresets(data.variantPresets)
             }
             applyActiveVariantOptions(data.sections, targetChapterId)
-            restoreTokenRef.current += 1
-            setRestoreRequest({
-              chapterId: targetChapterId,
-              scrollPercent: urlParagraph ? 0 : restoreScrollPercent,
-              token: restoreTokenRef.current,
-            })
+            if (urlParagraph) {
+              setRestoreRequest(null)
+            } else {
+              restoreTokenRef.current += 1
+              setRestoreRequest({
+                chapterId: targetChapterId,
+                scrollPercent: restoreScrollPercent,
+                token: restoreTokenRef.current,
+              })
+            }
           }
         } else {
           const section = await fetchSingleChapter(targetChapterId, targetVariant)

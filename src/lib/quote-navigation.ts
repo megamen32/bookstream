@@ -60,7 +60,11 @@ export function findQuoteParagraphElement(
  * @param container Reader scroll container.
  * @param target Target paragraph element.
  */
-export function scrollQuoteTargetIntoView(container: HTMLElement, target: HTMLElement): void {
+export function scrollQuoteTargetIntoView(
+  container: HTMLElement,
+  target: HTMLElement,
+  behavior: ScrollBehavior = 'smooth',
+): void {
   const containerRect = container.getBoundingClientRect()
   const targetRect = target.getBoundingClientRect()
   const topOffset = targetRect.top - containerRect.top
@@ -70,6 +74,6 @@ export function scrollQuoteTargetIntoView(container: HTMLElement, target: HTMLEl
 
   container.scrollTo({
     top: nextScrollTop,
-    behavior: 'smooth',
+    behavior,
   })
 }

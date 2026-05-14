@@ -655,8 +655,21 @@ export default function FeedReader({
         quoteHighlightNodesRef.current = frames
       }
 
-      scrollQuoteTargetIntoView(scrollRef.current, target)
+      scrollQuoteTargetIntoView(scrollRef.current, target, 'auto')
       handleVirtualFeedScrollRef.current()
+
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve())
+      })
+
+      if (!cancelled && scrollRef.current) {
+        const targetRect = target.getBoundingClientRect()
+        const containerRect = scrollRef.current.getBoundingClientRect()
+        if (targetRect.top < containerRect.top || targetRect.top > containerRect.bottom * 0.72) {
+          scrollQuoteTargetIntoView(scrollRef.current, target, 'auto')
+          handleVirtualFeedScrollRef.current()
+        }
+      }
 
       quoteFocusTimeoutRef.current = window.setTimeout(() => {
         for (const node of quoteFocusPulseNodesRef.current) {
