@@ -236,7 +236,11 @@ export default function BookQuotesPanel({
                     variant={quote.reacted ? 'default' : 'outline'}
                     size="sm"
                     disabled={!readerId || togglingQuoteId === quote.id}
-                    onClick={() => void handleToggleUpvote(quote.id)}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void handleToggleUpvote(quote.id)
+                    }}
                     className="shrink-0 rounded-full"
                   >
                     <Plus size={14} className="mr-1" />
