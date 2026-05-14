@@ -136,7 +136,7 @@ export async function GET(
         title: chapter.title,
         level: chapter.level,
         position: chapter.position,
-        isReadable,
+        isReadable: isReadable && Boolean(chapter.title.trim()) && (sourceVariant?._count.paragraphs || 0) > 0,
         paragraphCount: sourceVariant?._count.paragraphs || 0,
         estimatedChars: estimateTextLengthFromHtml(sourceHtml),
         hasImages: /<img[\s>]/i.test(sourceHtml),
