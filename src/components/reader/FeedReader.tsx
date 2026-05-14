@@ -79,7 +79,7 @@ type VirtualStatus = 'stub' | 'loading' | 'ready' | 'error'
 async function waitForQuoteTarget(
   container: HTMLDivElement,
   paragraphId: string,
-  maxFrames: number = 24,
+  maxFrames: number = 180,
 ): Promise<HTMLElement | null> {
   for (let frame = 0; frame < maxFrames; frame += 1) {
     const target = findQuoteParagraphElement(container, paragraphId)

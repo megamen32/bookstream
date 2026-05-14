@@ -65,6 +65,25 @@ test.describe('feed reader interactions', () => {
     await expect(page.locator('.reader-chrome__chapter-title')).toHaveText('Тестовая глава')
   })
 
+  test('waits for a delayed feed quote paragraph before marking focus handled', async ({ page }) => {
+    await page.goto('/test/feed-reader?chapter=chapter-3&paragraph=chapter-3-p-10&startOffset=12&endOffset=48&delayedTarget=1')
+
+    const feedReader = page.locator('.feed-reader')
+    const targetParagraph = page.locator('[data-paragraph-id="chapter-3-p-10"]')
+    const shell = page.locator('[data-testid="feed-reader-test-shell"]')
+
+    await expect(feedReader).toBeVisible()
+    await expect(targetParagraph).toBeVisible()
+    await expect(targetParagraph.locator('.bookstream-word-highlight')).toHaveCount(1)
+
+    await expect.poll(async () => (
+      await feedReader.evaluate((node) => node.scrollTop)
+    )).toBeGreaterThan(150)
+
+    await expect(shell).toHaveAttribute('data-quote-focus-handled-count', '1')
+    await expect(shell).toHaveAttribute('data-quote-focus-active', 'false')
+  })
+
   test('focuses a quote target once and then allows free scrolling', async ({ page }) => {
     await page.goto('/test/feed-reader?chapter=chapter-3&paragraph=chapter-3-p-10&startOffset=12&endOffset=48')
 
