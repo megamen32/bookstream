@@ -655,19 +655,38 @@ export default function FeedReader({
         quoteHighlightNodesRef.current = frames
       }
 
-      scrollQuoteTargetIntoView(scrollRef.current, target, 'auto')
-      handleVirtualFeedScrollRef.current()
+      let stableVisibleFrames = 0
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        if (cancelled || !scrollRef.current) {
+          return
+        }
 
-      await new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => resolve())
-      })
+        scrollQuoteTargetIntoView(scrollRef.current, target, 'auto')
+        handleVirtualFeedScrollRef.current()
 
-      if (!cancelled && scrollRef.current) {
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve())
+        })
+
+        if (cancelled || !scrollRef.current) {
+          return
+        }
+
         const targetRect = target.getBoundingClientRect()
         const containerRect = scrollRef.current.getBoundingClientRect()
-        if (targetRect.top < containerRect.top || targetRect.top > containerRect.bottom * 0.72) {
-          scrollQuoteTargetIntoView(scrollRef.current, target, 'auto')
-          handleVirtualFeedScrollRef.current()
+        const isComfortablyVisible = (
+          targetRect.top >= containerRect.top + 24
+          && targetRect.top <= containerRect.bottom * 0.72
+          && targetRect.bottom > containerRect.top + 80
+        )
+
+        if (isComfortablyVisible) {
+          stableVisibleFrames += 1
+          if (stableVisibleFrames >= 4) {
+            break
+          }
+        } else {
+          stableVisibleFrames = 0
         }
       }
 
@@ -732,6 +751,10 @@ export default function FeedReader({
     onNavigate?.()
     virtualFeed.handleScroll()
 
+    if (focusParagraphId || focusParagraphEndId) {
+      return
+    }
+
     if (tickingRef.current) {
       return
     }
@@ -751,7 +774,7 @@ export default function FeedReader({
 
       tickingRef.current = false
     })
-  }, [annotationPopoverOpen, closeBibliographyPopover, onActiveChapterChange, onNavigate, virtualFeed])
+  }, [annotationPopoverOpen, closeBibliographyPopover, focusParagraphEndId, focusParagraphId, onActiveChapterChange, onNavigate, virtualFeed])
 
   const clearPointerGesture = useCallback((): void => {
     pointerGestureRef.current = null

@@ -972,8 +972,6 @@ export default function ReaderPage() {
       !quoteTargetParagraphId
       && !quoteTargetParagraphEndId
       && Boolean(currentUrlParagraphId || currentUrlParagraphEndId)
-      && currentSearchParams.get('chapter') === activeChapterId
-      && (currentSearchParams.get('variant') || variantType) === variantType
     )
 
     const nextSearch = buildReaderLocationSearch({
@@ -1172,21 +1170,26 @@ export default function ReaderPage() {
 
     lastQuoteTargetSearchRef.current = nextQuery
 
-    router.replace(nextUrl, { scroll: false })
-  }, [router])
+    window.history.replaceState(window.history.state, '', nextUrl)
+  }, [])
 
   const handleActiveChapterChange = useCallback((nextChapterId: string, progress: number, fromScroll: boolean): void => {
     markReaderActivity()
-    setActiveChapterId((current) => current === nextChapterId ? current : nextChapterId)
-    setChapterId(nextChapterId)
-    setScrollProgress(progress)
-    saveReadingProgress(nextChapterId, progress)
 
     const hasActiveQuoteTarget = Boolean(
       quoteTargetParagraphIdRef.current || quoteTargetParagraphEndIdRef.current,
     )
 
-    if (fromScroll && !hasActiveQuoteTarget) {
+    if (fromScroll && hasActiveQuoteTarget) {
+      return
+    }
+
+    setActiveChapterId((current) => current === nextChapterId ? current : nextChapterId)
+    setChapterId(nextChapterId)
+    setScrollProgress(progress)
+    saveReadingProgress(nextChapterId, progress)
+
+    if (fromScroll) {
       setQuoteTargetParagraphId(null)
       setQuoteTargetParagraphEndId(null)
       setQuoteTargetStartOffset(null)
