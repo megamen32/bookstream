@@ -253,59 +253,6 @@ export default function BookReader({
     }
   }, [clearPointerGesture])
 
-  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const gesture = pointerGestureRef.current
-    clearPointerGesture()
-
-    if (!gesture || gesture.pointerId !== event.pointerId) {
-      return
-    }
-
-    if (isInteractiveTarget(event.target)) {
-      return
-    }
-
-    const dx = event.clientX - gesture.clientX
-    const dy = event.clientY - gesture.clientY
-    const absDx = Math.abs(dx)
-    const absDy = Math.abs(dy)
-
-    if (gesture.pointerType === 'touch' && absDx >= 36 && absDx > absDy * 1.15) {
-      if (dx < 0) {
-        goNext()
-      } else {
-        goPrev()
-      }
-      return
-    }
-
-    if (absDx > 8 || absDy > 8) {
-      return
-    }
-
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
-
-    window.setTimeout(() => {
-      const selection = window.getSelection()
-      if (selection && !selection.isCollapsed) {
-        return
-      }
-
-      if (relativeX <= 0.3) {
-        goPrev()
-        return
-      }
-
-      if (relativeX >= 0.7) {
-        goNext()
-        return
-      }
-
-      onCenterTap?.()
-    }, 0)
-  }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
-
   const handlePointerCancel = useCallback(() => {
     clearPointerGesture()
   }, [clearPointerGesture])
@@ -808,6 +755,60 @@ export default function BookReader({
       return next
     })
   }, [onNavigate, saveProgress, showTemporaryHud, switchToPrevChapter])
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGestureRef.current
+    clearPointerGesture()
+
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    if (isInteractiveTarget(event.target)) {
+      return
+    }
+
+    const dx = event.clientX - gesture.clientX
+    const dy = event.clientY - gesture.clientY
+    const absDx = Math.abs(dx)
+    const absDy = Math.abs(dy)
+
+    if (gesture.pointerType === 'touch' && absDx >= 36 && absDx > absDy * 1.15) {
+      if (dx < 0) {
+        goNext()
+      } else {
+        goPrev()
+      }
+      return
+    }
+
+    if (absDx > 8 || absDy > 8) {
+      return
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const relativeX = (event.clientX - bounds.left) / Math.max(bounds.width, 1)
+
+    window.setTimeout(() => {
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed) {
+        return
+      }
+
+      if (relativeX <= 0.3) {
+        goPrev()
+        return
+      }
+
+      if (relativeX >= 0.7) {
+        goNext()
+        return
+      }
+
+      onCenterTap?.()
+    }, 0)
+  }, [clearPointerGesture, goNext, goPrev, isInteractiveTarget, onCenterTap])
+
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
