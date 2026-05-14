@@ -178,3 +178,15 @@ chore(deps)[test:synthetic][split:logical]: migrate lockfile to bun
 ```
 
 When no real user-flow verification was performed, never use `test:manual` or `test:both`. If only `bun run build`, lint, typecheck, or similar checks were run, use `test:synthetic`.
+
+
+## Bugfix workflow rule
+
+For every reproducible bug:
+
+1. First add a regression test that reproduces the bug reliably.
+2. Verify the test fails before the fix.
+3. Apply the fix.
+4. Verify the test passes after the fix.
+
+Never start with the fix itself when the behavior can be reproduced automatically.
