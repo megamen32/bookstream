@@ -223,8 +223,12 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
     return paragraphs;
   }
 
+  const leadingImportedAnchors = extractImportedSectionAnchors(
+    matches[0]?.index !== undefined ? html.slice(0, matches[0].index) : '',
+  );
+
   for (let i = 0; i < matches.length; i++) {
-    const innerHtml = sanitizeParagraphHtml(matches[i][2]);
+    const innerHtml = `${i === 0 ? leadingImportedAnchors : ''}${sanitizeParagraphHtml(matches[i][2])}`;
     const text = htmlBlockToText(innerHtml);
     if (text) {
       const formatting = extractBlockFormatting(matches[i][1] || '');
@@ -284,6 +288,14 @@ function htmlBlockToText(html: string): string {
     .replace(/<\/(?:p|div|li|blockquote|h[1-6])>/gi, '\n');
 
   return collapseWhitespace(decodeHtmlEntities(stripHtml(withLineBreaks)));
+}
+
+
+function extractImportedSectionAnchors(html: string): string {
+  return (html.match(/<span\b[^>]*><\/span>/gi) || [])
+    .filter((anchor) => /\sdata-imported-section-anchor=(?:"true"|'true'|true)(?:\s|>)/i.test(anchor))
+    .map((anchor) => sanitizeParagraphHtml(anchor))
+    .join('');
 }
 
 function sanitizeParagraphHtml(html: string): string {

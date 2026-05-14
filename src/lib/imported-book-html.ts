@@ -164,12 +164,13 @@ export function splitImportedHtmlIntoSections(html: string, fallbackTitle: strin
 
       const level = Number.parseInt(node.tagName.slice(1), 10)
       const title = collapseWhitespace(extractTextContent(node.childNodes)) || `${fallbackTitle}`
+      const sectionId = getElementFragmentId(node) || slugify(title) || `section-${sections.length + 1}`
       const section: ImportedBookSection = {
-        id: getElementFragmentId(node) || slugify(title) || `section-${sections.length + 1}`,
+        id: sectionId,
         title,
         level,
         order: 0,
-        contentHtml: '',
+        contentHtml: buildSectionAnchorHtml(sectionId),
         isReadable: false,
         children: [],
       }
@@ -374,6 +375,12 @@ function rewriteInternalLinks(nodes: DefaultTreeNode[], context: NormalizationCo
 
     rewriteInternalLinks(node.childNodes ?? [], context)
   }
+}
+
+
+function buildSectionAnchorHtml(id: string): string {
+  const safeId = id.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<span id="${safeId}" data-imported-section-anchor="true"></span>`
 }
 
 function splitWithoutHeadings(nodes: DefaultTreeNode[], fallbackTitle: string): ImportedBookSection[] {

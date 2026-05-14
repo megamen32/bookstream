@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { flattenImportedSections, normalizeImportedHtml, splitImportedHtmlIntoSections } from '../src/lib/imported-book-html.ts'
 import { persistImportedBookImage } from '../src/lib/book-import.ts'
+import { splitHtmlIntoParagraphs } from '../src/lib/file-parser.ts'
 
 const SAMPLE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7ZrU0AAAAASUVORK5CYII='
 
@@ -51,6 +52,28 @@ describe('imported html normalization', () => {
       flattened.map((section) => section.title),
       ['Book 1', 'Chapter 1'],
     )
+  })
+
+
+  it('keeps imported TOC links reachable after splitting headings into chapters', () => {
+    const html = normalizeImportedHtml(`
+      <h1>Книга 1</h1>
+      <p><a href="#Глава 1">Перейти к первой главе</a></p>
+      <h2>Глава 1</h2>
+      <p>Текст первой главы.</p>
+      <h2>Глава 2</h2>
+      <p>Текст второй главы.</p>
+    `)
+
+    const sections = flattenImportedSections(splitImportedHtmlIntoSections(html, 'Fallback'))
+    const firstChapter = sections.find((section) => section.title === 'Глава 1')
+
+    assert.ok(firstChapter, 'first chapter should exist')
+    assert.match(html, /href="#glava-1"/)
+    assert.match(firstChapter.contentHtml, /id="glava-1"/)
+
+    const paragraphs = splitHtmlIntoParagraphs(firstChapter.contentHtml)
+    assert.match(paragraphs[0]?.html || '', /id="glava-1"/)
   })
 
   it('persists DOCX images as public book assets', async () => {
