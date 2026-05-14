@@ -25,6 +25,7 @@ export function buildPublicBookMetadata(book: PublicBookRecord): Metadata {
       url: buildPublicBookUrl(book.author.slug, book.slug),
       siteName: 'Bookstream',
       type: 'book',
+      locale: 'ru_RU',
       images: [
         {
           url: `${buildPublicBookPath(book.author.slug, book.slug)}/opengraph-image`,
@@ -36,6 +37,7 @@ export function buildPublicBookMetadata(book: PublicBookRecord): Metadata {
     },
     twitter: {
       card: 'summary_large_image',
+      creator: '@bookstream',
       title: `Книга «${book.title}»`,
       description,
       images: [`${buildPublicBookPath(book.author.slug, book.slug)}/opengraph-image`],
@@ -65,6 +67,7 @@ export function buildPublicMomentMetadata(moment: PublicBookMomentRecord): Metad
       url: buildPublicMomentUrl(moment.authorSlug, moment.bookSlug, moment.id),
       siteName: 'Bookstream',
       type: 'article',
+      locale: 'ru_RU',
       images: [
         {
           url: `${canonicalPath}/opengraph-image`,
@@ -76,6 +79,7 @@ export function buildPublicMomentMetadata(moment: PublicBookMomentRecord): Metad
     },
     twitter: {
       card: 'summary_large_image',
+      creator: '@bookstream',
       title: `Цитата из книги «${moment.book.title}»`,
       description,
       images: [`${canonicalPath}/opengraph-image`],
