@@ -82,7 +82,6 @@ export function BookTextEditor({
 
     if (normalizedKey === 'b') {
       event.preventDefault()
-      event.stopPropagation()
       editor?.chain().focus().toggleBold().run()
       return true
     }

@@ -136,3 +136,45 @@ Prefer simple, stable, readable solutions.
 Do not over-engineer.
 Do not add impressive-looking features that make reading worse.
 Polish the main reading experience first.
+## Commit naming convention
+
+Use a machine-readable commit subject so automation can quickly determine intent and test coverage.
+
+Format:
+
+```text
+<type>(<scope>)[test:<status>][split:<kind>]: <short imperative summary>
+```
+
+Allowed `type` values:
+
+- `fix` — bug fix
+- `feat` — user-visible feature
+- `refactor` — behavior-preserving code cleanup
+- `chore` — tooling, config, dependency, or repository maintenance
+- `docs` — documentation only
+- `test` — tests only
+
+Allowed `test:<status>` values:
+
+- `test:none` — not tested synthetically or manually/really
+- `test:synthetic` — checked by automated/static/synthetic validation only, for example build, lint, unit test, typecheck
+- `test:manual` — checked manually in a real browser or live flow only
+- `test:both` — checked both synthetically and manually/really
+
+Allowed `split:<kind>` values:
+
+- `split:logical` — commit exists to separate one logical change from another
+- `split:mixed` — commit contains more than one logical change and should be avoided unless necessary
+- `split:atomic` — single focused change, preferred default
+
+Examples:
+
+```text
+fix(reader)[test:synthetic][split:atomic]: move pointer callback after navigation callbacks
+fix(editor)[test:none][split:atomic]: keep bold shortcut from closing toolbar
+docs(repo)[test:none][split:logical]: document commit naming convention
+chore(deps)[test:synthetic][split:logical]: migrate lockfile to bun
+```
+
+When no real user-flow verification was performed, never use `test:manual` or `test:both`. If only `bun run build`, lint, typecheck, or similar checks were run, use `test:synthetic`.
