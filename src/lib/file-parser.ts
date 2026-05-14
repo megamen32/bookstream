@@ -179,11 +179,11 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
       for (let i = 0; i < divMatches.length; i++) {
         const innerHtml = sanitizeParagraphHtml(divMatches[i][2]);
         const text = htmlBlockToText(innerHtml);
-        if (text) {
+        if (text || hasReadableMediaHtml(innerHtml)) {
           const formatting = extractBlockFormatting(divMatches[i][1] || '');
           paragraphs.push({
             text,
-            stableKey: generateStableKey(i, text),
+            stableKey: generateStableKey(i, text || innerHtml),
             html: innerHtml,
             textAlign: formatting.textAlign,
             indentPx: formatting.indentPx,
@@ -196,10 +196,10 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
       for (let i = 0; i < parts.length; i++) {
         const innerHtml = sanitizeParagraphHtml(parts[i]);
         const text = htmlBlockToText(innerHtml);
-        if (text) {
+        if (text || hasReadableMediaHtml(innerHtml)) {
           paragraphs.push({
             text,
-            stableKey: generateStableKey(i, text),
+            stableKey: generateStableKey(i, text || innerHtml),
             html: innerHtml,
             textAlign: null,
             indentPx: 0,
@@ -211,6 +211,9 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
     if (paragraphs.length === 0 && html.trim()) {
       const innerHtml = sanitizeParagraphHtml(html);
       const text = htmlBlockToText(innerHtml);
+      if (!text && !hasReadableMediaHtml(innerHtml)) {
+        return paragraphs;
+      }
       paragraphs.push({
         text,
         stableKey: generateStableKey(0, text),
@@ -229,12 +232,12 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
 
   for (let i = 0; i < matches.length; i++) {
     const innerHtml = `${i === 0 ? leadingImportedAnchors : ''}${sanitizeParagraphHtml(matches[i][2])}`;
-    const text = htmlBlockToText(innerHtml);
-    if (text) {
+    const text = htmlBlockToText(innerHtml) || extractImageAltText(innerHtml);
+    if (text || hasReadableMediaHtml(innerHtml)) {
       const formatting = extractBlockFormatting(matches[i][1] || '');
       paragraphs.push({
         text,
-        stableKey: generateStableKey(i, text),
+        stableKey: generateStableKey(i, text || innerHtml),
         html: innerHtml,
         textAlign: formatting.textAlign,
         indentPx: formatting.indentPx,
@@ -282,6 +285,12 @@ function collapseWhitespace(text: string): string {
   return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
 }
 
+
+function hasReadableMediaHtml(html: string): boolean {
+  return /<(img|svg|picture|table|hr)\b/i.test(html);
+}
+
+
 function htmlBlockToText(html: string): string {
   const withLineBreaks = html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -296,6 +305,15 @@ function extractImportedSectionAnchors(html: string): string {
     .filter((anchor) => /\sdata-imported-section-anchor=(?:"true"|'true'|true)(?:\s|>)/i.test(anchor))
     .map((anchor) => sanitizeParagraphHtml(anchor))
     .join('');
+}
+
+
+
+function extractImageAltText(html: string): string {
+  const altValues = [...html.matchAll(/<img\b[^>]*\salt=(["'])(.*?)\1/gi)]
+    .map((match) => decodeHtmlEntities(match[2]))
+    .filter(Boolean);
+  return collapseWhitespace(altValues.join(' '));
 }
 
 function sanitizeParagraphHtml(html: string): string {

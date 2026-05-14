@@ -28,7 +28,7 @@ export function buildParagraphInputsFromHtml(contentHtml: string): SyncedParagra
       textAlign: paragraph.textAlign,
       indentPx: paragraph.indentPx,
     }))
-    .filter((paragraph) => paragraph.text.length > 0)
+    .filter((paragraph) => paragraph.text.length > 0 || /<(img|svg|picture|table|hr)\b/i.test(paragraph.html))
 }
 
 /**
