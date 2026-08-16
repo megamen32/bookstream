@@ -3,7 +3,8 @@
 import { type DragEvent, type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, File, FileText, FileType2, ImagePlus, Loader2, Upload, X } from 'lucide-react'
+import Script from 'next/script'
+import { ArrowLeft, CheckCircle2, File, FileText, FileType2, ImagePlus, Link2, Loader2, Upload, X } from 'lucide-react'
 import { BookCoverSection } from '@/components/admin/BookCoverSection'
 import { BookMetadataSection } from '@/components/admin/BookMetadataSection'
 import { Button } from '@/components/ui/button'
@@ -81,6 +82,10 @@ export default function AdminUploadPage() {
   const [description, setDescription] = useState('')
   const [readingMode, setReadingMode] = useState('feed')
   const [file, setFile] = useState<File | null>(null)
+  const [sourceMode, setSourceMode] = useState<'file' | 'drive'>('file')
+  const [driveUrl, setDriveUrl] = useState('')
+  const [driveLoading, setDriveLoading] = useState(false)
+  const [drivePickerLoading, setDrivePickerLoading] = useState(false)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
   const [suggestedCoverDataUrl, setSuggestedCoverDataUrl] = useState<string | null>(null)
@@ -292,6 +297,124 @@ export default function AdminUploadPage() {
     }
     void fetchImportPreview(selectedFile)
   }, [coverFile, fetchImportPreview, toast])
+
+  const handleDriveImport = useCallback(async (): Promise<void> => {
+    if (!driveUrl.trim()) {
+      toast({
+        title: 'Нужна ссылка',
+        description: 'Вставьте ссылку на Google Docs или Google Drive файл.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setDriveLoading(true)
+    try {
+      const response = await adminFetch('/api/books/import-drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: driveUrl.trim() }),
+      })
+
+      if (!response) return
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error || 'Не удалось импортировать документ из Google Drive')
+      }
+
+      const blob = await response.blob()
+      const contentDisposition = response.headers.get('content-disposition') || ''
+      const fileName = contentDisposition.match(/filename="?([^";]+)"?/i)?.[1] || 'google-drive-book.docx'
+      handleFileSelect(new File([blob], fileName, { type: blob.type }))
+      toast({ title: 'Документ из Google Drive выбран' })
+    } catch (error) {
+      toast({
+        title: 'Ошибка импорта',
+        description: error instanceof Error ? error.message : 'Не удалось скачать документ',
+        variant: 'destructive',
+      })
+    } finally {
+      setDriveLoading(false)
+    }
+  }, [adminFetch, driveUrl, handleFileSelect, toast])
+
+  const handleDrivePicker = useCallback((): void => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
+    if (!clientId || !apiKey) {
+      toast({
+        title: 'Google Picker не настроен',
+        description: 'Добавьте NEXT_PUBLIC_GOOGLE_CLIENT_ID и NEXT_PUBLIC_GOOGLE_API_KEY в окружение BookStream.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const googleWindow = window as typeof window & { google?: any; gapi?: any }
+    if (!googleWindow.google?.accounts?.oauth2 || !googleWindow.gapi) {
+      toast({ title: 'Google Picker ещё загружается', description: 'Повторите попытку через секунду.' })
+      return
+    }
+
+    setDrivePickerLoading(true)
+    const tokenClient = googleWindow.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      callback: async (tokenResponse: { access_token?: string }) => {
+        if (!tokenResponse.access_token) {
+          setDrivePickerLoading(false)
+          toast({ title: 'Google не выдал доступ к Drive', variant: 'destructive' })
+          return
+        }
+
+        googleWindow.gapi.load('picker', {
+          callback: () => {
+            const picker = new googleWindow.google.picker.PickerBuilder()
+              .addView(new googleWindow.google.picker.DocsView()
+                .setIncludeFolders(false)
+                .setMimeTypes('application/vnd.google-apps.document,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown'))
+              .setOAuthToken(tokenResponse.access_token)
+              .setDeveloperKey(apiKey)
+              .setCallback(async (data: { action?: string; docs?: Array<{ id: string; name?: string; mimeType?: string }> }) => {
+                if (data.action !== 'picked' || !data.docs?.[0]) {
+                  if (data.action === 'cancel') setDrivePickerLoading(false)
+                  return
+                }
+
+                try {
+                  const selected = data.docs[0]
+                  const response = await adminFetch('/api/books/import-drive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      fileId: selected.id,
+                      accessToken: tokenResponse.access_token,
+                      mimeType: selected.mimeType,
+                      name: selected.name,
+                    }),
+                  })
+                  if (!response) return
+                  if (!response.ok) {
+                    const payload = await response.json().catch(() => ({})) as { error?: string }
+                    throw new Error(payload.error || 'Не удалось импортировать выбранный документ')
+                  }
+                  const blob = await response.blob()
+                  handleFileSelect(new File([blob], selected.name || 'google-drive-book.docx', { type: blob.type }))
+                  toast({ title: 'Документ из Google Drive выбран' })
+                } catch (error) {
+                  toast({ title: 'Ошибка импорта', description: error instanceof Error ? error.message : 'Не удалось скачать документ', variant: 'destructive' })
+                } finally {
+                  setDrivePickerLoading(false)
+                }
+              })
+              .build()
+            picker.setVisible(true)
+          },
+        })
+      },
+    })
+    tokenClient.requestAccessToken({ prompt: '' })
+  }, [adminFetch, handleFileSelect, toast])
 
   const handleCoverSelect = useCallback((selectedCoverFile: File) => {
     const extension = getExtension(selectedCoverFile.name)
@@ -511,6 +634,8 @@ export default function AdminUploadPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-6 lg:p-8">
+      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
+      <Script src="https://apis.google.com/js/api.js" strategy="afterInteractive" />
       <input
         ref={fileInputRef}
         type="file"
@@ -558,10 +683,68 @@ export default function AdminUploadPage() {
           <CardHeader>
             <CardTitle className="text-base">Файл книги</CardTitle>
             <CardDescription>
-              Основной сценарий: загрузить файл первым. Поддерживаются .docx, .md, .txt
+              Выберите локальный файл или импортируйте документ из Google Drive
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Источник книги">
+              <Button
+                type="button"
+                variant={sourceMode === 'file' ? 'default' : 'outline'}
+                onClick={() => setSourceMode('file')}
+                disabled={step !== 'form' || driveLoading}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                С устройства
+              </Button>
+              <Button
+                type="button"
+                variant={sourceMode === 'drive' ? 'default' : 'outline'}
+                onClick={() => setSourceMode('drive')}
+                disabled={step !== 'form' || Boolean(file) || driveLoading}
+              >
+                <Link2 className="mr-2 h-4 w-4" />
+                Из Google Drive
+              </Button>
+            </div>
+
+            {sourceMode === 'drive' && !file ? (
+              <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/60 p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="google-drive-book-url">Ссылка на документ</Label>
+                  <Input
+                    id="google-drive-book-url"
+                    value={driveUrl}
+                    onChange={(event) => setDriveUrl(event.target.value)}
+                    placeholder="https://docs.google.com/document/d/..."
+                    disabled={step !== 'form' || driveLoading}
+                  />
+                </div>
+                <p className="text-xs leading-5 text-sky-900/70">
+                  Документ должен быть доступен по ссылке для просмотра. После импорта его содержимое
+                  обработается так же, как загруженный .docx.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleDriveImport()}
+                  disabled={step !== 'form' || driveLoading || drivePickerLoading || !driveUrl.trim()}
+                >
+                  {driveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+                  {driveLoading ? 'Получаем документ...' : 'Выбрать документ'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDrivePicker}
+                  disabled={step !== 'form' || driveLoading || drivePickerLoading}
+                >
+                  {drivePickerLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+                  {drivePickerLoading ? 'Открываем Google Drive...' : 'Выбрать из моего Drive'}
+                </Button>
+              </div>
+            ) : null}
+
             {file ? (
               <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
                 {getFileIcon(file.name)}
@@ -584,6 +767,8 @@ export default function AdminUploadPage() {
                       previewRequestIdRef.current += 1
                       setPreviewLoading(false)
                       setFile(null)
+                      setDriveUrl('')
+                      setSourceMode('file')
                       if (!coverFileRef.current) {
                         setSuggestedCoverDataUrl(null)
                       }
@@ -594,7 +779,7 @@ export default function AdminUploadPage() {
                   </Button>
                 )}
               </div>
-            ) : (
+            ) : sourceMode === 'file' ? (
               <div
                 onDragEnter={handleDrag}
                 onDragLeave={handleDrag}
@@ -612,7 +797,7 @@ export default function AdminUploadPage() {
                 <p className="text-sm font-medium">Перетащите файл сюда или нажмите для выбора</p>
                 <p className="mt-1 text-xs text-muted-foreground">.docx, .md, .txt</p>
               </div>
-            )}
+            ) : null}
           </CardContent>
         </Card>
 

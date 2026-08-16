@@ -306,6 +306,11 @@ function sanitizeAttributes(node: DefaultTreeElement, context: NormalizationCont
       continue
     }
 
+    if (tagName === 'code' && attr.name === 'class' && /^language-[a-z0-9#+.-]+$/i.test(attr.value)) {
+      attrs.push(attr)
+      continue
+    }
+
     if (tagName === 'img' && attr.name === 'src') {
       const src = attr.value.trim()
       if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/') || src.startsWith('data:image/')) {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import JSZip from 'jszip'
 import mammoth from 'mammoth'
 import { marked } from 'marked'
 import sharp from 'sharp'
@@ -17,10 +18,29 @@ import {
 const SUPPORTED_BOOK_EXTENSIONS = ['.docx', '.md', '.txt'] as const
 const CHAPTER_HEADING_PATTERN = /^(?:Глава\s+\d+|Chapter\s+\d+|Chapter\s+[IVXLCDM]+|CHAPTER\s+\d+)$/i
 const MARKDOWN_FRONTMATTER_PATTERN = /^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/
+const MAX_METADATA_EXCERPT_LENGTH = 12000
+
+export interface ImportedBookImageCandidate {
+  dataUrl: string
+  index: number
+  width: number | null
+  height: number | null
+  alt: string | null
+  source: 'docx' | 'markdown'
+}
+
+export interface ImportedBookMetadata {
+  title: string | null
+  description: string | null
+  coverDataUrl: string | null
+}
+
 export interface ImportedBookContent {
   html: string
   text: string
   coverDataUrl: string | null
+  imageCandidates: ImportedBookImageCandidate[]
+  metadata: ImportedBookMetadata
 }
 
 export interface ImportedBookPreview {
@@ -34,6 +54,23 @@ export interface ImportedChapter {
   content: string
   level: number
   isReadable?: boolean
+}
+
+export interface ImportedBookMetadataSuggestionContext {
+  excerpt: string
+  imageCandidates: Array<Pick<ImportedBookImageCandidate, 'index' | 'width' | 'height' | 'alt'>>
+}
+
+export interface ImportedBookMetadataSuggestion {
+  title?: string | null
+  description?: string | null
+  coverIndex?: number | null
+}
+
+export interface BuildImportedBookPreviewOptions {
+  suggestMetadata?: (
+    context: ImportedBookMetadataSuggestionContext,
+  ) => Promise<ImportedBookMetadataSuggestion | string | null>
 }
 
 /**
@@ -60,16 +97,28 @@ export async function readImportedBookFile(
       html: plainTextToHtml(text),
       text,
       coverDataUrl: null,
+      imageCandidates: [],
+      metadata: { title: null, description: null, coverDataUrl: null },
     }
   }
 
   if (extension === '.md') {
     const text = normalizeText(await file.text())
-    const html = await marked(text)
+    const renderedHtml = await marked(stripMarkdownFrontmatter(text))
+    const html = normalizeImportedHtml(typeof renderedHtml === 'string' ? renderedHtml : '')
+    const explicitCover = extractFrontmatterCover(text)
+    const imageCandidates = await buildImageCandidates(html, 'markdown')
+    const coverDataUrl = explicitCover || selectCoverCandidate(imageCandidates)?.dataUrl || null
     return {
       html: typeof html === 'string' ? html : '',
       text,
-      coverDataUrl: extractMarkdownCover(text),
+      coverDataUrl,
+      imageCandidates,
+      metadata: {
+        title: extractFrontmatterValue(text, 'title'),
+        description: extractFrontmatterValue(text, 'description'),
+        coverDataUrl: explicitCover,
+      },
     }
   }
 
@@ -84,11 +133,16 @@ export async function readImportedBookFile(
   const rawTextResult = await mammoth.extractRawText({ buffer })
   const html = normalizeImportedHtml(htmlResult.value)
   const text = normalizeText(rawTextResult.value)
+  const metadata = await readDocxMetadata(buffer)
+  const imageCandidates = await buildImageCandidates(html, 'docx')
+  const coverDataUrl = metadata.coverDataUrl || selectCoverCandidate(imageCandidates)?.dataUrl || null
 
   return {
     html,
     text,
-    coverDataUrl: extractFirstImageDataUrl(html),
+    coverDataUrl,
+    imageCandidates,
+    metadata,
   }
 }
 
@@ -98,15 +152,76 @@ export async function readImportedBookFile(
  * @param file Uploaded source file.
  * @returns Best-effort title, description, and cover preview.
  */
-export async function buildImportedBookPreview(file: File): Promise<ImportedBookPreview> {
+export async function buildImportedBookPreview(
+  file: File,
+  options: BuildImportedBookPreviewOptions = {},
+): Promise<ImportedBookPreview> {
   const content = await readImportedBookFile(file)
-  const title = inferBookTitle(file.name, content)
-  const description = inferBookDescription(content, title)
+  const fallbackTitle = inferBookTitle(file.name, content)
+  const fallbackDescription = inferBookDescription(content, fallbackTitle)
+  const explicitTitle = content.metadata.title
+  const explicitDescription = content.metadata.description
+  let title = explicitTitle || fallbackTitle
+  let description = explicitDescription || fallbackDescription
+
+  if (options.suggestMetadata && (!explicitTitle || !explicitDescription)) {
+    try {
+      const suggestion = await options.suggestMetadata({
+        excerpt: buildMetadataExcerpt(content),
+        imageCandidates: content.imageCandidates.map(({ index, width, height, alt }) => ({
+          index,
+          width,
+          height,
+          alt,
+        })),
+      })
+      const parsedSuggestion = parseMetadataSuggestion(suggestion)
+      if (!explicitTitle && parsedSuggestion.title) {
+        title = parsedSuggestion.title
+      }
+      if (!explicitDescription && parsedSuggestion.description) {
+        description = parsedSuggestion.description
+      }
+      if (!content.metadata.coverDataUrl && parsedSuggestion.coverIndex !== null && parsedSuggestion.coverIndex !== undefined) {
+        const suggestedCover = content.imageCandidates[parsedSuggestion.coverIndex]
+        if (suggestedCover) {
+          content.coverDataUrl = suggestedCover.dataUrl
+        }
+      }
+    } catch {
+      // Metadata AI is an optional enhancement; deterministic import must survive provider failures.
+    }
+  }
 
   return {
     title,
     description,
     coverDataUrl: content.coverDataUrl ? await optimizeCoverDataUrl(content.coverDataUrl) : null,
+  }
+}
+
+/**
+ * Extracts and validates the small JSON contract returned by metadata AI.
+ * Providers sometimes wrap JSON in markdown fences, so those are accepted too.
+ */
+export function parseMetadataSuggestion(
+  suggestion: ImportedBookMetadataSuggestion | string | null,
+): ImportedBookMetadataSuggestion {
+  if (!suggestion) {
+    return {}
+  }
+
+  const value = typeof suggestion === 'string'
+    ? parseJsonSuggestion(suggestion)
+    : suggestion
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  return {
+    title: normalizeSuggestedTitle(value.title),
+    description: normalizeSuggestedDescription(value.description),
+    coverIndex: normalizeCoverIndex(value.coverIndex),
   }
 }
 
@@ -376,6 +491,10 @@ function extractFrontmatterValue(text: string, key: 'title' | 'description'): st
   return cleanupQuotedMetadata(valueMatch[1])
 }
 
+function stripMarkdownFrontmatter(text: string): string {
+  return text.replace(MARKDOWN_FRONTMATTER_PATTERN, '').trim()
+}
+
 function cleanupQuotedMetadata(value: string): string | null {
   const trimmed = value.trim().replace(/^["']|["']$/g, '')
   return trimmed ? trimmed : null
@@ -464,8 +583,7 @@ function extractParagraphCandidates(html: string, text: string): string[] {
 }
 
 function extractFirstImageDataUrl(html: string): string | null {
-  const imageMatch = html.match(/<img[^>]+src="(data:image\/[^"]+)"[^>]*>/i)
-  return imageMatch?.[1] ?? null
+  return extractImageDataUrls(html)[0] || null
 }
 
 function extractMarkdownCover(text: string): string | null {
@@ -476,6 +594,117 @@ function extractMarkdownCover(text: string): string | null {
 
   const htmlImageMatch = text.match(/<img[^>]+src=["'](data:image\/[^"']+)["'][^>]*>/i)
   return htmlImageMatch?.[1] ?? null
+}
+
+function extractFrontmatterCover(text: string): string | null {
+  const match = text.match(MARKDOWN_FRONTMATTER_PATTERN)
+  if (!match) return null
+  const coverMatch = match[1].match(/^(?:cover|cover_url|image):\s*(.+)$/im)
+  const value = coverMatch ? cleanupQuotedMetadata(coverMatch[1]) : null
+  return value?.startsWith('data:image/') ? value : null
+}
+
+function extractImageDataUrls(html: string): string[] {
+  return [...html.matchAll(/<img\b[^>]*\bsrc=["'](data:image\/[^"']+)["'][^>]*>/gi)].map((match) => match[1])
+}
+
+async function buildImageCandidates(html: string, source: ImportedBookImageCandidate['source']): Promise<ImportedBookImageCandidate[]> {
+  const candidates: ImportedBookImageCandidate[] = []
+  for (const imageTag of html.matchAll(/<img\b([^>]*)>/gi)) {
+    const attributes = imageTag[1] || ''
+    const src = attributes.match(/\bsrc=["'](data:image\/[^"']+)["']/i)?.[1]
+    if (!src) continue
+    let width: number | null = null
+    let height: number | null = null
+    try {
+      const metadata = await sharp(parseDataUrlImage(src) || Buffer.alloc(0)).metadata()
+      width = metadata.width || null
+      height = metadata.height || null
+    } catch {
+      // Invalid image remains readable content but is not a cover candidate.
+    }
+    candidates.push({ dataUrl: src, index: candidates.length, width, height, alt: attributes.match(/\balt=["']([^"']*)["']/i)?.[1]?.trim() || null, source })
+  }
+  return candidates
+}
+
+export function selectCoverCandidate(candidates: ImportedBookImageCandidate[]): ImportedBookImageCandidate | null {
+  if (candidates.length === 0) return null
+  const portraits = candidates.filter((candidate) => Boolean(candidate.width && candidate.height) && (candidate.height as number) / (candidate.width as number) >= 1.05)
+  if (portraits.length === 0 && candidates.every((candidate) => candidate.width && candidate.height)) {
+    return null
+  }
+  const pool = portraits.length > 0 ? portraits : candidates
+  return pool.slice().sort((left, right) => coverCandidateScore(right) - coverCandidateScore(left) || left.index - right.index)[0] || null
+}
+
+function coverCandidateScore(candidate: ImportedBookImageCandidate): number {
+  const width = candidate.width || 0
+  const height = candidate.height || 0
+  const ratio = width > 0 ? height / width : 0
+  const semanticBonus = /cover|облож|title|титул/.test(candidate.alt?.toLowerCase() || '') ? 100000000 : 0
+  const portraitBonus = ratio >= 1.05 ? 10000000 : 0
+  return semanticBonus + portraitBonus + width * height
+}
+
+async function readDocxMetadata(buffer: Buffer): Promise<ImportedBookMetadata> {
+  try {
+    const zip = await JSZip.loadAsync(buffer)
+    const coreXml = await zip.file('docProps/core.xml')?.async('string')
+    if (!coreXml) return { title: null, description: null, coverDataUrl: null }
+    return {
+      title: extractXmlText(coreXml, 'title'),
+      description: extractXmlText(coreXml, 'description') || extractXmlText(coreXml, 'subject'),
+      coverDataUrl: null,
+    }
+  } catch {
+    return { title: null, description: null, coverDataUrl: null }
+  }
+}
+
+function extractXmlText(xml: string, localName: string): string | null {
+  const pattern = '<[^>]*:' + localName + '\\b[^>]*>([\\s\\S]*?)<\\/[^>]*:' + localName + '>'
+  const match = xml.match(new RegExp(pattern, 'i'))
+  if (!match) return null
+  const decoded = match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+  return cleanupQuotedMetadata(decoded)
+}
+
+function buildMetadataExcerpt(content: ImportedBookContent): string {
+  const sections = flattenImportedSections(splitImportedHtmlIntoSections(content.html, 'Глава 1'))
+  const excerpt = sections.slice(0, 2)
+    .map((section) => section.title + '\n' + collapseWhitespace(stripHtml(section.contentHtml)))
+    .join('\n\n')
+  return (excerpt || content.text).slice(0, MAX_METADATA_EXCERPT_LENGTH)
+}
+
+function parseJsonSuggestion(value: string): ImportedBookMetadataSuggestion | null {
+  const fencedMatch = value.match(/\`\`\`(?:json)?\s*([\s\S]*?)\s*\`\`\`/i)
+  const fenced = fencedMatch ? fencedMatch[1] : null
+  const jsonMatch = value.match(/\{[\s\S]*\}/)
+  const candidate = fenced || (jsonMatch ? jsonMatch[0] : null)
+  if (!candidate) return null
+  try {
+    return JSON.parse(candidate) as ImportedBookMetadataSuggestion
+  } catch {
+    return null
+  }
+}
+
+function normalizeSuggestedTitle(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = collapseWhitespace(value)
+  return looksLikeDocumentTitle(normalized) ? normalized : null
+}
+
+function normalizeSuggestedDescription(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = collapseWhitespace(value)
+  return normalized.length >= 40 && normalized.length <= 600 ? normalized : null
+}
+
+function normalizeCoverIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 }
 
 async function optimizeCoverDataUrl(dataUrl: string): Promise<string | null> {
