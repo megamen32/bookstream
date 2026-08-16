@@ -45,6 +45,7 @@ import {
 } from '@/lib/offline-client'
 import type { OfflineProgressRecord, VariantPresetRecord } from '@/lib/offline-types'
 import { READING_STATS_HEARTBEAT_SECONDS } from '@/lib/reading-stats'
+import { buildNeighborVariantChapterIds } from '@/lib/variant-preparation'
 
 interface BookData {
   id: string
@@ -187,6 +188,7 @@ export default function ReaderPage() {
   const chapterSectionCacheRef = useRef(new Map<string, FeedSectionData>())
   const chapterSectionRequestRef = useRef(new Map<string, Promise<FeedSectionData | null>>())
   const feedWindowPrefetchRef = useRef(new Set<string>())
+  const backgroundVariantPreparationRef = useRef(new Set<string>())
   const statsOpenSentRef = useRef(false)
   const lastActivityAtRef = useRef(Date.now())
   const lastStatsDispatchAtRef = useRef(Date.now())
@@ -1345,6 +1347,54 @@ export default function ReaderPage() {
     () => chapters.filter((chapter) => chapter.isReadable !== false),
     [chapters],
   )
+
+  const prepareNeighborVariants = useCallback(async (): Promise<void> => {
+    if (!bookId || !readerId || !activeChapterId || variantType === 'original') {
+      return
+    }
+
+    if (!availableVariants.includes(variantType)) {
+      return
+    }
+
+    const neighborIds = buildNeighborVariantChapterIds({
+      chapters,
+      activeChapterId,
+    })
+
+    await Promise.all(neighborIds.map(async (chapterId) => {
+      const chapter = chapters.find((entry) => entry.id === chapterId)
+      if (!chapter || chapter.variants.some((variant) => variant.variantType === variantType)) {
+        return
+      }
+
+      const requestKey = `${bookId}:${variantType}:${chapterId}`
+      if (backgroundVariantPreparationRef.current.has(requestKey)) {
+        return
+      }
+      backgroundVariantPreparationRef.current.add(requestKey)
+
+      try {
+        await fetch(`/api/chapters/${chapterId}/summarize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            variantType,
+            requesterReaderId: readerId,
+            // Main-admin keys are explicitly allowed for this background action;
+            // author-sponsored books ignore this flag and use the owner's config.
+            useReaderLlm: true,
+          }),
+        })
+      } catch (error) {
+        console.error('Failed to prepare neighboring variant:', error)
+      }
+    }))
+  }, [activeChapterId, availableVariants, bookId, chapters, readerId, variantType])
+
+  useEffect(() => {
+    void prepareNeighborVariants()
+  }, [availableVariants, prepareNeighborVariants])
   const resolveChapterTarget = useCallback((chapterId: string | null): string | null => {
     if (!chapterId) {
       return null

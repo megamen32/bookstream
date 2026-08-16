@@ -1,6 +1,7 @@
 export interface QuoteReadTarget {
   chapterId: string
   variantType: string
+  readingMode?: 'feed' | 'book' | null
   paragraphId?: string | null
   paragraphEndId?: string | null
   startOffset?: number | null
@@ -20,6 +21,10 @@ export function buildQuoteReadHref(authorSlug: string, bookSlug: string, target:
     chapter: target.chapterId,
     variant: target.variantType,
   })
+
+  if (target.readingMode === 'feed' || target.readingMode === 'book') {
+    params.set('mode', target.readingMode)
+  }
 
   if (target.paragraphId) {
     params.set('paragraph', target.paragraphId)

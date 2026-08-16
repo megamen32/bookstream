@@ -100,10 +100,11 @@ export function truncateShareText(text: string, maxLength: number): string {
  * @param moment Public moment data.
  * @returns Internal reader URL used by the "Read in book" action.
  */
-export function buildMomentReaderHref(moment: Pick<BookMomentRecord, 'authorSlug' | 'bookSlug' | 'chapterId' | 'variantType' | 'paragraphStart' | 'paragraphEnd' | 'startOffset' | 'endOffset'>): string {
+export function buildMomentReaderHref(moment: Pick<BookMomentRecord, 'authorSlug' | 'bookSlug' | 'chapterId' | 'variantType' | 'readingMode' | 'paragraphStart' | 'paragraphEnd' | 'startOffset' | 'endOffset'>): string {
   return buildQuoteReadHref(moment.authorSlug, moment.bookSlug, {
     chapterId: moment.chapterId,
     variantType: moment.variantType,
+    readingMode: moment.readingMode === 'book' ? 'book' : 'feed',
     paragraphId: moment.paragraphStart,
     paragraphEndId: moment.paragraphEnd || undefined,
     startOffset: moment.startOffset,

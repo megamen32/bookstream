@@ -47,6 +47,7 @@ function buildTechnicalQuoteUrl(request: QuoteShareRequest, origin: string): str
   const href = buildQuoteReadHref(request.authorSlug, request.bookSlug, {
     chapterId: request.chapterId,
     variantType: request.variantType,
+    readingMode: request.readingMode === 'book' ? 'book' : 'feed',
     paragraphId: request.paragraphStart,
     paragraphEndId: request.paragraphEnd,
     startOffset: request.startOffset,

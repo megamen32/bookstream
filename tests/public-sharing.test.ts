@@ -88,17 +88,18 @@ describe('public sharing helpers', () => {
 
   it('builds the internal reader href for a shared moment', () => {
     assert.equal(
-      buildMomentReaderHref({
+    buildMomentReaderHref({
         authorSlug: 'alex',
         bookSlug: 'chemistry',
         chapterId: 'chapter-1',
-        variantType: 'original',
+      variantType: 'original',
+      readingMode: 'book',
         paragraphStart: 'paragraph-a',
         paragraphEnd: 'paragraph-b',
         startOffset: 28,
         endOffset: 0,
       }),
-      '/alex/chemistry/read?chapter=chapter-1&variant=original&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=28&endOffset=0',
+      '/alex/chemistry/read?chapter=chapter-1&variant=original&mode=book&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=28&endOffset=0',
     )
   })
 

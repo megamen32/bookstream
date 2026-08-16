@@ -37,7 +37,7 @@ describe('quote sharing flow', () => {
     assert.equal(result.createdQuoteCard, false)
     assert.equal(result.publicUrl, null)
     assert.deepEqual(copiedValues, [
-      'https://books.bezrabotnyi.com/alex/chemistry/read?chapter=chapter-1&variant=original&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=12&endOffset=3',
+      'https://books.bezrabotnyi.com/alex/chemistry/read?chapter=chapter-1&variant=original&mode=feed&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=12&endOffset=3',
     ])
   })
 
@@ -75,8 +75,39 @@ describe('quote sharing flow', () => {
     assert.equal(result.createdQuoteCard, true)
     assert.equal(result.publicUrl, 'https://books.bezrabotnyi.com/alex/chemistry/moments/moment-1')
     assert.deepEqual(copiedValues, [
-      'https://books.bezrabotnyi.com/alex/chemistry/read?chapter=chapter-1&variant=original&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=12&endOffset=3',
+      'https://books.bezrabotnyi.com/alex/chemistry/read?chapter=chapter-1&variant=original&mode=feed&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=12&endOffset=3',
       'https://books.bezrabotnyi.com/alex/chemistry/moments/moment-1',
+    ])
+  })
+
+  it('preserves book mode in a copied deep link', async () => {
+    const copiedValues: string[] = []
+
+    await shareQuoteSelection(
+      {
+        authorSlug: 'alex',
+        bookSlug: 'history',
+        chapterId: 'chapter-8',
+        variantType: 'clean',
+        paragraphStart: 'paragraph-80',
+        paragraphEnd: 'paragraph-80',
+        startOffset: 4,
+        endOffset: 28,
+        readingMode: 'book',
+        quoteText: 'A deep quote',
+        createQuoteCardsOnCopy: false,
+      },
+      {
+        origin: 'https://books.bezrabotnyi.com',
+        copyToClipboard: async (value: string) => {
+          copiedValues.push(value)
+        },
+        createQuoteCard: async () => ({ publicUrl: '' }),
+      },
+    )
+
+    assert.deepEqual(copiedValues, [
+      'https://books.bezrabotnyi.com/alex/history/read?chapter=chapter-8&variant=clean&mode=book&paragraph=paragraph-80&startOffset=4&endOffset=28',
     ])
   })
 })
