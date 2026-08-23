@@ -60,6 +60,25 @@ export async function syncVariantParagraphs(
   const existingByStableKey = new Map(existingParagraphs.map((paragraph) => [paragraph.stableKey, paragraph]))
   const matchedParagraphIds = new Set<string>()
 
+  // Move the current rows out of the target position range before rewriting the
+  // sequence. This avoids unique `(chapterVariantId, position)` collisions when
+  // an import changes multiple paragraphs into one structural block (for example
+  // a table) or inserts a new paragraph before existing content.
+  const highestPosition = Math.max(
+    -1,
+    ...existingParagraphs.map((paragraph) => paragraph.position),
+    ...paragraphInputs.map((paragraph) => paragraph.position),
+  )
+  const temporaryPositionBase = highestPosition + existingParagraphs.length + 1
+
+  for (let index = 0; index < existingParagraphs.length; index += 1) {
+    const paragraph = existingParagraphs[index]
+    await store.paragraph.update({
+      where: { id: paragraph.id },
+      data: { position: temporaryPositionBase + index },
+    })
+  }
+
   for (const paragraph of normalizedInputs) {
     const existing = existingByStableKey.get(paragraph.stableKey)
 

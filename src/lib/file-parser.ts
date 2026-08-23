@@ -165,10 +165,16 @@ export function parseTxt(text: string): { chapters: ParsedChapter[] } {
  * The stable key is based on a hash of the paragraph's position and first 50 characters.
  */
 export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
+  const tableBlocks: string[] = []
+  const htmlWithTablePlaceholders = html.replace(/<table\b[\s\S]*?<\/table>/gi, (tableHtml) => {
+    const index = tableBlocks.push(sanitizeParagraphHtml(tableHtml)) - 1
+    return `<p data-bookstream-table-index="${index}"></p>`
+  })
+
   // Split HTML by <p> tags
   const paragraphs: ParsedParagraph[] = [];
   const pRegex = /<p([^>]*)>([\s\S]*?)<\/p>/gi;
-  const matches = [...html.matchAll(pRegex)];
+  const matches = [...htmlWithTablePlaceholders.matchAll(pRegex)];
 
   if (matches.length === 0) {
     // No <p> tags found — try splitting by <div>, <br>, or treat whole thing as one paragraph
@@ -227,11 +233,15 @@ export function splitHtmlIntoParagraphs(html: string): ParsedParagraph[] {
   }
 
   const leadingImportedAnchors = extractImportedSectionAnchors(
-    matches[0]?.index !== undefined ? html.slice(0, matches[0].index) : '',
+    matches[0]?.index !== undefined ? htmlWithTablePlaceholders.slice(0, matches[0].index) : '',
   );
 
   for (let i = 0; i < matches.length; i++) {
-    const innerHtml = `${i === 0 ? leadingImportedAnchors : ''}${sanitizeParagraphHtml(matches[i][2])}`;
+    const tableIndex = matches[i][1]?.match(/\sdata-bookstream-table-index=(?:"(\d+)"|'(\d+)'|(\d+))/i)
+    const tableHtml = tableIndex
+      ? tableBlocks[Number(tableIndex[1] || tableIndex[2] || tableIndex[3])]
+      : null
+    const innerHtml = `${i === 0 ? leadingImportedAnchors : ''}${tableHtml ?? sanitizeParagraphHtml(matches[i][2])}`;
     const text = htmlBlockToText(innerHtml) || extractImageAltText(innerHtml);
     if (text || hasReadableMediaHtml(innerHtml)) {
       const formatting = extractBlockFormatting(matches[i][1] || '');

@@ -51,8 +51,54 @@ function toMarkdown(book: ExportableBook): string {
     `# ${book.title}`,
     `Автор: ${book.authorName}`,
     book.description?.trim() || '',
-    ...book.chapters.flatMap((chapter) => [`## ${chapter.title}`, paragraphsFromHtml(chapter.contentHtml).join('\n\n')]),
+    ...book.chapters.flatMap((chapter) => [`## ${chapter.title}`, markdownFromHtml(chapter.contentHtml)]),
   ].filter(Boolean).join('\n\n')}\n`
+}
+
+function markdownFromHtml(html: string): string {
+  const blocks: string[] = []
+  const tablePattern = /<table\b[^>]*>[\s\S]*?<\/table>/gi
+  let cursor = 0
+
+  for (const tableMatch of html.matchAll(tablePattern)) {
+    const index = tableMatch.index || 0
+    blocks.push(...paragraphsFromHtml(html.slice(cursor, index)))
+    blocks.push(markdownTableFromHtml(tableMatch[0]))
+    cursor = index + tableMatch[0].length
+  }
+
+  blocks.push(...paragraphsFromHtml(html.slice(cursor)))
+  return blocks.filter(Boolean).join('\n\n')
+}
+
+function markdownTableFromHtml(tableHtml: string): string {
+  const rows = [...tableHtml.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((row) => [...row[1].matchAll(/<(?:th|td)\b[^>]*>([\s\S]*?)<\/(?:th|td)>/gi)]
+      .map((cell) => markdownTableCellText(cell[1])))
+    .filter((cells) => cells.length > 0)
+
+  if (rows.length === 0) {
+    return paragraphsFromHtml(tableHtml).join(' ')
+  }
+
+  const columnCount = Math.max(...rows.map((cells) => cells.length))
+  const normalizedRows = rows.map((cells) => Array.from(
+    { length: columnCount },
+    (_, index) => cells[index] || '',
+  ))
+  const [header, ...body] = normalizedRows
+
+  return [
+    `| ${header.join(' | ')} |`,
+    `| ${header.map(() => '---').join(' | ')} |`,
+    ...body.map((cells) => `| ${cells.join(' | ')} |`),
+  ].join('\n')
+}
+
+function markdownTableCellText(html: string): string {
+  return paragraphsFromHtml(html)
+    .join(' ')
+    .replace(/\|/g, '\\|')
 }
 
 async function toDocx(book: ExportableBook): Promise<Buffer> {

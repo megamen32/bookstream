@@ -70,6 +70,21 @@ describe('imported html normalization', () => {
     assert.match(paragraphs[0]?.html || '', /id="glava-1"/)
   })
 
+  it('keeps an imported table as one reader block instead of flattening its cells', () => {
+    const paragraphs = splitHtmlIntoParagraphs(`
+      <p>Перед таблицей.</p>
+      <table>
+        <thead><tr><th><p>Ниша</p></th><th><p>Приоритет</p></th></tr></thead>
+        <tbody><tr><td><p>Agentic QA</p></td><td><p>A+</p></td></tr></tbody>
+      </table>
+      <p>После таблицы.</p>
+    `)
+
+    assert.equal(paragraphs.length, 3)
+    assert.match(paragraphs[1]?.html || '', /<table>/)
+    assert.match(paragraphs[1]?.text || '', /Agentic QA/)
+  })
+
   it('persists DOCX images as public book assets', async () => {
     const publicDir = await mkdtemp(path.join(tmpdir(), 'bookstream-assets-'))
     const previousPublicDir = process.env.BOOKSTREAM_PUBLIC_DIR
