@@ -23,6 +23,7 @@ interface RawBookUpdatePayload {
   syntheticCommentsUseLlm?: unknown
   openStatsPublic?: unknown
   allowReaderVariantsAtOwnerExpense?: unknown
+  authorId?: unknown
 }
 
 function expectRecord(value: unknown): Record<string, unknown> {
@@ -43,6 +44,20 @@ function parseOptionalString(value: unknown, fieldName: string): string | undefi
   }
 
   return value
+}
+
+function parseOptionalId(value: unknown, fieldName: string): string | undefined {
+  const parsed = parseOptionalString(value, fieldName)
+  if (parsed === undefined) {
+    return undefined
+  }
+
+  const id = parsed.trim()
+  if (!id) {
+    throw new BookUpdateValidationError(`${fieldName} must not be empty`)
+  }
+
+  return id
 }
 
 function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
@@ -133,6 +148,7 @@ export function buildBookUpdateData(
     raw.allowReaderVariantsAtOwnerExpense,
     'allowReaderVariantsAtOwnerExpense',
   )
+  const authorId = parseOptionalId(raw.authorId, 'authorId')
 
   const updateData: Prisma.BookUpdateInput = {}
 
@@ -168,6 +184,11 @@ export function buildBookUpdateData(
   }
   if (allowReaderVariantsAtOwnerExpense !== undefined) {
     updateData.allowReaderVariantsAtOwnerExpense = allowReaderVariantsAtOwnerExpense
+  }
+  if (authorId !== undefined) {
+    updateData.author = {
+      connect: { id: authorId },
+    }
   }
 
   return updateData

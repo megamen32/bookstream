@@ -183,6 +183,23 @@ export async function PUT(
       canPublish: adminReader.isMainAdmin || settings.allowUserPublishing,
     })
 
+    const requestedAuthorId = typeof body === 'object' && body !== null && !Array.isArray(body)
+      ? (body as Record<string, unknown>).authorId
+      : undefined
+    if (typeof requestedAuthorId === 'string') {
+      const targetAuthor = await db.author.findFirst({
+        where: {
+          id: requestedAuthorId.trim(),
+          ownerReaderId: adminReader.id,
+        },
+        select: { id: true },
+      })
+
+      if (!targetAuthor) {
+        return NextResponse.json({ error: 'Автор недоступен' }, { status: 400 })
+      }
+    }
+
     const book = await db.book.update({
       where: { id: ownedBook.id },
       data: updateData,

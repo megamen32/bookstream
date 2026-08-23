@@ -1,0 +1,14 @@
+{
+  "cycle_id": "book-file-export",
+  "estimate_mutations": [],
+  "last_active_minutes": 0,
+  "last_checked_at": "2026-08-23T12:44:18.369980+03:00",
+  "overrun_reported": false,
+  "planned_minutes": {
+    "maximum": 35,
+    "minimum": 15
+  },
+  "reported_hours": 12,
+  "schema_version": 1,
+  "started_at": "2026-08-23T00:00:00+03:00"
+}

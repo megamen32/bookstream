@@ -1,0 +1,14 @@
+{
+  "cycle_id": "publish-articles",
+  "estimate_mutations": [],
+  "last_active_minutes": 28,
+  "last_checked_at": "2026-08-12T10:50:31.644010+03:00",
+  "overrun_reported": false,
+  "planned_minutes": {
+    "maximum": 45,
+    "minimum": 20
+  },
+  "reported_hours": 3,
+  "schema_version": 1,
+  "started_at": "2026-08-12T07:25:00+03:00"
+}

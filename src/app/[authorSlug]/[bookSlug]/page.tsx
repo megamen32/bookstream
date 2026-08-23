@@ -7,6 +7,14 @@ import { ArrowLeft, BookOpen, Download, Link2, MessageSquare, RefreshCw, Trash2 
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import BookHighlightsPanel from '@/components/book/BookHighlightsPanel'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { useReaderStore } from '@/lib/store'
@@ -70,6 +78,14 @@ function formatDurationLabel(totalSeconds: number): string {
 
   return `${minutes} мин`
 }
+
+const bookExportFormats = [
+  { value: 'md', label: 'Markdown (.md)' },
+  { value: 'pdf', label: 'PDF (.pdf)' },
+  { value: 'docx', label: 'Word (.docx)' },
+  { value: 'epub', label: 'EPUB (.epub)' },
+  { value: 'fb2', label: 'FB2 (.fb2)' },
+] as const
 
 async function copyTextToClipboard(value: string): Promise<void> {
   try {
@@ -341,6 +357,29 @@ export default function BookCoverPage() {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-white/15 bg-black/20 text-white hover:bg-white/10 hover:text-white"
+                    >
+                      <Download className="mr-2" size={16} />
+                      Скачать офлайн
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuLabel>Формат книги</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {bookExportFormats.map((format) => (
+                      <DropdownMenuItem key={format.value} asChild>
+                        <a href={`/api/books/${book.id}/export/${format.value}`} download>
+                          {format.label}
+                        </a>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {!downloaded ? (
                   <Button
                     type="button"
@@ -350,7 +389,7 @@ export default function BookCoverPage() {
                     disabled={downloadPending || !readerId}
                   >
                     <Download className="mr-2" size={16} />
-                    {downloadPending ? 'Сохраняем офлайн…' : 'Скачать офлайн'}
+                    {downloadPending ? 'Готовим офлайн…' : 'Сохранить для чтения офлайн'}
                   </Button>
                 ) : (
                   <>
@@ -361,7 +400,7 @@ export default function BookCoverPage() {
                         className="rounded-full border-emerald-400/25 bg-emerald-500/12 text-emerald-100 hover:bg-emerald-500/18 hover:text-white"
                       >
                         <BookOpen className="mr-2" size={16} />
-                        Открыть офлайн
+                        Читать офлайн
                       </Button>
                     </Link>
                     <Button
@@ -392,7 +431,7 @@ export default function BookCoverPage() {
               ) : downloaded ? (
                 <p className="mt-3 text-sm text-emerald-200">Книга доступна офлайн на этом устройстве.</p>
               ) : (
-                <p className="mt-3 text-sm text-white/55">Скачайте книгу, чтобы читать её без сети и синхронизировать действия позже.</p>
+                <p className="mt-3 text-sm text-white/55">Сохраните книгу для чтения без сети или скачайте файл в нужном формате.</p>
               )}
             </div>
           </div>

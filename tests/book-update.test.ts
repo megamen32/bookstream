@@ -70,6 +70,16 @@ describe('book update payload normalization', () => {
     assert.equal(updateData.openStatsPublic, true)
   })
 
+  it('returns an author connection when an author is selected for the book', () => {
+    const updateData = buildBookUpdateData({ authorId: 'author-chatgpt' }, { canPublish: true })
+
+    assert.deepEqual(updateData, {
+      author: {
+        connect: { id: 'author-chatgpt' },
+      },
+    })
+  })
+
   it('fails fast on unsupported reading modes instead of silently ignoring bad payloads', () => {
     assert.throws(
       () => buildBookUpdateData({ readingModeDefault: 'grid' }, { canPublish: true }),

@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -112,6 +113,7 @@ interface BookData {
   syntheticReactionsPerChapter: number
   syntheticCommentsUseLlm: boolean
   author: {
+    id: string
     slug: string
     name: string
   }
@@ -119,6 +121,12 @@ interface BookData {
   readingModeDefault: string
   chapters: Chapter[]
   _count: { comments: number }
+}
+
+interface AuthorOption {
+  id: string
+  slug: string
+  name: string
 }
 
 interface ChapterStatsSummary {
@@ -276,6 +284,8 @@ export default function BookEditorPage() {
   const [editDescription, setEditDescription] = useState('')
   const [editIsPublic, setEditIsPublic] = useState(false)
   const [editReadingMode, setEditReadingMode] = useState('feed')
+  const [editAuthorId, setEditAuthorId] = useState('')
+  const [authors, setAuthors] = useState<AuthorOption[]>([])
   const [savingBook, setSavingBook] = useState(false)
   const [activePrimaryTab, setActivePrimaryTab] = useState<'editor' | 'stats'>('editor')
   const [seedingEngagement, setSeedingEngagement] = useState(false)
@@ -331,6 +341,7 @@ export default function BookEditorPage() {
       setEditDescription(data.description || '')
       setEditIsPublic(data.isPublic)
       setEditReadingMode(data.readingModeDefault)
+      setEditAuthorId(data.author.id)
       setEditSyntheticCommentsPerChapter(data.syntheticCommentsPerChapter)
       setEditSyntheticQuotesPerChapter(data.syntheticQuotesPerChapter)
       setEditSyntheticReactionsPerChapter(data.syntheticReactionsPerChapter)
@@ -361,6 +372,20 @@ export default function BookEditorPage() {
       setVariantPresets(Array.isArray(data.presets) ? data.presets : [])
     } catch (error) {
       console.error('Error fetching variant presets:', error)
+    }
+  }, [adminFetch])
+
+  const fetchAuthors = useCallback(async (): Promise<void> => {
+    try {
+      const response = await adminFetch('/api/authors')
+      if (!response || !response.ok) {
+        return
+      }
+
+      const data = (await response.json()) as AuthorOption[]
+      setAuthors(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Error fetching authors:', error)
     }
   }, [adminFetch])
 
@@ -430,11 +455,12 @@ export default function BookEditorPage() {
 
     void loadAdminSettings()
     void fetchVariantPresets()
+    void fetchAuthors()
 
     return () => {
       active = false
     }
-  }, [adminFetch, fetchVariantPresets])
+  }, [adminFetch, fetchAuthors, fetchVariantPresets])
 
   const selectedChapter = book?.chapters.find((chapter) => chapter.id === selectedChapterId)
   const currentVariant = selectedChapter?.variants.find(
@@ -516,6 +542,7 @@ export default function BookEditorPage() {
     book !== null &&
     (editTitle !== book.title ||
       editSlug !== book.slug ||
+      editAuthorId !== book.author.id ||
       editDescription !== (book.description || '') ||
       editIsPublic !== book.isPublic ||
       editReadingMode !== book.readingModeDefault ||
@@ -824,6 +851,7 @@ export default function BookEditorPage() {
           title: editTitle,
           description: editDescription,
           slug: editSlug,
+          authorId: editAuthorId,
           isPublic: editIsPublic,
           readingModeDefault: editReadingMode,
           syntheticCommentsPerChapter: clampSyntheticCount(editSyntheticCommentsPerChapter),
@@ -851,7 +879,7 @@ export default function BookEditorPage() {
     } finally {
       setSavingBook(false)
     }
-  }, [adminFetch, bookId, clampSyntheticCount, editAllowReaderVariantsAtOwnerExpense, editDescription, editIsPublic, editOpenStatsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
+  }, [adminFetch, bookId, clampSyntheticCount, editAllowReaderVariantsAtOwnerExpense, editAuthorId, editDescription, editIsPublic, editOpenStatsPublic, editReadingMode, editSlug, editSyntheticCommentsPerChapter, editSyntheticCommentsUseLlm, editSyntheticQuotesPerChapter, editSyntheticReactionsPerChapter, editTitle, fetchBook, toast])
 
   const handleSeedSyntheticEngagement = useCallback(async (): Promise<void> => {
     setSeedingEngagement(true)
@@ -1273,24 +1301,45 @@ export default function BookEditorPage() {
                       : 'Главный админ отключил публикацию для обычных пользователей. Эта книга останется приватной и будет видна только вам.'
                   }
                   beforeFields={(
-                    <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                      <Label htmlFor="book-open-stats" className="items-start gap-3">
-                        <Checkbox
-                          id="book-open-stats"
-                          checked={editOpenStatsPublic}
-                          onCheckedChange={(checked) => setEditOpenStatsPublic(checked === true)}
-                          disabled={savingBook}
-                          className="mt-0.5"
-                        />
-                        <span className="space-y-1">
-                          <span className="block text-sm font-medium">
-                            Открытая статистика
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Автор</Label>
+                        <Select value={editAuthorId} onValueChange={setEditAuthorId} disabled={savingBook || authors.length === 0}>
+                          <SelectTrigger className="h-11">
+                            <SelectValue placeholder="Выберите автора" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {authors.map((author) => (
+                              <SelectItem key={author.id} value={author.id}>
+                                {author.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Можно выбрать только ваш профиль автора. После сохранения изменится публичная ссылка книги.
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                        <Label htmlFor="book-open-stats" className="items-start gap-3">
+                          <Checkbox
+                            id="book-open-stats"
+                            checked={editOpenStatsPublic}
+                            onCheckedChange={(checked) => setEditOpenStatsPublic(checked === true)}
+                            disabled={savingBook}
+                            className="mt-0.5"
+                          />
+                          <span className="space-y-1">
+                            <span className="block text-sm font-medium">
+                              Открытая статистика
+                            </span>
+                            <span className="block text-sm text-muted-foreground">
+                              Показывать читателям агрегаты по книге: популярность, среднее время чтения и прогресс.
+                            </span>
                           </span>
-                          <span className="block text-sm text-muted-foreground">
-                            Показывать читателям агрегаты по книге: популярность, среднее время чтения и прогресс.
-                          </span>
-                        </span>
-                      </Label>
+                        </Label>
+                      </div>
                     </div>
                   )}
                   disabled={savingBook || !canPublishThisBook}

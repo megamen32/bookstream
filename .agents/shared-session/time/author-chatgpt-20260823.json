@@ -1,0 +1,14 @@
+{
+  "cycle_id": "author-chatgpt-20260823",
+  "estimate_mutations": [],
+  "last_active_minutes": 0,
+  "last_checked_at": "2026-08-23T12:41:21.939544+03:00",
+  "overrun_reported": false,
+  "planned_minutes": {
+    "maximum": 20,
+    "minimum": 5
+  },
+  "reported_hours": 12,
+  "schema_version": 1,
+  "started_at": "2026-08-23T00:00:00+03:00"
+}

@@ -1,21 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import UserAccentController from "@/components/user/UserAccentController";
 import OfflineRuntime from "@/components/app/OfflineRuntime";
 import { getSiteUrl } from "@/lib/site-url";
 import { getOgLogoUrl } from "@/lib/og-logo";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
@@ -40,7 +31,7 @@ export default function RootLayout({
         <meta property="og:logo" content={getOgLogoUrl()} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased bg-background text-foreground`}
       >
         <OfflineRuntime />
         <UserAccentController />
