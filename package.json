@@ -104,7 +104,14 @@
     "vaul": "^1.1.2",
     "z-ai-web-dev-sdk": "^0.0.17",
     "zod": "^4.0.2",
-    "zustand": "^5.0.6"
+    "zustand": "^5.0.6",
+    "@ai-sdk/anthropic": "4.0.47",
+    "@ai-sdk/open-responses": "2.0.37",
+    "@ai-sdk/openai-compatible": "3.0.42",
+    "ai": "7.0.89",
+    "ipaddr.js": "2.5.0",
+    "undici": "7.29.0",
+    "@bezrabotnyi/byok": "github:megamen32/byok#v1.8.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
