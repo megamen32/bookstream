@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, BookOpen, DownloadCloud, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, BookOpen, DownloadCloud, Github, Sparkles, UserRound } from 'lucide-react'
 import BookCoverArtwork from '@/components/book/BookCoverArtwork'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -139,6 +139,17 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-white/60 sm:inline">Каталог книг</span>
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="gap-2 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              <a href="https://github.com/megamen32/bookstream" target="_blank" rel="noreferrer">
+                <Github size={16} />
+                <span className="hidden sm:inline">GitHub</span>
+              </a>
+            </Button>
             <Button
               asChild
               variant="outline"
