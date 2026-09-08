@@ -1,11 +1,11 @@
-import { detectBibliography, isBibliographyHeading } from './detectBibliography'
-import { parseBibliographicMarker } from './parseBibliographicMarker'
+import { detectBibliography, isBibliographyHeading } from './detectBibliography.ts'
+import { parseBibliographicMarker } from './parseBibliographicMarker.ts'
 import type {
   BibliographicAnnotationDiagnostics,
   BibliographicAnnotationMarker,
   BibliographyItem,
   TransformBibliographicAnnotationsResult,
-} from './types'
+} from './types.ts'
 
 interface HtmlTokenContext {
   tagName: string | null

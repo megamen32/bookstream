@@ -15,6 +15,7 @@ interface ReaderResponse {
   isMainAdmin: boolean
   llmBaseUrl: string | null
   llmModel: string | null
+  llmApiFormat: string | null
   hasCustomLlmConfig: boolean
   hasEffectiveLlmConfig: boolean
   llmConfigSource: 'custom' | 'main-admin-default' | 'none'
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
         llmApiKey: true,
         llmBaseUrl: true,
         llmModel: true,
+        llmApiFormat: true,
       },
     })
 
@@ -82,6 +84,7 @@ export async function POST(request: NextRequest) {
       isMainAdmin: reader.isMainAdmin,
       llmBaseUrl: llmSummary.baseUrl,
       llmModel: llmSummary.model,
+      llmApiFormat: reader.llmApiFormat,
       hasCustomLlmConfig: llmSummary.hasCustomConfig,
       hasEffectiveLlmConfig: llmSummary.hasEffectiveConfig,
       llmConfigSource: llmSummary.source,
@@ -121,6 +124,7 @@ export async function GET(request: NextRequest) {
         llmApiKey: true,
         llmBaseUrl: true,
         llmModel: true,
+        llmApiFormat: true,
       },
     })
 
@@ -137,6 +141,7 @@ export async function GET(request: NextRequest) {
       isMainAdmin: reader.isMainAdmin,
       llmBaseUrl: llmSummary.baseUrl,
       llmModel: llmSummary.model,
+      llmApiFormat: reader.llmApiFormat,
       hasCustomLlmConfig: llmSummary.hasCustomConfig,
       hasEffectiveLlmConfig: llmSummary.hasEffectiveConfig,
       llmConfigSource: llmSummary.source,

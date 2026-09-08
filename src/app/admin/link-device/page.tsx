@@ -46,9 +46,12 @@ function AdminLinkDevicePageContent(): React.ReactElement {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const nextCode = normalizeLinkCode(searchParams.get('code') || '')
-    setCode(nextCode)
-    setError('')
+    const frame = window.requestAnimationFrame(() => {
+      const nextCode = normalizeLinkCode(searchParams.get('code') || '')
+      setCode(nextCode)
+      setError('')
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [searchParams])
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {

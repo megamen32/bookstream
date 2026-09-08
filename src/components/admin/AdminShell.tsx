@@ -18,13 +18,17 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { BookOpen, Library, Upload, User, LogOut, Menu, Palette } from 'lucide-react'
+import { BookOpen, Library, Upload, User, LogOut, Menu, Palette, ListTodo, Layers3, BarChart3, WalletCards } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/admin', label: 'Библиотека', icon: Library },
   { href: '/admin/upload', label: 'Загрузить', icon: Upload },
   { href: '/admin/variants', label: 'Варианты', icon: Palette },
+  { href: '/admin/llm-queue', label: 'LLM очередь', icon: ListTodo },
+  { href: '/admin/llm-batches', label: 'Длинные задачи', icon: Layers3 },
+  { href: '/admin/llm-stats', label: 'LLM статистика', icon: BarChart3 },
+  { href: '/admin/llm-billing', label: 'LLM бюджеты', icon: WalletCards },
   { href: '/admin/profile', label: 'Профиль', icon: User },
 ]
 

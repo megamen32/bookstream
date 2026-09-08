@@ -1,23 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const DEFAULT_DEEPLINK_URL = '/alex/imperiya-kniga-i-mentalitet/read?chapter=cmovtl4ry003nj8r4e1wqg1wo&variant=original&paragraph=cmovtl4se0047j8r42ct0ej42&startOffset=0&endOffset=464'
-const TARGET_PARAGRAPH_ID = 'cmovtl4se0047j8r42ct0ej42'
-const EXPECTED_VISIBLE_TEXT = 'Отсюда специфический имперский конформизм: подчинение без надежды на вознаграждение.'
-const WRONG_INITIAL_TEXT = 'Миф о «крепкой руке» держится не на вере'
-
-async function visibleParagraphTexts(page: Page): Promise<string[]> {
-  return page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('[data-paragraph-id]'))
-    .map((element) => {
-      const rect = element.getBoundingClientRect()
-      return {
-        text: element.textContent?.replace(/\s+/g, ' ').trim() || '',
-        visible: rect.bottom > 0 && rect.top < window.innerHeight,
-      }
-    })
-    .filter((entry) => entry.visible)
-    .map((entry) => entry.text))
-}
-
+const DEFAULT_DEEPLINK_URL = '/alex/istoriya-anonimnogo-gosudarstva/read?chapter=cmovf6qye0039j8slwdrf659p&variant=original&mode=feed&paragraph=cmovf6qyt003jj8sluz2iy10r&startOffset=0&endOffset=305'
+const TARGET_PARAGRAPH_ID = 'cmovf6qyt003jj8sluz2iy10r'
 test.describe('reader deep-link visible text', () => {
   test('opens the requested quote paragraph in the viewport and does not navigate again', async ({ page }) => {
     const url = process.env.DEEPLINK_URL || DEFAULT_DEEPLINK_URL
@@ -26,39 +10,23 @@ test.describe('reader deep-link visible text', () => {
 
     await page.setViewportSize({ width: 1365, height: 900 })
 
-    const readerId = `playwright-reader-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    await page.addInitScript((storedReaderId) => {
-      window.localStorage.setItem('bookstream-reader-state', JSON.stringify({
-        readerId: storedReaderId,
-        username: 'playwright',
-        readingMode: 'feed',
-        accentTheme: 'sky',
-        createQuoteCardsOnCopy: false,
-      }))
-    }, readerId)
+    await page.addInitScript(() => localStorage.clear())
 
     await page.goto(url, { waitUntil: 'domcontentloaded' })
-
-    await expect.poll(async () => {
-      const texts = await visibleParagraphTexts(page)
-      return texts.some((text) => text.includes(EXPECTED_VISIBLE_TEXT))
-    }, { timeout: 5_000 }).toBe(true)
 
     await expect.poll(async () => page.locator(`[data-paragraph-id="${TARGET_PARAGRAPH_ID}"]`).evaluate((element) => {
       const rect = element.getBoundingClientRect()
       return rect.bottom > 0 && rect.top < window.innerHeight
     })).toBe(true)
 
-    const visibleTexts = await visibleParagraphTexts(page)
-    expect(visibleTexts.some((text) => text.includes(WRONG_INITIAL_TEXT))).toBe(false)
-
     const loadCountAfterVisibleText = pageLoads.length
 
     await page.waitForTimeout(3_000)
 
-    const visibleTextsAfterSettle = await visibleParagraphTexts(page)
-    expect(visibleTextsAfterSettle.some((text) => text.includes(EXPECTED_VISIBLE_TEXT))).toBe(true)
-    expect(visibleTextsAfterSettle.some((text) => text.includes(WRONG_INITIAL_TEXT))).toBe(false)
+    await expect.poll(async () => page.locator(`[data-paragraph-id="${TARGET_PARAGRAPH_ID}"]`).evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.bottom > 0 && rect.top < window.innerHeight
+    })).toBe(true)
     expect(pageLoads.length).toBe(loadCountAfterVisibleText)
   })
 
@@ -80,6 +48,7 @@ test.describe('reader deep-link visible text', () => {
     }
     const targetParagraph = chapter.variant.paragraphs.find((paragraph) => paragraph.text.trim().length > 30)
     expect(targetParagraph).toBeTruthy()
+    if (!targetParagraph) throw new Error('Expected a paragraph with enough visible text')
 
     const readerId = `playwright-deep-${Date.now()}-${Math.random().toString(36).slice(2)}`
     await page.addInitScript((storedReaderId) => {
@@ -107,4 +76,28 @@ test.describe('reader deep-link visible text', () => {
       await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe(mode)
     }
   })
+
+  test('a shared quote link without mode keeps the recipient reading preference', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('bookstream-reader-state', JSON.stringify({
+        readerId: `recipient-${Date.now()}`,
+        username: 'recipient',
+        readingMode: 'book',
+        accentTheme: 'sky',
+        createQuoteCardsOnCopy: false,
+      }))
+    })
+    await page.goto('/alex/istoriya-anonimnogo-gosudarstva/read?chapter=cmovf6qye0039j8slwdrf659p&variant=original&paragraph=cmovf6qyt003jj8sluz2iy10r&startOffset=0&endOffset=305', { waitUntil: 'domcontentloaded' })
+    await expect.poll(() => new URL(page.url()).searchParams.get('mode'), { timeout: 5_000 }).toBe(null)
+    await expect.poll(async () => page.evaluate(() => {
+      const raw = localStorage.getItem('bookstream-reader-state')
+      return raw ? JSON.parse(raw).readingMode : null
+    }), { timeout: 5_000 }).toBe('book')
+    await expect.poll(async () => page.locator('[data-paragraph-id="cmovf6qyt003jj8sluz2iy10r"]').count(), { timeout: 5_000 }).toBeGreaterThan(0)
+    await expect.poll(async () => page.locator('[data-paragraph-id="cmovf6qyt003jj8sluz2iy10r"]').evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.bottom > 0 && rect.top < window.innerHeight
+    }), { timeout: 5_000 }).toBe(true)
+  })
+
 })

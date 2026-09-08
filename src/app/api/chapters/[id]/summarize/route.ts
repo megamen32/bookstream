@@ -2,44 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getOwnedChapter } from '@/lib/admin-ownership'
 import { getAdminSessionReader } from '@/lib/admin-auth'
 import { ensureVariantParagraphs } from '@/lib/chapter-variants'
-import { saveChapterVariantRevision } from '@/lib/chapter-revisions'
 import { db } from '@/lib/db'
-import { createChatCompletion, resolveReaderLlmConfig, summarizeReaderLlmConfig, type LlmConfig } from '@/lib/llm'
+import { resolveReaderLlmConfig, summarizeReaderLlmConfig, type LlmConfig } from '@/lib/llm'
+import { enqueueChapterVariantJob } from '@/lib/llm-queue'
 
-async function callLLM(systemPrompt: string, userPrompt: string, llmConfig: LlmConfig): Promise<string> {
-  return createChatCompletion({
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.3,
-    maxTokens: 4000,
-  }, llmConfig)
-}
-
-async function upsertVariant(
-  chapterId: string,
-  variantType: string,
-  text: string,
-  editedByAuthor = false
-): Promise<{ variantId: string; paragraphCount: number } | null> {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 10)
-
-  if (paragraphs.length === 0) return null
-
-  const contentHtml = paragraphs.map((p) => `<p>${p}</p>`).join('\n')
-  const saved = await db.$transaction((tx) => saveChapterVariantRevision(tx, {
-    chapterId,
-    variantType,
-    contentHtml,
-    editedByAuthor,
-    source: 'ai',
-  }))
-
-  return { variantId: saved.variant.id, paragraphCount: saved.paragraphs.length }
+async function waitForQueuedJobs(jobIds: string[], timeoutMs = 10 * 60 * 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const jobs = await db.llmJob.findMany({
+      where: { id: { in: jobIds } },
+      select: { id: true, status: true, lastError: true },
+    })
+    if (jobs.length === jobIds.length && jobs.every((job) => ['succeeded', 'failed', 'cancelled', 'blocked-budget'].includes(job.status))) {
+      return jobs
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750))
+  }
+  throw new Error('LLM queue timeout')
 }
 
 function buildFallbackPrompt(variantType: string, wordCount: number): string {
@@ -149,6 +128,7 @@ export async function POST(
               allowReaderVariantsAtOwnerExpense: true,
               author: {
                 select: {
+                  id: true,
                   owner: {
                     select: {
                       id: true,
@@ -156,6 +136,7 @@ export async function POST(
                       llmApiKey: true,
                       llmBaseUrl: true,
                       llmModel: true,
+                      llmApiFormat: true,
                     },
                   },
                 },
@@ -187,15 +168,21 @@ export async function POST(
       const ownerLlm = owner ? resolveReaderLlmConfig(owner) : null
 
       let effectiveLlmConfig: LlmConfig | null = null
+      let payerReaderId: string | null = null
+      let payerType: 'reader' | 'author' = 'reader'
+      let payerId: string | null = null
 
       if (chapter.book.allowReaderVariantsAtOwnerExpense) {
-        if (!ownerLlm) {
+        if (!owner || !ownerLlm) {
           return NextResponse.json(
             { error: 'Владелец книги ещё не настроил LLM для генерации вариантов.' },
             { status: 409 }
           )
         }
         effectiveLlmConfig = ownerLlm.config
+        payerReaderId = owner.id
+        payerType = 'author'
+        payerId = chapter.book.author.id
       } else {
         if (!body.requesterReaderId) {
           return NextResponse.json(
@@ -212,6 +199,7 @@ export async function POST(
             llmApiKey: true,
             llmBaseUrl: true,
             llmModel: true,
+            llmApiFormat: true,
           },
         })
 
@@ -242,9 +230,12 @@ export async function POST(
         }
 
         effectiveLlmConfig = resolveReaderLlmConfig(requester)?.config || null
+        payerReaderId = requester.id
+        payerType = 'reader'
+        payerId = requester.id
       }
 
-      if (!effectiveLlmConfig) {
+      if (!effectiveLlmConfig || !payerReaderId) {
         return NextResponse.json({ error: 'LLM конфигурация недоступна' }, { status: 409 })
       }
 
@@ -284,18 +275,41 @@ export async function POST(
         variantDefs = await buildVariantDefinition('', wordCount)
       }
 
-      const results = await Promise.all(
-        variantDefs.map(async ({ type, prompt }) => {
-          const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`, effectiveLlmConfig)
-          const saved = await upsertVariant(chapter.id, type, result, false)
-          return { type, ...saved }
-        })
+      const queued = await Promise.all(
+        variantDefs.map(({ type, prompt }) => enqueueChapterVariantJob({
+          readerId: payerReaderId,
+          chapterId: chapter.id,
+          variantType: type,
+          systemPrompt: prompt,
+          userPrompt: `Вот исходный текст:
+
+${plainText}`,
+          maxOutputTokens: 4000,
+          payerType,
+          payerId: payerId || payerReaderId,
+        }))
       )
+
+      if (request.nextUrl.searchParams.get('enqueue') === 'true') {
+        return NextResponse.json({
+          success: true,
+          queued: queued.map((job) => ({ id: job.id, status: job.status })),
+        }, { status: 202 })
+      }
+
+      const finished = await waitForQueuedJobs(queued.map((job) => job.id))
+      const failed = finished.filter((job) => job.status !== 'succeeded')
+      if (failed.length) {
+        return NextResponse.json({
+          error: failed.map((job) => job.lastError || `Job ${job.id}: ${job.status}`).join('; '),
+          jobs: finished,
+        }, { status: 502 })
+      }
 
       return NextResponse.json({
         success: true,
         originalWordCount: wordCount,
-        generated: results,
+        jobs: finished,
       })
     }
 
@@ -369,6 +383,7 @@ export async function POST(
         llmApiKey: true,
         llmBaseUrl: true,
         llmModel: true,
+        llmApiFormat: true,
       },
     })
     const ownerLlm = ownerReader ? resolveReaderLlmConfig(ownerReader) : null
@@ -376,19 +391,40 @@ export async function POST(
       throw new Error('У владельца книги не настроены LLM данные')
     }
 
-    // 3. Generate all in parallel
-    const results = await Promise.all(
-      variantDefs.map(async ({ type, prompt }) => {
-        const result = await callLLM(prompt, `Вот исходный текст:\n\n${plainText}`, ownerLlm.config)
-        const saved = await upsertVariant(ownedChapter.id, type, result, false)
-        return { type, ...saved }
-      })
+    // 3. Queue generation. API keys are resolved by the worker and never stored in the job.
+    const queued = await Promise.all(
+      variantDefs.map(({ type, prompt }) => enqueueChapterVariantJob({
+        readerId: adminReader.id,
+        chapterId: ownedChapter.id,
+        variantType: type,
+        systemPrompt: prompt,
+        userPrompt: `Вот исходный текст:
+
+${plainText}`,
+        maxOutputTokens: 4000,
+      }))
     )
+
+    if (request.nextUrl.searchParams.get('enqueue') === 'true') {
+      return NextResponse.json({
+        success: true,
+        queued: queued.map((job) => ({ id: job.id, status: job.status })),
+      }, { status: 202 })
+    }
+
+    const finished = await waitForQueuedJobs(queued.map((job) => job.id))
+    const failed = finished.filter((job) => job.status !== 'succeeded')
+    if (failed.length) {
+      return NextResponse.json({
+        error: failed.map((job) => job.lastError || `Job ${job.id}: ${job.status}`).join('; '),
+        jobs: finished,
+      }, { status: 502 })
+    }
 
     return NextResponse.json({
       success: true,
       originalWordCount: wordCount,
-      generated: results,
+      jobs: finished,
     })
   } catch (error) {
     console.error('Error generating variants:', error)

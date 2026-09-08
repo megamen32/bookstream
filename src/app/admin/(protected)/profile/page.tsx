@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import AdminLinkDeviceCard from '@/components/admin/AdminLinkDeviceCard'
-import { Save, Loader2, ShieldCheck, Sparkles, User } from 'lucide-react'
+import { Save, Loader2, ShieldCheck, Sparkles, User, KeyRound } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { fetchAdmin } from '@/lib/admin-fetch'
 import { slugify } from '@/lib/slugify'
@@ -20,6 +20,22 @@ interface Author {
   name: string
   slug: string
   bio: string | null
+}
+
+interface ByokPreset {
+  id: string
+  label: string
+  description: string
+  apiFormat: 'anthropic' | 'chat-completions' | 'responses'
+  baseUrl: string
+  modelId: string
+  contextWindow: number | null
+  maxOutputTokens: number | null
+  inputPricePerMillionUsd: number | null
+  cacheReadPricePerMillionUsd: number | null
+  cacheWritePricePerMillionUsd: number | null
+  outputPricePerMillionUsd: number | null
+  note?: string
 }
 
 interface AdminSettingsPayload {
@@ -49,6 +65,13 @@ export default function AdminProfilePage() {
   const [llmApiKey, setLlmApiKey] = useState('')
   const [llmBaseUrl, setLlmBaseUrl] = useState('')
   const [llmModel, setLlmModel] = useState('')
+  const [llmApiFormat, setLlmApiFormat] = useState<'anthropic' | 'chat-completions' | 'responses'>('chat-completions')
+  const [byokPresets, setByokPresets] = useState<ByokPreset[]>([])
+  const [selectedPresetId, setSelectedPresetId] = useState('custom')
+  const [hasPassword, setHasPassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
   const [hasEffectiveLlmConfig, setHasEffectiveLlmConfig] = useState(false)
   const [llmConfigSource, setLlmConfigSource] = useState<'custom' | 'main-admin-default' | 'none'>('none')
   const [savingLlm, setSavingLlm] = useState(false)
@@ -121,8 +144,11 @@ export default function AdminProfilePage() {
           return null
         }
         return await res.json() as {
+          currentUsername?: string
+          hasPassword?: boolean
           llmBaseUrl?: string | null
           llmModel?: string | null
+          llmApiFormat?: 'anthropic' | 'chat-completions' | 'responses' | null
           hasEffectiveLlmConfig?: boolean
           llmConfigSource?: 'custom' | 'main-admin-default' | 'none'
         } | null
@@ -132,13 +158,37 @@ export default function AdminProfilePage() {
           return
         }
 
+        if (payload.currentUsername) setName(payload.currentUsername)
+        setHasPassword(Boolean(payload.hasPassword))
         setLlmBaseUrl(payload.llmBaseUrl || '')
         setLlmModel(payload.llmModel || '')
+        setLlmApiFormat(payload.llmApiFormat || 'chat-completions')
         setHasEffectiveLlmConfig(Boolean(payload.hasEffectiveLlmConfig))
         setLlmConfigSource(payload.llmConfigSource || 'none')
       })
       .catch(console.error)
   }, [adminFetch, readerId])
+
+  useEffect(() => {
+    fetch('/api/model-catalog')
+      .then((response) => response.json())
+      .then((payload: { presets?: ByokPreset[] }) => {
+        const presets = Array.isArray(payload.presets) ? payload.presets : []
+        setByokPresets(presets)
+        const matched = presets.find((preset) => preset.baseUrl === llmBaseUrl && preset.modelId === llmModel)
+        if (matched) setSelectedPresetId(matched.id)
+      })
+      .catch(console.error)
+  }, [llmBaseUrl, llmModel])
+
+  const applyPreset = (presetId: string) => {
+    setSelectedPresetId(presetId)
+    const preset = byokPresets.find((item) => item.id === presetId)
+    if (!preset) return
+    setLlmApiFormat(preset.apiFormat)
+    setLlmBaseUrl(preset.baseUrl)
+    setLlmModel(preset.modelId)
+  }
 
   const handleNameChange = (value: string) => {
     setName(value)
@@ -154,6 +204,22 @@ export default function AdminProfilePage() {
 
     setSaving(true)
     try {
+      if (readerId) {
+        const readerResponse = await adminFetch('/api/readers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: readerId, currentUsername: name.trim() }),
+        })
+        if (!readerResponse?.ok) {
+          const payload = readerResponse ? await readerResponse.json() as { error?: string } : null
+          throw new Error(payload?.error || 'Не удалось сохранить имя профиля')
+        }
+        try {
+          const raw = localStorage.getItem('bookstream-reader-state')
+          const state = raw ? JSON.parse(raw) as Record<string, unknown> : {}
+          localStorage.setItem('bookstream-reader-state', JSON.stringify({ ...state, readerId, username: name.trim() }))
+        } catch {}
+      }
       const method = author ? 'PUT' : 'POST'
       const res = await adminFetch('/api/authors', {
         method,
@@ -178,8 +244,8 @@ export default function AdminProfilePage() {
           variant: 'destructive',
         })
       }
-    } catch {
-      toast({ title: 'Ошибка сохранения', variant: 'destructive' })
+    } catch (error) {
+      toast({ title: 'Ошибка сохранения', description: error instanceof Error ? error.message : undefined, variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -254,6 +320,7 @@ export default function AdminProfilePage() {
           apiKey: llmApiKey,
           baseUrl: llmBaseUrl,
           model: llmModel,
+          apiFormat: llmApiFormat,
         }),
       })
 
@@ -285,6 +352,42 @@ export default function AdminProfilePage() {
     }
   }
 
+  const handleSavePassword = async () => {
+    if (!readerId || !name.trim()) return
+    if (newPassword.length < 4) {
+      toast({ title: 'Пароль слишком короткий', description: 'Минимум 4 символа.', variant: 'destructive' })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: 'Пароли не совпадают', variant: 'destructive' })
+      return
+    }
+    setSavingPassword(true)
+    try {
+      const response = await adminFetch('/api/readers/password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId, currentUsername: name.trim(), password: newPassword }),
+      })
+      const payload = response ? await response.json() as { error?: string } : null
+      if (!response?.ok) throw new Error(payload?.error || 'Не удалось сохранить пароль')
+      setHasPassword(true)
+      setNewPassword('')
+      setConfirmPassword('')
+      toast({ title: hasPassword ? 'Пароль изменён' : 'Пароль установлен' })
+    } catch (error) {
+      toast({ title: 'Ошибка', description: error instanceof Error ? error.message : 'Не удалось сохранить пароль', variant: 'destructive' })
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  const selectedPreset = byokPresets.find((preset) => preset.id === selectedPresetId)
+  const sampleInputTokens = 10_000
+  const sampleOutputTokens = 2_000
+  const sampleCostUsd = selectedPreset?.inputPricePerMillionUsd != null && selectedPreset.outputPricePerMillionUsd != null
+    ? sampleInputTokens / 1_000_000 * selectedPreset.inputPricePerMillionUsd + sampleOutputTokens / 1_000_000 * selectedPreset.outputPricePerMillionUsd
+    : null
+
   if (loading) {
     return (
       <div className="p-4 md:p-6 lg:p-8 max-w-2xl mx-auto">
@@ -307,9 +410,9 @@ export default function AdminProfilePage() {
     <div className="p-4 md:p-6 lg:p-8 max-w-2xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Профиль автора</h1>
+        <h1 className="text-2xl font-bold text-foreground">Профиль</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Управляйте информацией о себе
+          Одна учётная запись для чтения, публикации и админки
         </p>
       </div>
 
@@ -361,6 +464,20 @@ export default function AdminProfilePage() {
           </Card>
         ) : null}
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" />Пароль</CardTitle>
+            <CardDescription>{hasPassword ? 'Пароль установлен. Здесь его можно сменить.' : 'Пароль необязателен, но пригодится для входа с нового устройства.'}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder={hasPassword ? 'Новый пароль' : 'Установить пароль'} />
+            <Input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Повторите пароль" />
+            <Button type="button" variant="outline" onClick={() => void handleSavePassword()} disabled={savingPassword || !newPassword || !confirmPassword}>
+              {savingPassword ? 'Сохранение...' : hasPassword ? 'Сменить пароль' : 'Установить пароль'}
+            </Button>
+          </CardContent>
+        </Card>
+
         <AdminLinkDeviceCard />
 
         <Card>
@@ -376,6 +493,26 @@ export default function AdminProfilePage() {
           <CardContent className="space-y-4">
             <div className="text-xs text-muted-foreground">
               Статус: {hasEffectiveLlmConfig ? `настроено (${llmConfigSource})` : 'не настроено'}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-llm-preset">Провайдер / пресет</Label>
+              <select id="profile-llm-preset" value={selectedPresetId} onChange={(event) => applyPreset(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                {byokPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}: {preset.description}</option>)}
+              </select>
+              {selectedPreset?.note ? <p className="text-xs text-amber-700">{selectedPreset.note}</p> : null}
+            </div>
+            {selectedPreset ? (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border p-3"><div className="text-[11px] uppercase text-muted-foreground">Контекст</div><div className="font-semibold">{selectedPreset.contextWindow?.toLocaleString('ru-RU') || '—'}</div></div>
+                <div className="rounded-lg border p-3"><div className="text-[11px] uppercase text-muted-foreground">Цена / 1M</div><div className="font-semibold">{selectedPreset.inputPricePerMillionUsd != null ? `$${selectedPreset.inputPricePerMillionUsd} in` : '—'} / {selectedPreset.outputPricePerMillionUsd != null ? `$${selectedPreset.outputPricePerMillionUsd} out` : '—'}</div>{selectedPreset.cacheReadPricePerMillionUsd != null ? <div className="text-xs text-emerald-700">cache hit ${selectedPreset.cacheReadPricePerMillionUsd}{selectedPreset.cacheWritePricePerMillionUsd != null ? ` · write $${selectedPreset.cacheWritePricePerMillionUsd}` : ''}</div> : null}</div>
+                <div className="rounded-lg border p-3"><div className="text-[11px] uppercase text-muted-foreground">Пример</div><div className="font-semibold">{sampleCostUsd == null ? '—' : `≈ $${sampleCostUsd.toFixed(4)}`}</div><div className="text-[10px] text-muted-foreground">10k input + 2k output</div></div>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="profile-llm-format">API format</Label>
+              <select id="profile-llm-format" value={llmApiFormat} onChange={(event) => setLlmApiFormat(event.target.value as typeof llmApiFormat)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                <option value="anthropic">Anthropic Messages</option><option value="chat-completions">Chat Completions</option><option value="responses">Responses</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="profile-llm-api-key">API key</Label>
@@ -415,7 +552,7 @@ export default function AdminProfilePage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Основная информация</CardTitle>
-            <CardDescription>Данные отображаются в публичном профиле</CardDescription>
+            <CardDescription>Имя — единое для вашей учётной записи. Slug и «О себе» используются как публичная карточка публикаций.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">

@@ -39,7 +39,7 @@ describe('public sharing helpers', () => {
         : null,
       '/alex/chemistry/opengraph-image',
     )
-    assert.equal(metadata.twitter?.card, 'summary_large_image')
+    assert.equal((metadata.twitter as { card?: string } | undefined)?.card, 'summary_large_image')
   })
 
   it('builds metadata for a public quote card', () => {
@@ -99,7 +99,7 @@ describe('public sharing helpers', () => {
         startOffset: 28,
         endOffset: 0,
       }),
-      '/alex/chemistry/read?chapter=chapter-1&variant=original&mode=book&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=28&endOffset=0',
+      '/alex/chemistry/read?chapter=chapter-1&variant=original&paragraph=paragraph-a&paragraphEnd=paragraph-b&startOffset=28&endOffset=0',
     )
   })
 

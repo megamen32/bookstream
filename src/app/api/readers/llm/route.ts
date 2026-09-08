@@ -7,6 +7,7 @@ interface ReaderLlmMutationBody {
   apiKey?: string
   baseUrl?: string
   model?: string
+  apiFormat?: 'anthropic' | 'chat-completions' | 'responses'
 }
 
 /**
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
     const apiKey = body.apiKey?.trim() || ''
     const baseUrl = body.baseUrl?.trim() || ''
     const model = body.model?.trim() || ''
+    const apiFormat = body.apiFormat || 'chat-completions'
 
     if (!readerId) {
       return NextResponse.json({ error: 'readerId is required' }, { status: 400 })
@@ -40,11 +42,13 @@ export async function POST(request: NextRequest) {
             llmApiKey: null,
             llmBaseUrl: null,
             llmModel: null,
+            llmApiFormat: null,
           }
         : {
             llmApiKey: apiKey,
             llmBaseUrl: baseUrl,
             llmModel: model,
+            llmApiFormat: apiFormat,
           },
       select: {
         id: true,
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest) {
         llmApiKey: true,
         llmBaseUrl: true,
         llmModel: true,
+        llmApiFormat: true,
       },
     })
 
@@ -62,6 +67,7 @@ export async function POST(request: NextRequest) {
       hasEffectiveLlmConfig: summary.hasEffectiveConfig,
       llmBaseUrl: summary.baseUrl,
       llmModel: summary.model,
+      llmApiFormat: reader.llmApiFormat,
       llmConfigSource: summary.source,
     })
   } catch (error) {

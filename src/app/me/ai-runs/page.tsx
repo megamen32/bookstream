@@ -38,13 +38,16 @@ export default function AiRunsPage() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setReaderId(params.get('readerId') || '');
-    const query = params.toString();
-    void fetch(`/api/ai-runs${query ? `?${query}` : ''}`).then((response) => response.json()).then((data: { runs: LedgerRun[]; totals: Totals }) => {
-      render(data.runs ?? [], data.totals ?? null);
-      setTotals(data.totals ?? null);
-    }).catch(() => render([], null));
+    const frame = window.requestAnimationFrame(() => {
+      const params = new URLSearchParams(window.location.search);
+      setReaderId(params.get('readerId') || '');
+      const query = params.toString();
+      void fetch(`/api/ai-runs${query ? `?${query}` : ''}`).then((response) => response.json()).then((data: { runs: LedgerRun[]; totals: Totals }) => {
+        render(data.runs ?? [], data.totals ?? null);
+        setTotals(data.totals ?? null);
+      }).catch(() => render([], null));
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [render]);
 
   useEffect(() => {

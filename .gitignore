@@ -67,3 +67,7 @@ feed-reader.png
 bookstream-tiptap-editor-v2.zip
 reader-bottom-text.png
 .agin-requests/
+
+# SQLite WAL sidecars
+db/*.db-wal
+db/*.db-shm

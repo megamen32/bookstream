@@ -2,7 +2,7 @@ import type {
   BibliographyDetectionResult,
   BibliographyItem,
   BibliographyDetectionConfidence,
-} from './types'
+} from './types.ts'
 
 const BIBLIOGRAPHY_HEADINGS = new Set([
   'литература',

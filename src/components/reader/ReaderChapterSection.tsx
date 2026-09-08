@@ -112,7 +112,7 @@ export default function ReaderChapterSection({
           const ranges = getTextRangesForParagraph(section.chapter.id, paragraph.id)
           const hasSelectionHighlight = ranges.length > 0
           const textSegments = splitTextByAnnotationRanges(paragraph.text, ranges)
-          const isTableBlock = /<table\b/i.test(paragraph.html)
+          const isTableBlock = /<table\b/i.test(paragraph.html || '')
           const canRenderRichParagraph = !hasSelectionHighlight && Boolean(paragraph.html)
 
           return (

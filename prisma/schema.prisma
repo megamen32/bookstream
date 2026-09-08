@@ -16,6 +16,9 @@ model Author {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   books         Book[]
+  llmJobs       LlmJob[]
+  llmBatches    LlmBatch[]
+  billingPolicies LlmBillingPolicy[] @relation("AuthorBillingPolicies")
   owner         Reader?  @relation(fields: [ownerReaderId], references: [id])
 
   @@index([ownerReaderId])
@@ -46,6 +49,8 @@ model Book {
   readingProgress                   ReadingProgress[]
   readerStats                       BookReaderStat[]
   chapterReaderStats                ChapterReaderStat[]
+  llmJobs                           LlmJob[]
+  llmBatches                        LlmBatch[]
 
   @@unique([authorId, slug])
 }
@@ -246,10 +251,14 @@ model Reader {
   llmApiKey       String?
   llmBaseUrl      String?
   llmModel        String?
+  llmApiFormat    String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   authors         Author[]
   adminLinkCodes  AdminLinkCode[]
+  llmJobs         LlmJob[]
+  llmBatches      LlmBatch[]
+  billingPolicies LlmBillingPolicy[] @relation("ReaderBillingPolicies")
 }
 
 model AdminLinkCode {
@@ -342,4 +351,120 @@ model VariantPreset {
   position             Int      @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+
+model LlmJob {
+  id                       String    @id @default(cuid())
+  readerId                 String?
+  batchId                  String?
+  authorId                 String?
+  bookId                   String?
+  payerType                String    @default("reader")
+  payerId                  String?
+  kind                     String
+  status                   String    @default("queued")
+  priority                 Int       @default(0)
+  payloadJson              String
+  resultText               String?
+  model                    String
+  baseUrl                  String
+  apiFormat                String
+  maxOutputTokens          Int       @default(4000)
+  estimatedInputTokens     Int?
+  estimatedOutputTokens    Int?
+  inputTokens              Int?
+  noCacheInputTokens       Int?
+  cacheReadTokens          Int?
+  cacheWriteTokens         Int?
+  outputTokens             Int?
+  totalTokens              Int?
+  inputPricePerMillionUsd  Float?
+  cacheReadPricePerMillionUsd Float?
+  cacheWritePricePerMillionUsd Float?
+  outputPricePerMillionUsd Float?
+  estimatedCostUsd         Float?
+  actualCostUsd            Float?
+  attempts                 Int       @default(0)
+  maxAttempts              Int       @default(3)
+  lastError                String?
+  availableAt              DateTime  @default(now())
+  startedAt                DateTime?
+  completedAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  reader                    Reader?   @relation(fields: [readerId], references: [id], onDelete: SetNull)
+  batch                     LlmBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  author                    Author?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  book                      Book?     @relation(fields: [bookId], references: [id], onDelete: SetNull)
+
+  @@index([status, availableAt, priority])
+  @@index([readerId, createdAt])
+  @@index([kind, createdAt])
+  @@index([batchId, status])
+  @@index([authorId, createdAt])
+  @@index([bookId, createdAt])
+}
+
+model LlmBatch {
+  id          String   @id @default(cuid())
+  readerId    String
+  authorId    String?
+  bookId      String?
+  payerType   String   @default("reader")
+  payerId     String?
+  budgetUsd   Float?
+  pauseReason String?
+  title       String
+  kind        String
+  status      String   @default("running")
+  totalJobs   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+  reader      Reader   @relation(fields: [readerId], references: [id], onDelete: Cascade)
+  author      Author?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  book        Book?    @relation(fields: [bookId], references: [id], onDelete: SetNull)
+  jobs        LlmJob[]
+
+  @@index([readerId, createdAt])
+  @@index([status, createdAt])
+  @@index([authorId, createdAt])
+  @@index([bookId, createdAt])
+}
+
+
+model LlmBillingPolicy {
+  id                 String   @id @default(cuid())
+  payerType          String
+  payerId            String
+  readerId           String?
+  authorId           String?
+  dailyBudgetUsd     Float?
+  monthlyBudgetUsd   Float?
+  maxBatchBudgetUsd  Float?
+  maxConcurrent      Int      @default(2)
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  reader             Reader?  @relation("ReaderBillingPolicies", fields: [readerId], references: [id], onDelete: Cascade)
+  author             Author?  @relation("AuthorBillingPolicies", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([payerType, payerId])
+  @@index([readerId])
+  @@index([authorId])
+}
+
+
+model LlmProviderState {
+  id               String   @id @default(cuid())
+  providerKey      String   @unique
+  baseUrl          String
+  model            String
+  rateLimitedUntil DateTime?
+  lastError        String?
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  @@index([rateLimitedUntil])
 }

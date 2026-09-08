@@ -1016,6 +1016,8 @@ export default function ReaderPage() {
     setQuoteTargetStartOffset(urlStartOffset)
     setQuoteTargetEndOffset(urlEndOffset)
     if (urlParagraph || urlParagraphEnd) {
+      // URL deep-link state is intentionally mirrored into local highlight state here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuoteHighlightParagraphId(urlParagraph)
       setQuoteHighlightParagraphEndId(urlParagraphEnd)
       setQuoteHighlightStartOffset(urlStartOffset)
@@ -1375,7 +1377,7 @@ export default function ReaderPage() {
       backgroundVariantPreparationRef.current.add(requestKey)
 
       try {
-        await fetch(`/api/chapters/${chapterId}/summarize`, {
+        await fetch(`/api/chapters/${chapterId}/summarize?enqueue=true`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

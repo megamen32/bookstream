@@ -131,18 +131,6 @@ export default function UserSettingsPage(): React.ReactElement {
       return
     }
 
-    if (draftPassword && draftPassword.length < 4) {
-      setError('Пароль для админки должен быть не короче 4 символов.')
-      setSaved(false)
-      return
-    }
-
-    if (draftPassword !== draftPasswordConfirm) {
-      setError('Подтверждение пароля не совпадает.')
-      setSaved(false)
-      return
-    }
-
     const llmFieldsProvided = Boolean(
       draftLlmApiKey.trim() || draftLlmBaseUrl.trim() || draftLlmModel.trim()
     )
@@ -170,27 +158,6 @@ export default function UserSettingsPage(): React.ReactElement {
       if (!syncResponse.ok) {
         const payload = await syncResponse.json() as { error?: string }
         throw new Error(payload.error || 'Не удалось сохранить имя читателя')
-      }
-
-      if (draftPassword) {
-        const passwordResponse = await fetch('/api/readers/password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            readerId,
-            currentUsername: trimmedUsername,
-            password: draftPassword,
-          }),
-        })
-
-        if (!passwordResponse.ok) {
-          const payload = await passwordResponse.json() as { error?: string }
-          throw new Error(payload.error || 'Не удалось сохранить пароль')
-        }
-
-        setHasAdminPassword(true)
-        setDraftPassword('')
-        setDraftPasswordConfirm('')
       }
 
       if (llmFieldsProvided || (hasEffectiveLlmConfig && !draftLlmApiKey.trim() && !draftLlmBaseUrl.trim() && !draftLlmModel.trim())) {
@@ -227,6 +194,64 @@ export default function UserSettingsPage(): React.ReactElement {
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Не удалось сохранить настройки.')
       setSaved(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSavePassword = async (): Promise<void> => {
+    const trimmedUsername = draftUsername.trim() || username.trim()
+
+    if (!readerId) {
+      setError('readerId ещё не готов, попробуйте через секунду.')
+      setSaved(false)
+      return
+    }
+
+    if (!trimmedUsername) {
+      setError('Сначала задайте имя читателя.')
+      setSaved(false)
+      return
+    }
+
+    if (draftPassword.length < 4) {
+      setError('Пароль должен быть не короче 4 символов.')
+      setSaved(false)
+      return
+    }
+
+    if (draftPassword !== draftPasswordConfirm) {
+      setError('Подтверждение пароля не совпадает.')
+      setSaved(false)
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+
+    try {
+      const response = await fetch('/api/readers/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerId,
+          currentUsername: trimmedUsername,
+          password: draftPassword,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string }
+        throw new Error(payload.error || 'Не удалось сохранить пароль')
+      }
+
+      setHasAdminPassword(true)
+      setDraftPassword('')
+      setDraftPasswordConfirm('')
+      setSaved(true)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не удалось сохранить пароль.')
     } finally {
       setSaving(false)
     }
@@ -371,7 +396,7 @@ export default function UserSettingsPage(): React.ReactElement {
                   Пароль для админки
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  В админку можно войти по имени читателя. Пароль нужен только если хотите его включить.
+                  Пароль необязателен, но его можно установить для входа с нового устройства или сменить в любой момент.
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Статус: {hasAdminPassword ? 'пароль уже задан' : 'пароль ещё не задан'}
@@ -408,6 +433,23 @@ export default function UserSettingsPage(): React.ReactElement {
                     placeholder="Повторите пароль"
                   />
                 </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  onClick={() => void handleSavePassword()}
+                  disabled={saving || !draftPassword || !draftPasswordConfirm}
+                >
+                  {saving
+                    ? 'Сохранение...'
+                    : hasAdminPassword
+                      ? 'Сменить пароль'
+                      : 'Установить пароль'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Минимум 4 символа. Текущая сессия останется активной.
+                </p>
               </div>
 
               {hasAdminPassword && (

@@ -4,12 +4,12 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 
 export const ADMIN_COOKIE_NAME = 'bookstream_admin'
-const ADMIN_SESSION_MAX_AGE = 60 * 60 * 24 * 7
+const ADMIN_SESSION_MAX_AGE = 60 * 60 * 24 * 365
 
 export interface AdminSessionReader {
   id: string
   currentUsername: string
-  loginName: string
+  loginName: string | null
   isMainAdmin: boolean
 }
 
@@ -126,7 +126,7 @@ export async function getAdminSessionReader(request: NextRequest): Promise<Admin
     },
   })
 
-  if (!reader?.loginName) {
+  if (!reader) {
     return null
   }
 
@@ -162,7 +162,7 @@ export async function getAdminSessionReaderFromValue(
     },
   })
 
-  if (!reader?.loginName) {
+  if (!reader) {
     return null
   }
 

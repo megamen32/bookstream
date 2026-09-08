@@ -153,23 +153,26 @@ export default function ChapterAfterword({
   const stats = preview?.stats || null
 
   useEffect(() => {
-    setCommentsExpanded(false)
-    setLoadedComments(null)
-    setLoadingComments(false)
-    setVisibleCommentCount(3)
-    setQuotesExpanded(false)
-    setLoadedQuotes(null)
-    setQuoteSourceOverride(null)
-    setQuoteCountOverride(null)
-    setLoadingQuotes(false)
-    setComposerText('')
-    setComposerError(null)
+    const frame = window.requestAnimationFrame(() => {
+      setCommentsExpanded(false)
+      setLoadedComments(null)
+      setLoadingComments(false)
+      setVisibleCommentCount(3)
+      setQuotesExpanded(false)
+      setLoadedQuotes(null)
+      setQuoteSourceOverride(null)
+      setQuoteCountOverride(null)
+      setLoadingQuotes(false)
+      setComposerText('')
+      setComposerError(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [chapterId])
 
   useEffect(() => {
-    if (composerOpenChapterId === chapterId && composerOpenRequest > 0) {
-      setComposerExpanded(true)
-    }
+    if (composerOpenChapterId !== chapterId || composerOpenRequest <= 0) return
+    const frame = window.requestAnimationFrame(() => setComposerExpanded(true))
+    return () => window.cancelAnimationFrame(frame)
   }, [chapterId, composerOpenChapterId, composerOpenRequest])
 
   useEffect(() => {

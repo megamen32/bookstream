@@ -1,0 +1,18 @@
+[Unit]
+Description=Bookstream LLM queue worker
+After=network-online.target bookstream.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=roomhacker
+Group=roomhacker
+WorkingDirectory=/home/roomhacker/PycharmProjects/bookstream
+Environment=NODE_ENV=production
+ExecStart=/home/roomhacker/.bun/bin/bun scripts/llm-worker.ts
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -104,7 +104,6 @@ export function buildMomentReaderHref(moment: Pick<BookMomentRecord, 'authorSlug
   return buildQuoteReadHref(moment.authorSlug, moment.bookSlug, {
     chapterId: moment.chapterId,
     variantType: moment.variantType,
-    readingMode: moment.readingMode === 'book' ? 'book' : 'feed',
     paragraphId: moment.paragraphStart,
     paragraphEndId: moment.paragraphEnd || undefined,
     startOffset: moment.startOffset,

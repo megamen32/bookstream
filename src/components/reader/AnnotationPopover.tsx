@@ -25,7 +25,8 @@ export default function AnnotationPopover({
   const [viewport, setViewport] = useState({ width: 0, height: 0 })
 
   useEffect(() => {
-    setMounted(true)
+    const frame = window.requestAnimationFrame(() => setMounted(true))
+    return () => window.cancelAnimationFrame(frame)
   }, [])
 
   useEffect(() => {

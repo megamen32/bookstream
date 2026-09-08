@@ -27,7 +27,7 @@ export default async function LegacyPublicBookImage({ params }: LegacyPublicBook
     slug: book.slug,
   })
 
-  return new Response(image, {
+  return new Response(new Uint8Array(image), {
     headers: {
       'content-type': 'image/png',
       'cache-control': 'public, max-age=0, must-revalidate',

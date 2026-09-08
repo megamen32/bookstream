@@ -41,7 +41,7 @@ const MOMENT_CARD_DIMENSIONS: ShareCardDimensions = {
   height: 630,
 }
 
-const SLUG_PALETTES = [
+const SLUG_PALETTES: Array<[string, string]> = [
   ['#0f172a', '#0f766e'],
   ['#111827', '#a16207'],
   ['#1f2937', '#7c3aed'],

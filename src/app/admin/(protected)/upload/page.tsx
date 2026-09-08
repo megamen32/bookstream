@@ -4,7 +4,7 @@ import { type DragEvent, type FormEvent, useCallback, useEffect, useRef, useStat
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Script from 'next/script'
-import { ArrowLeft, CheckCircle2, File, FileText, FileType2, ImagePlus, Link2, Loader2, Upload, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, FileIcon, FileText, FileType2, ImagePlus, Link2, Loader2, Upload, X } from 'lucide-react'
 import { BookCoverSection } from '@/components/admin/BookCoverSection'
 import { BookMetadataSection } from '@/components/admin/BookMetadataSection'
 import { Button } from '@/components/ui/button'
@@ -54,7 +54,7 @@ function buildBookPreviewPath(authorSlug: string, bookSlug: string): string {
 function getFileIcon(name: string) {
   if (name.endsWith('.docx')) return <FileType2 className="h-8 w-8 text-blue-500" />
   if (name.endsWith('.md')) return <FileText className="h-8 w-8 text-purple-500" />
-  return <File className="h-8 w-8 text-gray-500" />
+  return <FileIcon className="h-8 w-8 text-gray-500" />
 }
 
 function getExtension(fileName: string): string {

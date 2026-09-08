@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { detectBibliography, parseBibliographicMarker, transformBibliographicAnnotations } from '../src/lib/books/annotations/index.ts'
+import { detectBibliography } from '../src/lib/books/annotations/detectBibliography.ts'
+import { parseBibliographicMarker } from '../src/lib/books/annotations/parseBibliographicMarker.ts'
+import { transformBibliographicAnnotations } from '../src/lib/books/annotations/transformBibliographicAnnotations.ts'
 
 describe('parseBibliographicMarker', () => {
   it('parses single items and ranges', () => {

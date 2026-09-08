@@ -305,7 +305,8 @@ export default function FeedReader({
   }, [])
 
   useEffect(() => {
-    closeBibliographyPopover()
+    const frame = window.requestAnimationFrame(closeBibliographyPopover)
+    return () => window.cancelAnimationFrame(frame)
   }, [activeChapterId, closeBibliographyPopover])
 
   useEffect(() => () => {

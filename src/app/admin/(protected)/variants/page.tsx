@@ -30,6 +30,12 @@ import { useRouter } from 'next/navigation'
 import { fetchAdmin } from '@/lib/admin-fetch'
 import { useToast } from '@/hooks/use-toast'
 
+interface BillingPayer {
+  payerType: 'reader' | 'author'
+  payerId: string
+  label: string
+}
+
 interface VariantPreset {
   id: string
   slug: string
@@ -101,6 +107,8 @@ export default function AdminVariantsPage() {
   // Generate progress
   const [generating, setGenerating] = useState(false)
   const [genProgress, setGenProgress] = useState({ current: 0, total: 0 })
+  const [billingPayers, setBillingPayers] = useState<BillingPayer[]>([])
+  const [selectedPayer, setSelectedPayer] = useState('')
 
   const router = useRouter()
   const { toast } = useToast()
@@ -221,50 +229,28 @@ export default function AdminVariantsPage() {
   }
 
   // --- Generate for all chapters ---
+  useEffect(() => {
+    void adminFetch('/api/admin/llm-billing').then(async (res) => {
+      if (!res?.ok) return
+      const data = await res.json() as { payers?: BillingPayer[] }
+      const payers = data.payers || []
+      setBillingPayers(payers)
+      if (!selectedPayer && payers[0]) setSelectedPayer(`${payers[0].payerType}:${payers[0].payerId}`)
+    })
+  }, [adminFetch, selectedPayer])
+
   const handleGenerateAll = async () => {
     if (generating) return
     setGenerating(true)
-    setGenProgress({ current: 0, total: 0 })
-
     try {
-      // 1. Fetch all books
-      const booksRes = await adminFetch('/api/books')
-      if (!booksRes) {
-        return
-      }
-      if (!booksRes.ok) throw new Error('Не удалось загрузить книги')
-      const books = await booksRes.json()
-
-      // 2. Collect all chapters across all books
-      const allChapters: { bookId: string; chapterId: string }[] = []
-      for (const book of books) {
-        const chaptersRes = await adminFetch(`/api/books/${book.id}/chapters`)
-        if (!chaptersRes) {
-          continue
-        }
-        if (chaptersRes.ok) {
-          const chapters = await chaptersRes.json()
-          const chapterArray = Array.isArray(chapters) ? chapters : []
-          for (const chapter of chapterArray) {
-            allChapters.push({ bookId: book.id, chapterId: chapter.id })
-          }
-        }
-      }
-
-      setGenProgress({ current: 0, total: allChapters.length })
-
-      // 3. Summarize each chapter
-      for (let i = 0; i < allChapters.length; i++) {
-        const { chapterId } = allChapters[i]
-        try {
-          await adminFetch(`/api/chapters/${chapterId}/summarize`, { method: 'POST' })
-        } catch {
-          // Continue even if one fails
-        }
-        setGenProgress({ current: i + 1, total: allChapters.length })
-      }
-
-      toast({ title: 'Генерация вариантов завершена' })
+      const response = await adminFetch('/api/admin/llm-batches/chapter-variants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify((() => { const [payerType, payerId] = selectedPayer.split(':'); return { payerType, payerId } })()),
+      })
+      if (!response?.ok) throw new Error('Не удалось создать длинную задачу')
+      const payload = await response.json() as { created?: number; skipped?: number }
+      toast({ title: 'Длинная задача создана', description: `В очереди: ${payload.created || 0}, пропущено: ${payload.skipped || 0}` })
     } catch (error) {
       console.error('Generate error:', error)
       toast({ title: 'Ошибка генерации', variant: 'destructive' })
@@ -289,7 +275,19 @@ export default function AdminVariantsPage() {
             Управление пресетами вариантов для генерации
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={selectedPayer}
+            onChange={(event) => setSelectedPayer(event.target.value)}
+            className="h-10 rounded-md border bg-background px-3 text-sm"
+            title="Кто оплачивает LLM-задачу"
+          >
+            {billingPayers.map((payer) => (
+              <option key={`${payer.payerType}:${payer.payerId}`} value={`${payer.payerType}:${payer.payerId}`}>
+                Платит {payer.payerType === 'author' ? 'автор' : 'Reader'}: {payer.label}
+              </option>
+            ))}
+          </select>
           <Button
             variant="outline"
             onClick={handleGenerateAll}
@@ -302,7 +300,7 @@ export default function AdminVariantsPage() {
               <Sparkles className="w-4 h-4 mr-2" />
             )}
             {generating
-              ? `Генерация... ${genProgress.current}/${genProgress.total}`
+              ? 'Создаём длинную задачу…'
               : 'Генерировать для всех глав'}
           </Button>
           <Button

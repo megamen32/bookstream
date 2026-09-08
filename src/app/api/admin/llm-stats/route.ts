@@ -1,0 +1,23 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getAdminSessionReader } from '@/lib/admin-auth'
+import { db } from '@/lib/db'
+
+type Bucket = { key: string; label: string; jobs: number; succeeded: number; failed: number; tokens: number; inputTokens: number; outputTokens: number; actualCostUsd: number; estimatedCostUsd: number }
+function add(map: Map<string,Bucket>, key: string, label: string, job: { status:string; totalTokens:number|null; inputTokens:number|null; outputTokens:number|null; actualCostUsd:number|null; estimatedCostUsd:number|null }) {
+  const b=map.get(key)||{key,label,jobs:0,succeeded:0,failed:0,tokens:0,inputTokens:0,outputTokens:0,actualCostUsd:0,estimatedCostUsd:0}
+  b.jobs++; if(job.status==='succeeded')b.succeeded++; if(job.status==='failed')b.failed++; b.tokens+=job.totalTokens||0; b.inputTokens+=job.inputTokens||0; b.outputTokens+=job.outputTokens||0; b.actualCostUsd+=job.actualCostUsd||0; b.estimatedCostUsd+=job.estimatedCostUsd||0; map.set(key,b)
+}
+export async function GET(request: NextRequest) {
+  const reader=await getAdminSessionReader(request); if(!reader)return NextResponse.json({error:'Unauthorized'},{status:401})
+  const days=Math.min(365,Math.max(1,Number(request.nextUrl.searchParams.get('days')||30))); const since=new Date(Date.now()-days*86400000)
+  const jobs=await db.llmJob.findMany({where:{...(reader.isMainAdmin?{}:{readerId:reader.id}),createdAt:{gte:since}},orderBy:{createdAt:'asc'},select:{status:true,model:true,kind:true,authorId:true,bookId:true,payerType:true,payerId:true,createdAt:true,totalTokens:true,inputTokens:true,outputTokens:true,cacheReadTokens:true,cacheWriteTokens:true,noCacheInputTokens:true,actualCostUsd:true,estimatedCostUsd:true}})
+  const authorIds=[...new Set(jobs.map(j=>j.authorId).filter(Boolean))] as string[]; const bookIds=[...new Set(jobs.map(j=>j.bookId).filter(Boolean))] as string[]
+  const payerReaderIds=[...new Set(jobs.filter(j=>j.payerType==='reader'&&j.payerId).map(j=>j.payerId!))]; const payerAuthorIds=[...new Set(jobs.filter(j=>j.payerType==='author'&&j.payerId).map(j=>j.payerId!))]
+  const [authors,books,payerReaders,payerAuthors]=await Promise.all([db.author.findMany({where:{id:{in:authorIds}},select:{id:true,name:true,slug:true}}),db.book.findMany({where:{id:{in:bookIds}},select:{id:true,title:true,slug:true}}),db.reader.findMany({where:{id:{in:payerReaderIds}},select:{id:true,currentUsername:true}}),db.author.findMany({where:{id:{in:payerAuthorIds}},select:{id:true,name:true}})])
+  const authorNames=new Map(authors.map(a=>[a.id,a.name])); const bookNames=new Map(books.map(b=>[b.id,b.title])); const payerReaderNames=new Map(payerReaders.map(r=>[r.id,r.currentUsername])); const payerAuthorNames=new Map(payerAuthors.map(a=>[a.id,a.name]))
+  const maps={daily:new Map<string,Bucket>(),models:new Map<string,Bucket>(),kinds:new Map<string,Bucket>(),authors:new Map<string,Bucket>(),books:new Map<string,Bucket>(),payers:new Map<string,Bucket>()}
+  let actualCostUsd=0,estimatedCostUsd=0,totalTokens=0,inputTokens=0,outputTokens=0,cacheReadTokens=0,cacheWriteTokens=0,noCacheInputTokens=0,succeeded=0,failed=0
+  for(const j of jobs){actualCostUsd+=j.actualCostUsd||0;estimatedCostUsd+=j.estimatedCostUsd||0;totalTokens+=j.totalTokens||0;inputTokens+=j.inputTokens||0;outputTokens+=j.outputTokens||0;cacheReadTokens+=j.cacheReadTokens||0;cacheWriteTokens+=j.cacheWriteTokens||0;noCacheInputTokens+=j.noCacheInputTokens||0;if(j.status==='succeeded')succeeded++;if(j.status==='failed')failed++;const day=j.createdAt.toISOString().slice(0,10);add(maps.daily,day,day,j);add(maps.models,j.model,j.model,j);add(maps.kinds,j.kind,j.kind,j);add(maps.authors,j.authorId||'none',j.authorId?authorNames.get(j.authorId)||'Удалённый псевдоним':'Без псевдонима',j);add(maps.books,j.bookId||'none',j.bookId?bookNames.get(j.bookId)||'Удалённая книга':'Без книги',j);const payerKey=`${j.payerType}:${j.payerId||'none'}`;const payerLabel=j.payerType==='author'?(payerAuthorNames.get(j.payerId||'')||'Псевдоним'):(payerReaderNames.get(j.payerId||'')||'Reader');add(maps.payers,payerKey,`${j.payerType==='author'?'Автор':'Reader'}: ${payerLabel}`,j)}
+  const sortCost=(m:Map<string,Bucket>)=>[...m.values()].sort((a,b)=>b.actualCostUsd-a.actualCostUsd)
+  return NextResponse.json({days,summary:{jobs:jobs.length,succeeded,failed,totalTokens,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,noCacheInputTokens,actualCostUsd,estimatedCostUsd},daily:[...maps.daily.values()],models:sortCost(maps.models),kinds:sortCost(maps.kinds),authors:sortCost(maps.authors),books:sortCost(maps.books),payers:sortCost(maps.payers)})
+}

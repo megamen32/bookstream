@@ -320,7 +320,7 @@ export async function executeLlmJob(job: NonNullable<Awaited<ReturnType<typeof c
     })
     const think = result.text.match(/<think>([\s\S]*?)<\/think>/)
     await ledger.record({
-      userId: job.readerId, taskId: job.batchId, sessionId: job.id,
+      userId: job.readerId ?? undefined, taskId: job.batchId ?? undefined, sessionId: job.id,
       model: job.model, providerHost: job.baseUrl ? new URL(job.baseUrl.startsWith('http') ? job.baseUrl : `https://${job.baseUrl}`).hostname : '',
       usage: result.usage,
       pricing: {

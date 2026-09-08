@@ -425,7 +425,8 @@ export default function BookEditorPage() {
       return
     }
 
-    void fetchBookStats()
+    const frame = window.requestAnimationFrame(() => void fetchBookStats())
+    return () => window.cancelAnimationFrame(frame)
   }, [book, fetchBookStats])
 
   useEffect(() => {
@@ -453,12 +454,15 @@ export default function BookEditorPage() {
       }
     }
 
-    void loadAdminSettings()
-    void fetchVariantPresets()
-    void fetchAuthors()
+    const frame = window.requestAnimationFrame(() => {
+      void loadAdminSettings()
+      void fetchVariantPresets()
+      void fetchAuthors()
+    })
 
     return () => {
       active = false
+      window.cancelAnimationFrame(frame)
     }
   }, [adminFetch, fetchAuthors, fetchVariantPresets])
 
@@ -477,7 +481,10 @@ export default function BookEditorPage() {
     }
 
     if (!visibleVariantTabs.some((tab) => tab.value === activeVariant)) {
-      setActiveVariant(visibleVariantTabs[0]?.value ?? 'original')
+      const frame = window.requestAnimationFrame(() => {
+        setActiveVariant(visibleVariantTabs[0]?.value ?? 'original')
+      })
+      return () => window.cancelAnimationFrame(frame)
     }
   }, [activeVariant, visibleVariantTypesKey])
 
@@ -497,12 +504,12 @@ export default function BookEditorPage() {
 
   useEffect(() => {
     if (!selectedChapterId) {
-      setLoadedChapterVariant(null)
-      return
+      const frame = window.requestAnimationFrame(() => setLoadedChapterVariant(null))
+      return () => window.cancelAnimationFrame(frame)
     }
 
     let cancelled = false
-    setLoadedChapterVariant(null)
+    const clearFrame = window.requestAnimationFrame(() => setLoadedChapterVariant(null))
 
     void (async () => {
       try {
@@ -532,6 +539,7 @@ export default function BookEditorPage() {
 
     return () => {
       cancelled = true
+      window.cancelAnimationFrame(clearFrame)
     }
   }, [activeVariant, adminFetch, selectedChapterId])
   const chapterHasChanges =
