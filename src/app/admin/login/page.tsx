@@ -25,16 +25,31 @@ function readLocalReader(): StoredReader | null {
 }
 
 export default function AdminLoginPage() {
+  const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [autoChecking, setAutoChecking] = useState(true)
+  const [manualLogin, setManualLogin] = useState(false)
   const [error, setError] = useState('')
-  const router = useRouter()
   const { toast } = useToast()
 
   useEffect(() => {
     let cancelled = false
+    const params = new URLSearchParams(window.location.search)
+    const forceManual = params.get('manual') === '1' || params.get('switch') === '1'
+    if (forceManual) {
+      const frame = window.requestAnimationFrame(() => {
+        if (!cancelled) {
+          setManualLogin(true)
+          setAutoChecking(false)
+        }
+      })
+      return () => {
+        cancelled = true
+        window.cancelAnimationFrame(frame)
+      }
+    }
 
     async function continueCurrentReader(): Promise<void> {
       try {
@@ -79,6 +94,13 @@ export default function AdminLoginPage() {
       })
 
       if (res.ok) {
+        const data = await res.json() as { reader?: { id?: string; currentUsername?: string } }
+        if (data.reader?.id && data.reader.currentUsername) {
+          localStorage.setItem(READER_STORAGE_KEY, JSON.stringify({
+            readerId: data.reader.id,
+            username: data.reader.currentUsername,
+          }))
+        }
         toast({ title: 'Вход выполнен', description: 'Добро пожаловать!' })
         router.replace('/admin')
         router.refresh()
@@ -113,7 +135,9 @@ export default function AdminLoginPage() {
           </div>
           <CardTitle className="text-2xl font-bold text-foreground">Bookstream</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Обычно вход происходит автоматически из текущего профиля читателя. Эта форма нужна для нового устройства.
+            {manualLogin
+              ? 'Выберите нужный профиль: введите его логин и пароль.'
+              : 'Обычно вход происходит автоматически из текущего профиля читателя. Эта форма нужна для нового устройства.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -129,7 +153,7 @@ export default function AdminLoginPage() {
             {error && <p className="text-sm text-destructive font-medium">{error}</p>}
             <Button type="submit" className="w-full h-11 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium shadow-md" disabled={loading || !username.trim()}>
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Войти на новом устройстве
+              {manualLogin ? 'Войти в профиль' : 'Войти на новом устройстве'}
             </Button>
           </form>
         </CardContent>

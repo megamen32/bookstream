@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,7 +18,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { BookOpen, Library, Upload, User, LogOut, Menu, Palette, ListTodo, Layers3, BarChart3, WalletCards } from 'lucide-react'
+import { BookOpen, Library, Upload, User, LogOut, Menu, Palette, ListTodo, Layers3, BarChart3, WalletCards, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -38,6 +38,13 @@ type SidebarNavProps = {
 
 function AdminSidebarNav({ pathname }: SidebarNavProps) {
   const { isMobile, setOpenMobile } = useSidebar()
+  const router = useRouter()
+
+  async function leaveAdmin(mode: 'switch' | 'logout') {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    router.push(`/admin/login?manual=1${mode === 'switch' ? '&switch=1' : ''}`)
+    router.refresh()
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -92,17 +99,25 @@ function AdminSidebarNav({ pathname }: SidebarNavProps) {
 
       <SidebarSeparator />
 
-      <SidebarFooter className="p-3">
-        <form action="/api/auth/logout" method="POST">
-          <Button
-            type="submit"
-            variant="ghost"
-            className="h-11 w-full justify-start gap-3 rounded-2xl text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span className="group-data-[collapsible=icon]:hidden">Выйти</span>
-          </Button>
-        </form>
+      <SidebarFooter className="p-3 space-y-1">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => void leaveAdmin('switch')}
+          className="h-11 w-full justify-start gap-3 rounded-2xl text-muted-foreground hover:text-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        >
+          <RefreshCw className="h-4 w-4 shrink-0" />
+          <span className="group-data-[collapsible=icon]:hidden">Сменить профиль</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => void leaveAdmin('logout')}
+          className="h-11 w-full justify-start gap-3 rounded-2xl text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span className="group-data-[collapsible=icon]:hidden">Выйти</span>
+        </Button>
       </SidebarFooter>
 
       <SidebarRail />
